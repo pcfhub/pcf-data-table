@@ -48,6 +48,7 @@ utils or device — so installing the control raises no permission prompt.
 | Property | Type | Usage | Default | What it controls |
 | --- | --- | --- | --- | --- |
 | `records` | DataSet | dataset | — | The view or collection to render. No property-set roles: the columns are the view's |
+| ↳ `cds-data-set-options` | manifest attribute | — | all three on | Keeps the model-driven subgrid's command bar, view selector and quick find. Design-time only; not a maker-facing property |
 | `pageSize` | Whole.None | input | `25` | Rows requested per page, clamped to 1–250 |
 | `selectionMode` | Enum | input | `single` | `none`, `single` or `multiple` |
 | `enableSorting` | TwoOptions | input | `true` | Show sort controls on the columns the view allows sorting on |

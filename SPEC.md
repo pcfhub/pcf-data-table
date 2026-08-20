@@ -105,6 +105,20 @@ the contract with the form's command bar — it is how the ribbon knows which
 records to act on. The control keeps its own copy anyway, because the platform's
 does not survive a refresh or a page change.
 
+**`cds-data-set-options` is an attribute of `<data-set>`, not `<control>`.**
+Worth stating because it is easy to assume otherwise — it configures the *host's*
+chrome, which sounds like a control-level concern. `pcf-scripts`'
+`ManifestSchema.json` settles it: the key appears only under
+`definitions.dataSetAttribs`. Put it on `<control>` and the build rejects it.
+
+Two further notes on it. The schema types the value as a **plain string**, so
+the option names inside it are not validated — a misspelled `displayCommandBar`
+compiles clean and silently does nothing. And Microsoft's own reference table
+marks the attribute `Required: Yes`, which the tooling contradicts:
+`dataSetAttribs.required` is `["name", "display-name-key"]`, and this control
+built and packed without it for its first several builds. Treat it as optional
+in fact and defaulting to off.
+
 **The msbuild zips are named after the `.cdsproj` file, not the solution's
 `<UniqueName>`.** The pack produces `Solution.zip` and `Solution_managed.zip`,
 so `docs/installation.md` names those; the release workflow renames the

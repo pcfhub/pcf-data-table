@@ -15,6 +15,13 @@ order: 3
    properties pane.
 ::
 
+## No command bar, view selector or quick find
+
+The control asks for all three through `cds-data-set-options`, but that is a
+model-driven-only attribute — a canvas app has no subgrid chrome to show and
+ignores it. Sorting and paging still come from the control itself; filtering and
+searching are yours to build with `Filter()` and `Search()` on `Items`.
+
 ## Columns come from the Fields flyout
 
 A canvas app has no view, so there is no column layout for the control to

@@ -32,7 +32,25 @@
       says so in prose because ::props-table{kind=dataset_column} would render
       an empty table here.
     -->
-    <data-set name="records" display-name-key="Records_DataSet_Name" />
+    <!--
+      `cds-data-set-options` restores the subgrid's own chrome: the command bar,
+      the view selector and quick find. It is read by the host at design time,
+      so it cannot be a runtime property — this is the only place to set it.
+
+      **Model-driven apps only.** A canvas app has no subgrid chrome to show and
+      ignores the attribute entirely.
+
+      Turning the command bar on is what makes `setSelectedRecordIds()` visible
+      work rather than bookkeeping: the ribbon buttons above the grid act on
+      whichever rows the control reports as selected.
+
+      Note the documented options are the whole set — Commandbar, ViewSelector,
+      QuickFind — and the manifest schema types this as a plain string, so a
+      misspelled option silently does nothing rather than failing the build.
+    -->
+    <data-set name="records"
+              display-name-key="Records_DataSet_Name"
+              cds-data-set-options="displayCommandBar:true;displayViewSelector:true;displayQuickFind:true" />
 
     <property name="pageSize"
               display-name-key="PageSize_Name"
