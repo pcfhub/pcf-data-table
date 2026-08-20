@@ -1,0 +1,321 @@
+{
+    "targetEntityType": "account",
+    "title": "Active Accounts",
+    "columns": [
+        {
+            "name": "name",
+            "displayName": "Account name",
+            "dataType": "SingleLine.Text",
+            "alias": "name",
+            "order": 0,
+            "visualSizeFactor": 200,
+            "isPrimary": true
+        },
+        {
+            "name": "accountnumber",
+            "displayName": "Account number",
+            "dataType": "SingleLine.Text",
+            "alias": "accountnumber",
+            "order": 1,
+            "visualSizeFactor": 110
+        },
+        {
+            "name": "primarycontactname",
+            "displayName": "Primary contact",
+            "dataType": "SingleLine.Text",
+            "alias": "primarycontactname",
+            "order": 2,
+            "visualSizeFactor": 150
+        },
+        {
+            "name": "revenue",
+            "displayName": "Annual revenue",
+            "dataType": "Currency",
+            "alias": "revenue",
+            "order": 3,
+            "visualSizeFactor": 110
+        },
+        {
+            "name": "statecode",
+            "displayName": "Status",
+            "dataType": "OptionSet",
+            "alias": "statecode",
+            "order": 4,
+            "visualSizeFactor": 80
+        },
+        {
+            "name": "modifiedon",
+            "displayName": "Modified on",
+            "dataType": "DateAndTime.DateOnly",
+            "alias": "modifiedon",
+            "order": 5,
+            "visualSizeFactor": 100
+        }
+    ],
+    "records": [
+        {
+            "id": "a0001",
+            "values": {
+                "name": "Fabrikam Manufacturing",
+                "accountnumber": "ACC-1042",
+                "primarycontactname": "Dana Whitfield",
+                "revenue": 2450000,
+                "statecode": "Active",
+                "modifiedon": "2026-08-14"
+            }
+        },
+        {
+            "id": "a0002",
+            "values": {
+                "name": "Contoso Logistics",
+                "accountnumber": "ACC-1087",
+                "primarycontactname": "Ravi Menon",
+                "revenue": 1875000,
+                "statecode": "Active",
+                "modifiedon": "2026-08-12"
+            }
+        },
+        {
+            "id": "a0003",
+            "values": {
+                "name": "Northwind Traders",
+                "accountnumber": "ACC-1103",
+                "primarycontactname": "Erin Boyle",
+                "revenue": 960000,
+                "statecode": "Active",
+                "modifiedon": "2026-08-11"
+            }
+        },
+        {
+            "id": "a0004",
+            "values": {
+                "name": "Adventure Works Cycles",
+                "accountnumber": "ACC-1155",
+                "primarycontactname": "Marcus Feld",
+                "revenue": 3120000,
+                "statecode": "Active",
+                "modifiedon": "2026-08-09"
+            }
+        },
+        {
+            "id": "a0005",
+            "values": {
+                "name": "Litware Consulting",
+                "accountnumber": "ACC-1178",
+                "primarycontactname": "Priya Raman",
+                "revenue": 540000,
+                "statecode": "Inactive",
+                "modifiedon": "2026-08-08"
+            }
+        },
+        {
+            "id": "a0006",
+            "values": {
+                "name": "Tailspin Toys",
+                "accountnumber": "ACC-1201",
+                "primarycontactname": "Owen Brackett",
+                "revenue": 415000,
+                "statecode": "Active",
+                "modifiedon": "2026-08-07"
+            }
+        },
+        {
+            "id": "a0007",
+            "values": {
+                "name": "Proseware Systems",
+                "accountnumber": "ACC-1233",
+                "primarycontactname": "Alice Nakamura",
+                "revenue": 1290000,
+                "statecode": "Active",
+                "modifiedon": "2026-08-05"
+            }
+        },
+        {
+            "id": "a0008",
+            "values": {
+                "name": "Wingtip Analytics",
+                "accountnumber": "ACC-1260",
+                "primarycontactname": "Tomas Ehrlich",
+                "revenue": 780000,
+                "statecode": "Active",
+                "modifiedon": "2026-08-04"
+            }
+        },
+        {
+            "id": "a0009",
+            "values": {
+                "name": "Coho Vineyard",
+                "accountnumber": "ACC-1288",
+                "primarycontactname": "Sofia Marchetti",
+                "revenue": 225000,
+                "statecode": "Inactive",
+                "modifiedon": "2026-08-02"
+            }
+        },
+        {
+            "id": "a0010",
+            "values": {
+                "name": "Alpine Ski House",
+                "accountnumber": "ACC-1304",
+                "primarycontactname": "Jens Halvorsen",
+                "revenue": 1640000,
+                "statecode": "Active",
+                "modifiedon": "2026-07-30"
+            }
+        },
+        {
+            "id": "a0011",
+            "values": {
+                "name": "Blue Yonder Airlines",
+                "accountnumber": "ACC-1337",
+                "primarycontactname": "Nadia Osei",
+                "revenue": 5230000,
+                "statecode": "Active",
+                "modifiedon": "2026-07-28"
+            }
+        },
+        {
+            "id": "a0012",
+            "values": {
+                "name": "Trey Research",
+                "accountnumber": "ACC-1362",
+                "primarycontactname": "Gordon Sayles",
+                "revenue": 1105000,
+                "statecode": "Active",
+                "modifiedon": "2026-07-26"
+            }
+        },
+        {
+            "id": "a0013",
+            "values": {
+                "name": "Woodgrove Bank",
+                "accountnumber": "ACC-1390",
+                "primarycontactname": "Ines Duarte",
+                "revenue": 4470000,
+                "statecode": "Active",
+                "modifiedon": "2026-07-24"
+            }
+        },
+        {
+            "id": "a0014",
+            "values": {
+                "name": "Lucerne Publishing",
+                "accountnumber": "ACC-1415",
+                "primarycontactname": "Hugh Ferrers",
+                "revenue": 335000,
+                "statecode": "Inactive",
+                "modifiedon": "2026-07-22"
+            }
+        },
+        {
+            "id": "a0015",
+            "values": {
+                "name": "Fourth Coffee",
+                "accountnumber": "ACC-1441",
+                "primarycontactname": "Mei-Lin Zhao",
+                "revenue": 690000,
+                "statecode": "Active",
+                "modifiedon": "2026-07-20"
+            }
+        },
+        {
+            "id": "a0016",
+            "values": {
+                "name": "Graphic Design Institute",
+                "accountnumber": "ACC-1470",
+                "primarycontactname": "Peter Okonkwo",
+                "revenue": 148000,
+                "statecode": "Active",
+                "modifiedon": "2026-07-18"
+            }
+        },
+        {
+            "id": "a0017",
+            "values": {
+                "name": "Humongous Insurance",
+                "accountnumber": "ACC-1498",
+                "primarycontactname": "Clara Bengtsson",
+                "revenue": 6810000,
+                "statecode": "Active",
+                "modifiedon": "2026-07-15"
+            }
+        },
+        {
+            "id": "a0018",
+            "values": {
+                "name": "Margies Travel",
+                "accountnumber": "ACC-1520",
+                "primarycontactname": "Diego Salinas",
+                "revenue": 512000,
+                "statecode": "Inactive",
+                "modifiedon": "2026-07-13"
+            }
+        },
+        {
+            "id": "a0019",
+            "values": {
+                "name": "Southridge Video",
+                "accountnumber": "ACC-1554",
+                "primarycontactname": "Amara Nwosu",
+                "revenue": 298000,
+                "statecode": "Active",
+                "modifiedon": "2026-07-11"
+            }
+        },
+        {
+            "id": "a0020",
+            "values": {
+                "name": "Consolidated Messenger",
+                "accountnumber": "ACC-1583",
+                "primarycontactname": "Felix Lindqvist",
+                "revenue": 2075000,
+                "statecode": "Active",
+                "modifiedon": "2026-07-09"
+            }
+        },
+        {
+            "id": "a0021",
+            "values": {
+                "name": "School of Fine Art",
+                "accountnumber": "ACC-1607",
+                "primarycontactname": "Yuki Tanabe",
+                "revenue": 87000,
+                "statecode": "Inactive",
+                "modifiedon": "2026-07-06"
+            }
+        },
+        {
+            "id": "a0022",
+            "values": {
+                "name": "City Power and Light",
+                "accountnumber": "ACC-1639",
+                "primarycontactname": "Rosa Delgado",
+                "revenue": 3960000,
+                "statecode": "Active",
+                "modifiedon": "2026-07-04"
+            }
+        },
+        {
+            "id": "a0023",
+            "values": {
+                "name": "VanArsdel Ltd",
+                "accountnumber": "ACC-1662",
+                "primarycontactname": "Kwame Asante",
+                "revenue": 1430000,
+                "statecode": "Active",
+                "modifiedon": "2026-07-02"
+            }
+        },
+        {
+            "id": "a0024",
+            "values": {
+                "name": "The Phone Company",
+                "accountnumber": "ACC-1690",
+                "primarycontactname": "Lena Vogel",
+                "revenue": 2680000,
+                "statecode": "Active",
+                "modifiedon": "2026-06-29"
+            }
+        }
+    ]
+}

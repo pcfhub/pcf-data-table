@@ -1,0 +1,165 @@
+/*
+  Every rule is scoped under .DataTable.
+
+  A code component's CSS is loaded into the whole page, not into a shadow root,
+  so an unscoped `table { }` here restyles the host form.
+
+  The colours are Fluent design tokens, which FluentProvider emits as CSS custom
+  properties on its own wrapper — so the table picks up the host's theme without
+  importing a single Fluent component. The fallbacks after each comma are what
+  the control looks like if that ever stops being true.
+*/
+
+.DataTable {
+    font-family: var(--fontFamilyBase, 'Segoe UI', system-ui, sans-serif);
+    font-size: var(--fontSizeBase300, 14px);
+    color: var(--colorNeutralForeground1, #242424);
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacingVerticalS, 8px);
+    width: 100%;
+}
+
+.DataTable-message {
+    margin: 0;
+    padding: var(--spacingVerticalL, 16px);
+    color: var(--colorNeutralForeground3, #616161);
+}
+
+.DataTable-error {
+    color: var(--colorPaletteRedForeground1, #b10e1c);
+}
+
+/* Wide views scroll inside the control rather than widening the form. */
+.DataTable-scroll {
+    overflow-x: auto;
+    width: 100%;
+}
+
+/*
+  Dim rather than blank while a page loads. Replacing the rows with a spinner
+  makes every sort and page turn flash empty.
+*/
+.DataTable-scroll.is-loading {
+    opacity: 0.6;
+}
+
+.DataTable-table {
+    border-collapse: collapse;
+    width: 100%;
+    table-layout: fixed;
+}
+
+/* The title names the table for a screen reader without taking up space. */
+.DataTable-caption {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+}
+
+.DataTable-table th,
+.DataTable-table td {
+    text-align: start;
+    padding: var(--spacingVerticalS, 8px) var(--spacingHorizontalM, 12px);
+    border-bottom: 1px solid var(--colorNeutralStroke2, #e0e0e0);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.DataTable-table th {
+    font-weight: var(--fontWeightSemibold, 600);
+    border-bottom: 1px solid var(--colorNeutralStroke1, #d1d1d1);
+}
+
+.DataTable-table tbody tr:hover {
+    background-color: var(--colorNeutralBackground1Hover, #f5f5f5);
+}
+
+.DataTable-table tbody tr.is-selected {
+    background-color: var(--colorNeutralBackground1Selected, #ebebeb);
+}
+
+.DataTable-selectCol {
+    width: 40px;
+}
+
+.DataTable-selectCell {
+    width: 40px;
+    text-align: center;
+}
+
+/*
+  The sort control and the open-record control are real buttons, so they are
+  keyboard-reachable. These rules strip the browser chrome without removing the
+  semantics.
+*/
+.DataTable-sort,
+.DataTable-open {
+    font: inherit;
+    color: inherit;
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.DataTable-sort {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacingHorizontalXS, 4px);
+    font-weight: inherit;
+}
+
+.DataTable-open {
+    color: var(--colorBrandForegroundLink, #0f6cbd);
+    text-align: start;
+}
+
+.DataTable-open:hover {
+    text-decoration: underline;
+}
+
+.DataTable-sort:focus-visible,
+.DataTable-open:focus-visible,
+.DataTable-pager button:focus-visible {
+    outline: 2px solid var(--colorStrokeFocus2, #000000);
+    outline-offset: 2px;
+}
+
+.DataTable-arrow {
+    font-size: 0.7em;
+    color: var(--colorNeutralForeground3, #616161);
+}
+
+.DataTable-pager {
+    display: flex;
+    align-items: center;
+    gap: var(--spacingHorizontalM, 12px);
+}
+
+.DataTable-pager button {
+    font: inherit;
+    padding: var(--spacingVerticalXS, 4px) var(--spacingHorizontalM, 12px);
+    color: var(--colorNeutralForeground1, #242424);
+    background-color: var(--colorNeutralBackground1, #ffffff);
+    border: 1px solid var(--colorNeutralStroke1, #d1d1d1);
+    border-radius: var(--borderRadiusMedium, 4px);
+    cursor: pointer;
+}
+
+.DataTable-pager button:disabled {
+    color: var(--colorNeutralForegroundDisabled, #bdbdbd);
+    border-color: var(--colorNeutralStrokeDisabled, #e0e0e0);
+    cursor: default;
+}
+
+.DataTable-pagerStatus {
+    color: var(--colorNeutralForeground3, #616161);
+}

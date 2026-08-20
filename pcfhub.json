@@ -1,0 +1,61 @@
+{
+    "schemaVersion": 1,
+    "slug": "pcf-data-table",
+    "name": "Data Table",
+    "tagline": "A sortable, pageable table over any Dataverse view, with row selection.",
+    "category": "data",
+    "tags": [
+        "react",
+        "dataset",
+        "table",
+        "grid",
+        "paging"
+    ],
+    "control": {
+        "namespace": "PCFHub",
+        "constructor": "DataTable",
+        "type": "dataset",
+        "framework": "react_virtual",
+        "manifestPath": "DataTable/ControlManifest.Input.xml"
+    },
+    "links": {
+        "homepage": "https://github.com/pcfhub/pcf-data-table",
+        "support": "https://github.com/pcfhub/pcf-data-table/issues",
+        "license": "MIT"
+    },
+    "docs": {
+        "path": "docs"
+    },
+    "media": {
+        "logo": "media/logo.png",
+        "screenshots": []
+    },
+    "demo": {
+        "fidelity": "limited",
+        "bundle": "out/controls/DataTable/bundle.js",
+        "styles": [
+            "out/controls/DataTable/css/DataTable.css"
+        ],
+        "datasetFixture": "demo/records.json",
+        "limitations": [
+            "Paging is inert. The demo harness puts every fixture row on a single page and reports hasNextPage and hasPreviousPage as false, so Next and Previous render disabled and loadNextPage() only re-renders the same rows. The page size property does nothing either, because the harness’s setPageSize() is an empty function.",
+            "Sorting a column moves the sort arrow but does not reorder the rows. The control writes into dataset.sorting and calls refresh(), which is what a real view needs because sorting is applied server-side across every page — but the harness rebuilds the dataset with an empty sorting array on each render and discards the request.",
+            "Clicking a row calls dataset.openDatasetItem(), which the harness logs as a mock call: there is no Dataverse behind this origin and no form to open. The openedRecordId output still updates, so the value a form would react to is visible.",
+            "Rows tick and untick, but dataset.setSelectedRecordIds() does not survive a re-render for the same reason sorting does not. What you see is the control’s own copy of the selection. On a model-driven form that same call is what tells the command bar which records the ribbon acts on."
+        ],
+        "presets": [
+            {
+                "slug": "default",
+                "name": "Default",
+                "description": "A 24-row view with sortable columns and multi-row selection.",
+                "props": {
+                    "pageSize": 25,
+                    "selectionMode": "multiple",
+                    "enableSorting": true,
+                    "openOnRowClick": true
+                },
+                "isDefault": true
+            }
+        ]
+    }
+}

@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<manifest>
+  <!--
+    The version here is what the Power Platform upgrades on, and the release
+    workflow refuses to publish a tag that disagrees with it. Bump this in the
+    same commit as the tag.
+  -->
+  <control namespace="PCFHub"
+           constructor="DataTable"
+           version="0.1.0"
+           display-name-key="DataTable_Name"
+           description-key="DataTable_Desc"
+           control-type="virtual">
+
+    <external-service-usage enabled="false" />
+
+    <!--
+      No property-set roles, deliberately.
+
+      A property-set is a fixed-arity declaration: each one is a named role
+      written into the manifest, and there is no way to say "however many
+      columns the view has". A role-based table is therefore capped at whatever
+      N the manifest hard-codes, and the maker with N+1 columns is stuck.
+
+      The metadata a table needs only exists on real view columns anyway —
+      displayName, order, visualSizeFactor, isPrimary, isHidden and
+      disableSorting are the maker's own layout decisions, made in the view
+      designer, and they arrive on dataset.columns for free. A role cannot
+      supply an `order` for a column it does not know about.
+
+      So this control renders whatever the view supplies. See docs/api.md, which
+      says so in prose because ::props-table{kind=dataset_column} would render
+      an empty table here.
+    -->
+    <data-set name="records" display-name-key="Records_DataSet_Name" />
+
+    <property name="pageSize"
+              display-name-key="PageSize_Name"
+              description-key="PageSize_Desc"
+              of-type="Whole.None"
+              usage="input"
+              required="false"
+              default-value="25" />
+
+    <property name="selectionMode"
+              display-name-key="SelectionMode_Name"
+              description-key="SelectionMode_Desc"
+              of-type="Enum"
+              usage="input"
+              required="false"
+              default-value="single">
+      <value name="none" display-name-key="SelectionMode_None_Name">none</value>
+      <value name="single" display-name-key="SelectionMode_Single_Name">single</value>
+      <value name="multiple" display-name-key="SelectionMode_Multiple_Name">multiple</value>
+    </property>
+
+    <property name="enableSorting"
+              display-name-key="EnableSorting_Name"
+              description-key="EnableSorting_Desc"
+              of-type="TwoOptions"
+              usage="input"
+              required="false"
+              default-value="true" />
+
+    <property name="openOnRowClick"
+              display-name-key="OpenOnRowClick_Name"
+              description-key="OpenOnRowClick_Desc"
+              of-type="TwoOptions"
+              usage="input"
+              required="false"
+              default-value="true" />
+
+    <!--
+      Two outputs rather than one. "Which rows are ticked" and "which row was
+      opened" are different questions, and a form reacts to them differently.
+
+      selectedRecordIds is Multiple because a comma-joined list of GUIDs
+      overruns SingleLine.Text at about four rows.
+    -->
+    <property name="selectedRecordIds"
+              display-name-key="SelectedRecordIds_Name"
+              description-key="SelectedRecordIds_Desc"
+              of-type="Multiple"
+              usage="output" />
+
+    <property name="openedRecordId"
+              display-name-key="OpenedRecordId_Name"
+              description-key="OpenedRecordId_Desc"
+              of-type="SingleLine.Text"
+              usage="output" />
+
+    <resources>
+      <code path="index.ts" order="1" />
+      <css path="css/DataTable.css" order="1" />
+      <resx path="strings/DataTable.1033.resx" version="1.0.0" />
+      <platform-library name="React" version="16.14.0" />
+      <platform-library name="Fluent" version="9.46.2" />
+    </resources>
+
+    <!--
+      No feature-usage, deliberately.
+
+      openDatasetItem() is a method on the dataset itself, not on
+      context.navigation, and nothing here touches webAPI, utils or device.
+      Every uses-feature entry becomes an install-time permission prompt for the
+      maker, and this control has earned none.
+    -->
+  </control>
+</manifest>
