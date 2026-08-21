@@ -159,16 +159,43 @@ property-set alias/name inversion. With no roles declared there is no second
 candidate key, `alias` is never consulted, and `alias === name` is what a real
 non-linked view column reports.
 
+## On a real form
+
+`media/screenshot.png` is the control on an Accounts subgrid, and it settles
+several claims that were previously reasoned rather than observed:
+
+- **`cds-data-set-options` works.** The platform's command bar — New, Refresh,
+  the overflow menu — renders above the control. That is the host's chrome, not
+  the control's, and it appears only because the attribute asks for it.
+- **Paging is live.** The pager reads "1–5 of 6" with Previous disabled and Next
+  enabled, against `pageSize` 5. So `setPageSize` took effect, the guard did not
+  deadlock, and `hasNextPage`/`hasPreviousPage` are being reported.
+- **`totalResultCount` came back counted** — 6, not `-1` — so the range branch of
+  `pagerLabel()` is the one that rendered.
+- **`dataset.getTitle()` resolves** to the view name ("Accounts").
+- The sort control, its ascending indicator, the selection checkboxes and the
+  primary-column open-record links all render.
+
+What the screenshot does **not** settle is anything about the second page: it
+shows page 1, so whether `loadNextPage(true)` returns only the new page or
+accumulates the range is still unobserved. That remains the sharpest open
+question, because the failure mode is a table that grows instead of turning.
+
 ## Still open
 
-- **Not loaded on a real form yet.** Everything under "Platform behaviour" that
-  is read from the type definitions is solid; the *runtime* claims are not.
-  Specifically unverified: that `loadNextPage(true)` is honoured (some platform
-  builds have historically ignored the flag — the fallback is
-  `loadExactPage(page + 1)`); whether `firstPageNumber` tracks the current page
-  or the loaded range; whether `reset()` before `refresh()` costs two round
-  trips; and whether the platform clamps `setPageSize` and echoes the clamped
-  value back.
+- **Paging past page 1 is unobserved.** Specifically: whether
+  `loadNextPage(true)` is honoured (some platform builds have historically
+  ignored the flag — the fallback is `loadExactPage(page + 1)`); whether
+  `firstPageNumber` tracks the current page or the loaded range; whether
+  `reset()` before `refresh()` costs two round trips; and whether the platform
+  clamps `setPageSize` and echoes the clamped value back.
+- **A mark renders after every selection checkbox**, in the header row and each
+  body row alike, visible in `media/screenshot.png`. It is consistent enough to
+  look systematic rather than a scaling artifact, but nothing in
+  `DataTableControl.tsx` emits a character there — the cell contains only the
+  `<input>`. Unresolved: it may be a host stylesheet applying `content` to a
+  descendant, or something in `DataTable.css`. Reproduce on a form and inspect
+  the cell before guessing.
 - **Not opened in a canvas app.** `docs/canvas.md` claims columns come from the
   Fields flyout, that widths are absent, and that `openDatasetItem` is a no-op.
   All three are reasoned rather than observed. `addColumn` is typed as optional

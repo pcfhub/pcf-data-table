@@ -1,6 +1,6 @@
 {
   "name": "pcf-data-table",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "A sortable, pageable table over any Dataverse view, with row selection.",
   "license": "MIT",
   "private": true,
