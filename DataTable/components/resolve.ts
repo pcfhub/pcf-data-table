@@ -121,8 +121,13 @@ export function pagerLabel(
 
     const first = (page - 1) * pageSize + 1;
 
+    // Clamped because the two halves of this sentence used to come from
+    // different places — a page number from the platform, a row count from the
+    // rendered set — and could disagree. `pcf-compact-list` printed "4–9 of 6"
+    // on a real form that way. Both now come from the control, but a view that
+    // shrinks underneath a stale page counter would still overrun.
     return rangeTemplate
-        .replace('{0}', String(first))
-        .replace('{1}', String(first + rowsOnPage - 1))
+        .replace('{0}', String(Math.min(first, totalResultCount)))
+        .replace('{1}', String(Math.min(first + rowsOnPage - 1, totalResultCount)))
         .replace('{2}', String(totalResultCount));
 }

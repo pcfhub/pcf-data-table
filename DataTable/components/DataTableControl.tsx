@@ -305,9 +305,16 @@ export function DataTableControl(props: IProps): React.ReactElement | null {
             </div>
 
             <div className="DataTable-pager">
+                {/*
+                  `hasPreviousPage` is deliberately not consulted. It stays
+                  false after paging forward — the platform treats the load as
+                  the range pages 1..N, which truthfully has nothing before it —
+                  so trusting it left Previous permanently disabled with no way
+                  back. The control's own page counter is what answers this.
+                */}
                 <button
                     type="button"
-                    disabled={props.disabled || !dataset.paging.hasPreviousPage}
+                    disabled={props.disabled || props.page <= 1}
                     onClick={props.onPreviousPage}
                 >
                     {getString('DataTable_Previous')}

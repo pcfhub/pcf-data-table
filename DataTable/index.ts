@@ -51,7 +51,11 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
      */
     private appliedPageSize = 0;
 
-    /** Our own page counter, for hosts where `firstPageNumber` is not usable. */
+    /**
+     * The page number. Not "a fallback for `firstPageNumber`" — the only
+     * source. `firstPageNumber` is not read anywhere in this control; see
+     * `pageIds()` for why.
+     */
     private page = 1;
 
     public init(
@@ -75,7 +79,7 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
         }
 
         const columns = visibleColumns(dataset.columns ?? []);
-        const pageIds = dataset.sortedRecordIds ?? [];
+        const pageIds = this.pageIds(dataset);
 
         const props: IProps = {
             dataset,
@@ -85,7 +89,7 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
             selectionMode: mode,
             enableSorting: context.parameters.enableSorting.raw ?? true,
             openOnRowClick: context.parameters.openOnRowClick.raw ?? true,
-            page: this.currentPage(dataset),
+            page: this.page,
             pageSize: this.appliedPageSize,
             disabled: context.mode.isControlDisabled,
             visible: context.mode.isVisible,
@@ -146,17 +150,38 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
     }
 
     /**
-     * Prefer the platform's own page number when it looks usable.
+     * The records belonging to the page the pager says it is on.
      *
-     * With `loadNextPage(true)` the loaded range is a single page, so
-     * `firstPageNumber` should be the current page — but that is an inference
-     * from the naming, not something the type definitions promise, so the local
-     * counter is the fallback rather than the other way round.
+     * **Slicing `sortedRecordIds` is the thing a dataset control is told never
+     * to do**, because on a platform that honours `loadOnlyNewPage` that array
+     * already *is* the current page and slicing hides records the platform
+     * paged for.
+     *
+     * The flag is not honoured. Observed on a real model-driven form,
+     * 2026-08-21, against `pcf-compact-list`: `loadNextPage(true)` from page 1
+     * of a 6-record view at page size 3 returned all six ids and page 2
+     * rendered under page 1. This control makes the identical call and has the
+     * identical bug; it was found in the list first only because that is where
+     * somebody looked.
+     *
+     * So the slice is a repair for one specific platform behaviour, guarded so
+     * that it removes itself: an array no longer than a page already is the
+     * page. Slicing by page offset rather than by tail keeps it right going
+     * backwards.
      */
-    private currentPage(dataset: DataSet): number {
-        const first = dataset.paging.firstPageNumber;
+    private pageIds(dataset: DataSet): string[] {
+        const ids = dataset.sortedRecordIds ?? [];
 
-        return typeof first === 'number' && first >= 1 ? first : this.page;
+        if (ids.length <= this.appliedPageSize) {
+            return ids;
+        }
+
+        const start = (this.page - 1) * this.appliedPageSize;
+        const slice = ids.slice(start, start + this.appliedPageSize);
+
+        // Never empty the table: a wrong page is recoverable by clicking, an
+        // empty one looks like data loss.
+        return slice.length > 0 ? slice : ids.slice(-this.appliedPageSize);
     }
 
     /**
@@ -186,27 +211,57 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
     }
 
     /**
-     * `loadNextPage()` with no argument is infinite scroll, not paging: the type
-     * definition says it "returns results for the whole page range", so the
-     * dataset accumulates pages 1..N in `sortedRecordIds` and the table grows
-     * instead of turning. `true` limits it to the newly loaded page.
+     * Turn to an absolute page.
+     *
+     * `loadNextPage(true)` is supposed to limit the result to the newly loaded
+     * page and does not — see `pageIds()`. `loadExactPage` says what a pager
+     * means and is the documented fallback, so it is preferred where the host
+     * has it. It is typed as required and feature-detected anyway: a required
+     * member is a claim about the type definitions, not about the host, which
+     * is exactly the claim that failed here.
+     *
+     * Either way `pageIds()` decides what renders, so the table turns whether
+     * or not the call underneath honours the request.
      */
+    private goToPage(dataset: DataSet, target: number): void {
+        const back = target < this.page;
+
+        this.page = Math.max(1, target);
+
+        if (typeof dataset.paging.loadExactPage === 'function') {
+            dataset.paging.loadExactPage(this.page);
+            return;
+        }
+
+        if (back) {
+            dataset.paging.loadPreviousPage(true);
+        } else {
+            dataset.paging.loadNextPage(true);
+        }
+    }
+
     private nextPage(dataset: DataSet): void {
+        // `hasNextPage` has behaved, and a local counter cannot answer
+        // "is there more" on its own.
         if (!dataset.paging.hasNextPage) {
             return;
         }
 
-        this.page += 1;
-        dataset.paging.loadNextPage(true);
+        this.goToPage(dataset, this.page + 1);
     }
 
+    /**
+     * `hasPreviousPage` is not consulted, because it stays false after paging
+     * forward: the platform treats the load as the range pages 1..N, which
+     * truthfully has nothing before it. Trusting it left Previous permanently
+     * disabled with no way back.
+     */
     private previousPage(dataset: DataSet): void {
-        if (!dataset.paging.hasPreviousPage) {
+        if (this.page <= 1) {
             return;
         }
 
-        this.page = Math.max(1, this.page - 1);
-        dataset.paging.loadPreviousPage(true);
+        this.goToPage(dataset, this.page - 1);
     }
 
     private toggleRow(dataset: DataSet, id: string, mode: SelectionMode): void {

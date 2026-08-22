@@ -99,15 +99,34 @@ and documents `loadOnlyNewPage` as limiting the return value to the newly loaded
 page. Called bare, `sortedRecordIds` accumulates pages 1..N and the table grows
 instead of turning. Passing `true` is not an optimisation.
 
+**Passing `true` is also not sufficient — the platform ignores it.** Corrected
+2026-08-21. Observed on a real model-driven form against `pcf-compact-list`,
+which makes the identical call: `loadNextPage(true)` from page 1 of a 6-record
+view at page size 3 returned all six ids, and page 2 rendered under page 1. Two
+things came with it. `hasPreviousPage` stayed false after paging forward, so
+Previous never unlocked and there was no way back — the platform treats the load
+as the *range* pages 1..N, and a range beginning at page 1 truthfully has
+nothing before it. And `firstPageNumber` reported 2 while the ids held both
+pages, which is how the list printed "4–9 of 6".
+
+This control had all three and they were never noticed here, because nothing
+below a real environment can page: the demo harness serves one page. What is now
+in `index.ts` is the local counter as the only page number, `this.page > 1`
+gating Previous, `loadExactPage` preferred where the host has it, and
+`pageIds()` slicing the accumulated array back to one page.
+
 **`totalResultCount` is `-1` when the platform did not count**, which is common
 on large views. `pagerLabel()` in `components/resolve.ts` falls back to naming
 the page rather than printing "of -1".
 
-**Never slice `sortedRecordIds` to the page size in the browser.** On a real
-platform that array already *is* the current page, so slicing hides records the
-platform paged for. The demo actively tempts you into it, because the harness
-serves all 24 fixture rows at once — which is why the preset's `pageSize` is 25
-rather than 10.
+**Slicing `sortedRecordIds` to the page size is normally wrong, and is what
+`pageIds()` now does anyway.** The rule holds wherever the platform honours
+`loadOnlyNewPage` — that array is then already the current page, and slicing
+hides records it paged for. The demo tempts you into it for a different and
+still-wrong reason: the harness serves all 24 fixture rows at once, which is why
+the preset's `pageSize` is 25 rather than 10. The exception is the repair above,
+and it is guarded on `ids.length > pageSize`, so on a platform that behaves it
+does nothing at all.
 
 **Sorting is server-side across every page.** `dataset.sorting` is a plain array
 you mutate in place and then `refresh()`; it is the whole `ORDER BY`, so
@@ -192,18 +211,23 @@ several claims that were previously reasoned rather than observed:
   primary-column open-record links all render.
 
 What the screenshot does **not** settle is anything about the second page: it
-shows page 1, so whether `loadNextPage(true)` returns only the new page or
-accumulates the range is still unobserved. That remains the sharpest open
-question, because the failure mode is a table that grows instead of turning.
+shows page 1. That was called the sharpest open question here, and it was —
+`pcf-compact-list` hit it on a real form on 2026-08-21 and the answer was the
+bad one. See the paging notes above; this control had the same three faults and
+has been corrected.
 
 ## Still open
 
-- **Paging past page 1 is unobserved.** Specifically: whether
-  `loadNextPage(true)` is honoured (some platform builds have historically
-  ignored the flag — the fallback is `loadExactPage(page + 1)`); whether
-  `firstPageNumber` tracks the current page or the loaded range; whether
-  `reset()` before `refresh()` costs two round trips; and whether the platform
-  clamps `setPageSize` and echoes the clamped value back.
+- **Paging past page 1 is unobserved *in this control*.** The behaviour is now
+  known — the flag is ignored, `hasPreviousPage` stays false, `firstPageNumber`
+  is unusable — and the fix is written against it, but it was verified in
+  `pcf-compact-list` (compiled with `tsc` and driven under jsdom against a fake
+  dataset reproducing the platform) rather than by paging this table on a form.
+  A React control and a DOM control sharing an approach is not the same as
+  sharing a test.
+- **Still genuinely unknown:** whether `reset()` before `refresh()` costs two
+  round trips, and whether the platform clamps `setPageSize` and echoes the
+  clamped value back.
 - **A mark renders after every selection checkbox**, in the header row and each
   body row alike, visible in `media/screenshot.png`. It is consistent enough to
   look systematic rather than a scaling artifact, but nothing in
