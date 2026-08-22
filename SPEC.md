@@ -36,12 +36,27 @@ Bundle externals confirmed by grep rather than by assumption:
 `Reactv16` and `FluentUIReactv940` appear as externals. React and Fluent really
 are coming from the platform.
 
-`demo/` is absent from the packed solution, which confirms the
-`<ExcludeDirectories Include="…\demo\**" />` line added to `DataTable.pcfproj`.
-The template ships no such line — it has no `demo/` to exclude — and
-`pcf-tag-list`, which does have one, has never been packed. That gap was
-unexercised rather than proven harmless, and this is the first evidence either
-way.
+`demo/` is absent from the packed solution. **This was originally recorded here
+as confirming the `<ExcludeDirectories Include="…\demo\**" />` line added to
+`DataTable.pcfproj`, and that was wrong** — an absence attributed to a cause
+that had never been tested against its own absence. Corrected 2026-08-21, when
+building `pcf-compact-list` made it cheap to run the control case:
+
+| Pack | `demo/` in the zip? |
+| --- | --- |
+| `pcf-compact-list`, **with** the line | No — 8 files |
+| `pcf-compact-list`, **line deleted** | No — 8 files |
+| `pcf-tag-list`, which never had the line | No — 12 files, 15,124 bytes |
+| `pcf-tag-list`, line added | No — 12 files, 15,124 bytes |
+
+The pack takes `out/controls/<Control>/**` plus the solution XMLs, and never
+considers loose project files — so `demo/` was never a candidate and there was
+nothing for the exclude to exclude. The `<None Include>` / `ExcludeDirectories`
+pair shapes the msbuild *project*'s item list, which is not what gets packaged.
+
+The line is harmless and worth keeping for uniformity, but do not cite it, or
+this repository's zip, as the reason a fixture is not shipping. The template's
+comment on that entry repeated the same claim and has been corrected too.
 
 ## What the build disagreed with
 
