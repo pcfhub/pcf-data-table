@@ -196,13 +196,28 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
      * building a three-deep sort nobody asked for.
      */
     private sortBy(dataset: DataSet, columnName: string): void {
-        const current = dataset.sorting.find((status) => status.name === columnName);
+        const sorting = dataset.sorting;
+
+        /*
+         * Typed as required, absent on `npm start`.
+         *
+         * The order has to be expressed by mutating this array in place, so
+         * with no array there is nothing to express it through — and the local
+         * harness cannot sort anyway. Decline rather than throw: a click that
+         * does nothing there is a great deal better than a control that
+         * disappears.
+         */
+        if (!sorting) {
+            return;
+        }
+
+        const current = sorting.find((status) => status.name === columnName);
         const direction: SortDirection = current
             ? nextDirection(current.sortDirection)
             : ASCENDING;
 
-        dataset.sorting.length = 0;
-        dataset.sorting.push({ name: columnName, sortDirection: direction });
+        sorting.length = 0;
+        sorting.push({ name: columnName, sortDirection: direction });
 
         // A new order makes "page 4" meaningless.
         this.page = 1;

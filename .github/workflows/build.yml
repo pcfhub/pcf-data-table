@@ -57,6 +57,17 @@ jobs:
         run: msbuild /t:build /restore /p:configuration=Release
         working-directory: Solution
 
+      # After the pack, deliberately: msbuild has just overwritten out/controls
+      # with the production bundle, so this drives the code that actually ships
+      # rather than the development build `npm run build` left there.
+      #
+      # Minification does not disturb it — terser leaves string literals and
+      # lifecycle names alone with property mangling off — and `dev/smoke.js`
+      # asserts decisions rather than markup, so it does not care what the
+      # bundler did to the shape around them.
+      - name: Smoke-test the shipping bundle
+        run: npm run smoke
+
       # A control is served as a single web resource, and Dataverse rejects one
       # larger than 5 MB by default. Without this the failure appears as a
       # solution import error in somebody's environment, long after the commit

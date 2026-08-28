@@ -82,6 +82,29 @@ precisely because three things were expected to need casts and did not:
 
 ## Platform behaviour worth knowing
 
+**`dataset.sorting` is `undefined` in the local test harness, and the types say
+it is required.** So `dataset.sorting.find(...)` throws, and this control
+rendered as nothing at all under `npm start` from its first release until the
+`?? []` in `sortFor` and the guard in `sortBy` landed. Verified against
+`pcf-start` 1.51.1: the harness's dataset mock literally sets `sorting: void 0`,
+alongside `hasNextPage: false`, `hasPreviousPage: false`, `loading: false`,
+`error: false`, and paging mutators that are `console.log` calls and nothing
+else — so `setPageSize(25)` logs as `Invoked method loadNextPage on Paging
+interface. Parameters: 25.` and moves no data.
+
+Being virtual is what made it findable: React's error boundary reported the
+TypeError in the console. The standard dataset variant in `_template` hit the
+same crash and the harness swallowed it completely — blank control, empty
+console.
+
+This is general rather than specific to this control, and it now lives in the
+skill's `SKILL.md` under *Prove it with the dev rig*. `dev/smoke.js` asserts it
+here through the `sortingAbsent` quirk, and that assertion renders the returned
+element with `react-dom/server` rather than only reading its props — a virtual
+control's component body does not run until something renders it, so a
+props-only check passes against the broken control. That was found the hard way,
+on this repo.
+
 **`updateView` fires on every dataset change, including the ones this control
 caused.** For a field control that shows up as a jumping caret. For a dataset
 control it is an infinite loop, because a dataset has mutators:

@@ -145,7 +145,11 @@ export function DataTableControl(props: IProps): React.ReactElement | null {
     };
 
     const sortFor = (column: Column): 'ascending' | 'descending' | 'none' => {
-        const status = dataset.sorting.find((entry) => entry.name === column.name);
+        // `sorting` is typed as a required array, and the local test harness
+        // supplies `undefined` for it — so this reads through a fallback.
+        // Without it `npm start` throws a TypeError the harness swallows, and
+        // the control renders as an empty box with nothing in the console.
+        const status = (dataset.sorting ?? []).find((entry) => entry.name === column.name);
 
         if (!status) {
             return 'none';

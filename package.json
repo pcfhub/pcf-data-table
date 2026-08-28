@@ -1,6 +1,6 @@
 {
   "name": "pcf-data-table",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "A sortable, pageable table over any Dataverse view, with row selection.",
   "license": "MIT",
   "private": true,
@@ -12,6 +12,7 @@
     "rebuild": "pcf-scripts rebuild",
     "start": "pcf-scripts start",
     "refreshTypes": "pcf-scripts refreshTypes",
+    "smoke": "node dev/smoke.js",
     "lint": "eslint DataTable --ext .ts,.tsx"
   },
   "devDependencies": {
