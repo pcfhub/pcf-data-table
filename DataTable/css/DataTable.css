@@ -145,6 +145,9 @@
 }
 
 .DataTable-pager button {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacingHorizontalXS, 4px);
     font: inherit;
     padding: var(--spacingVerticalXS, 4px) var(--spacingHorizontalM, 12px);
     color: var(--colorNeutralForeground1, #242424);
@@ -158,6 +161,36 @@
     color: var(--colorNeutralForegroundDisabled, #bdbdbd);
     border-color: var(--colorNeutralStrokeDisabled, #e0e0e0);
     cursor: default;
+}
+
+/*
+  The pager chevrons.
+
+  Inline `<svg>`, inheriting the button’s `color` — which in this control comes
+  from the Fluent theme the provider is handed, so they follow it with no code.
+  An icon behind `<img src>` renders in an isolated document that cannot read
+  this stylesheet and could not do that.
+
+  `flex: none` so a chevron never squashes on a narrow form.
+*/
+.DataTable-chevron {
+    flex: 0 0 auto;
+    width: 16px;
+    height: 16px;
+}
+
+/*
+  Mirrored in right-to-left. A chevron is directional, and reordering the flex
+  children does not turn the glyph around: `<` stays `<` and points at the label
+  instead of away from it.
+
+  Keyed off any right-to-left ancestor. This control puts `dir` on the
+  `FluentProvider` that wraps `.DataTable` rather than on `.DataTable` itself,
+  so a selector rooted here would miss it — and on a real form the host may set
+  it further up again.
+*/
+[dir="rtl"] .DataTable-chevron {
+    transform: scaleX(-1);
 }
 
 .DataTable-pagerStatus {

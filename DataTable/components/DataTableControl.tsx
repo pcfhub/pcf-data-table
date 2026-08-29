@@ -8,6 +8,44 @@ import {
     SelectionMode,
 } from './resolve';
 
+/** The pager chevrons, on a 20×20 grid. Two strokes each. */
+const CHEVRON_PREVIOUS = 'M12.5 5 7.5 10l5 5';
+const CHEVRON_NEXT = 'M7.5 5l5 5-5 5';
+
+/**
+ * A chevron, inline, so it can follow the theme.
+ *
+ * An icon behind `<img src>` — file or data URL, PNG or SVG — renders as an
+ * isolated document that cannot see this control's stylesheet, so a
+ * `currentColor` inside it resolves to black and a dark form gets a black glyph
+ * on a dark background. `pcf-file-drop` shipped exactly that and it was found
+ * on a real form. Inline, `currentColor` is the button's own colour — which
+ * here comes from the Fluent theme the provider above is handed.
+ *
+ * Decorative: it sits on a button that already reads “Previous page”, so
+ * announcing the glyph as well would add a word and no meaning. Same reasoning
+ * as the sort arrow above it.
+ */
+function Chevron(props: { d: string }): React.ReactElement {
+    return (
+        <svg
+            className="DataTable-chevron"
+            viewBox="0 0 20 20"
+            aria-hidden="true"
+            focusable="false"
+        >
+            <path
+                d={props.d}
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+            />
+        </svg>
+    );
+}
+
 type Column = ComponentFramework.PropertyHelper.DataSetApi.Column;
 type DataSet = ComponentFramework.PropertyTypes.DataSet;
 
@@ -321,6 +359,9 @@ export function DataTableControl(props: IProps): React.ReactElement | null {
                     disabled={props.disabled || props.page <= 1}
                     onClick={props.onPreviousPage}
                 >
+                    {/* Chevron then label — decoration on a button that already
+                        says what it does, so the name is unchanged. */}
+                    <Chevron d={CHEVRON_PREVIOUS} />
                     {getString('DataTable_Previous')}
                 </button>
 
@@ -340,7 +381,10 @@ export function DataTableControl(props: IProps): React.ReactElement | null {
                     disabled={props.disabled || !dataset.paging.hasNextPage}
                     onClick={props.onNextPage}
                 >
+                    {/* Label then chevron: the glyph points the way the button
+                        goes, so it trails rather than leads. */}
                     {getString('DataTable_Next')}
+                    <Chevron d={CHEVRON_NEXT} />
                 </button>
             </div>
         </>,

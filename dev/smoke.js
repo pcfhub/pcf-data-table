@@ -245,6 +245,47 @@ check(
     `hasPreviousPage: ${paged.handle.dataset.paging.hasPreviousPage}; page: ${paged.props().page}`,
 );
 
+/*
+ * **The pager chevrons are inline `<svg>`, and that is a theming decision.**
+ *
+ * The same glyph behind an `<img src>` — a resource, a data URL, PNG or SVG
+ * alike — renders in an isolated document that cannot see this control’s
+ * stylesheet, so its `currentColor` resolves to black and a dark form gets a
+ * black chevron on a dark background. `pcf-file-drop` shipped exactly that, and
+ * it was found on a real form rather than in review.
+ *
+ * Asserted against the rendered markup rather than against props, because the
+ * chevron is markup: `updateView` only *builds* an element, and an icon that
+ * fails to render is invisible to a props-only check. This control has no
+ * `dev/harness.html` — a virtual control’s bundle wants Fluent under a global
+ * and Fluent 9 ships no UMD build — so there is no browser to look in either.
+ */
+const markup = renderDeep(view.driven.element);
+
+check(
+    'the pager renders inline svg chevrons, not images',
+    (markup.match(/<svg[^>]*DataTable-chevron/g) || []).length === 2 && !markup.includes('<img'),
+    `${(markup.match(/<svg[^>]*DataTable-chevron/g) || []).length} chevrons, ${(markup.match(/<img/g) || []).length} images`,
+);
+
+check(
+    'stroked with currentColor, so the Fluent theme decides their colour',
+    (markup.match(/stroke="currentColor"/g) || []).length === 2,
+);
+
+/* Decorative: each sits on a button that already reads “Previous page”. */
+check(
+    'and hidden from the accessibility tree',
+    (markup.match(/<svg[^>]*aria-hidden="true"/g) || []).length === 2,
+);
+
+/* The label is still there — the chevron was added beside it, not instead of
+   it, so the accessible name is unchanged. */
+check(
+    'and the buttons still say what they do in words',
+    markup.includes('resx:DataTable_Previous') && markup.includes('resx:DataTable_Next'),
+);
+
 check(
     'turning a page asks for that page by number',
     paged.calls().some((call) => call.indexOf('loadExactPage(2)') === 0),
