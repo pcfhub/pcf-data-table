@@ -15,8 +15,11 @@ This is the host the control was built for.
    configuration — its columns, their order and their widths are what the
    control renders.
 3. **Components → Add component → Data Table**, and enable it for Web.
-4. Set the four input properties. Defaults are a 25-row page, single selection,
-   sorting on, and row click opens the record.
+4. Set the four input properties. Leave **Page size** alone and the table pages
+   the way the host already does — the *Rows per page* you set on a main grid,
+   or the row count on the subgrid — and only overrides it if you fill it in.
+   The other three default to single selection, sorting on, and row click opens
+   the record.
 5. Save and publish.
 ::
 
