@@ -124,6 +124,13 @@
     <value>Show a filter box under each text and numeric column heading. Filtering is applied by the server, across every page.</value>
   </data>
 
+  <data name="EnableExport_Name" xml:space="preserve">
+    <value>Allow CSV export</value>
+  </data>
+  <data name="EnableExport_Desc" xml:space="preserve">
+    <value>Show a button that saves the loaded rows as a CSV file. It exports the pages read so far, not the whole view.</value>
+  </data>
+
   <data name="OpenOnRowClick_Name" xml:space="preserve">
     <value>Open on row click</value>
   </data>
@@ -169,6 +176,13 @@
   <data name="DataTable_RangeStatus" xml:space="preserve">
     <value>{0}–{1} of {2}</value>
   </data>
+  <data name="DataTable_Export" xml:space="preserve">
+    <value>Export CSV</value>
+  </data>
+  <data name="DataTable_ExportHint" xml:space="preserve">
+    <value>Save the rows loaded so far as a CSV file. Pages you have not opened are not included.</value>
+  </data>
+
   <data name="DataTable_RowsPerPage" xml:space="preserve">
     <value>Rows per page</value>
   </data>

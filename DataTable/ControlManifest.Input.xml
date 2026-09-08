@@ -128,6 +128,23 @@
               required="false"
               default-value="true" />
 
+    <!--
+      Off by default, and that is the honest half of the feature. The export
+      covers the rows the control has loaded rather than the whole view, so a
+      maker turns it on having read what it does rather than finding out from a
+      colleague's short spreadsheet.
+
+      It needs no `<feature-usage>` either: `navigation.openFile` is a method on
+      `context.navigation`, which is not gated, and the fallback is a Blob.
+    -->
+    <property name="enableExport"
+              display-name-key="EnableExport_Name"
+              description-key="EnableExport_Desc"
+              of-type="TwoOptions"
+              usage="input"
+              required="false"
+              default-value="false" />
+
     <property name="openOnRowClick"
               display-name-key="OpenOnRowClick_Name"
               description-key="OpenOnRowClick_Desc"

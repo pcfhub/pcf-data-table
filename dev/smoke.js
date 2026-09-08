@@ -145,6 +145,7 @@ const INPUTS = {
     enableSorting: true,
     enableFiltering: true,
     openOnRowClick: true,
+    enableExport: true,
     /*
      * `null`, not absent, and not a list. The platform builds the parameter
      * object for every declared property and reports `raw: null` for one the
@@ -452,6 +453,118 @@ check(
     'and declines a sort it has no way to express, rather than throwing',
     unsorted !== null && sortError === null,
     sortError || undefined,
+);
+
+/* ------------------------------------------------------------------ export */
+
+const exported = bind({ pageSize: 50 });
+
+exported.props().onExport();
+
+const file = exported.handle.state.files[0];
+const csvLines = file ? file.content.split('\r\n') : [];
+
+check(
+    'exporting hands the host a CSV to save, not to open',
+    Boolean(file) && file.mimeType === 'text/csv' && file.openMode === 2,
+    file ? `${file.fileName} ${file.mimeType} openMode ${file.openMode}` : 'no file',
+);
+
+/*
+ * The header row is the columns as drawn — visible only, in view order — so the
+ * spreadsheet matches the table rather than the raw view behind it.
+ */
+check(
+    'the header row is the columns the reader can see, in their order',
+    csvLines[0] === '﻿Account name,Account number,Primary contact,Status,Annual revenue,Modified on',
+    JSON.stringify(csvLines[0]),
+);
+
+/*
+ * A BOM, because without one Excel reads UTF-8 as the local codepage and the
+ * fixture's `école` opens as `Ã©cole`. Found by a customer, never by a test —
+ * unless there is one.
+ */
+check(
+    'and carries a BOM so Excel reads it as UTF-8',
+    file && file.content.charCodeAt(0) === 0xfeff && file.content.includes('école Numérique'),
+    file ? `first char U+${file.content.charCodeAt(0).toString(16).toUpperCase()}` : 'no file',
+);
+
+/*
+ * The comma in `Consolidated Messenger…` is not there, but the long name is —
+ * what matters is that a value holding a comma or a quote round-trips. `a10`'s
+ * contact is `Margarethe Kowalczyk-Fitzgerald`, and the leading `-` case is
+ * covered below.
+ */
+const quoted = bind({
+    pageSize: 50,
+    records: [
+        { id: 'q1', values: { name: 'Smith, Roe & Co', accountnumber: 'Say "hello"', primarycontactname: 'Line\nBreak', statecode: 'Active', ownerid: '', revenue: 10, modifiedon: '2026-01-01' } },
+        { id: 'q2', values: { name: '=HYPERLINK("http://evil","click")', accountnumber: '-1500', primarycontactname: '+1 555 0100', statecode: 'Active', ownerid: '', revenue: -250, modifiedon: '2026-01-02' } },
+    ],
+});
+
+quoted.props().onExport();
+
+const quotedCsv = quoted.handle.state.files[0].content;
+
+check(
+    'a value holding a comma, a quote or a newline is quoted rather than shifting the columns',
+    quotedCsv.includes('"Smith, Roe & Co"') &&
+        quotedCsv.includes('"Say ""hello"""') &&
+        quotedCsv.includes('"Line\nBreak"'),
+    JSON.stringify(quotedCsv.split('\r\n')[1]),
+);
+
+/*
+ * **A cell beginning `=`, `+`, `-` or `@` is a formula to Excel, Sheets and
+ * LibreOffice alike**, so a record someone named `=HYPERLINK(...)` runs when a
+ * colleague opens the export. The apostrophe makes it text.
+ */
+check(
+    'a formula in a record name is defused rather than exported as one',
+    quotedCsv.includes(`"'=HYPERLINK(""http://evil"",""click"")"`) &&
+        quotedCsv.includes("'+1 555 0100"),
+    JSON.stringify(quotedCsv.split('\r\n')[2]),
+);
+
+/*
+ * And the half that is easy to get wrong in the other direction: `-1500` is a
+ * negative figure, not a formula. Prefixing it turns a column of numbers into a
+ * column of text that will not sum, which is a quieter bug than the one the
+ * guard is for.
+ */
+check(
+    'a negative number stays a number',
+    quotedCsv.includes(',-1500,') && quotedCsv.includes(',-250,') && !quotedCsv.includes("'-1500"),
+    JSON.stringify(quotedCsv.split('\r\n')[2]),
+);
+
+/*
+ * The host without `openFile` — canvas. The control must reach the Blob
+ * fallback rather than checking `context.navigation` once and calling a method
+ * that is not on it.
+ */
+let canvasExportError = null;
+let canvasExport = null;
+
+try {
+    canvasExport = bind({ pageSize: 50, quirks: { openFileAbsent: true } });
+
+    canvasExport.props().onExport();
+} catch (error) {
+    canvasExportError = `${error.constructor.name}: ${error.message}`;
+}
+
+check(
+    'a host without openFile falls back rather than throwing',
+    canvasExportError === null &&
+        canvasExport !== null &&
+        // Nothing reached openFile, so the other path is the one that ran.
+        canvasExport.handle.state.files.length === 0 &&
+        !canvasExport.calls().some((call) => call.startsWith('navigation.openFile')),
+    canvasExportError || 'reached the browser download path',
 );
 
 /* ------------------------------------------------- jumping and page sizing */

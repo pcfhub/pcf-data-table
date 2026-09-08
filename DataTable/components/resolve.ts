@@ -334,6 +334,49 @@ export function pageSizeChoices(raw: string | null, current: number): number[] {
     return [...new Set(withCurrent)].sort((a, b) => a - b);
 }
 
+/**
+ * One CSV cell: quoted where it has to be, and defused where it could execute.
+ *
+ * Two separate jobs in one function, and only the first is about CSV.
+ *
+ * **Quoting** is the format: a value holding a comma, a quote or a newline is
+ * wrapped in quotes with its own quotes doubled. Miss it and one address
+ * column silently shifts every field after it into the wrong column.
+ *
+ * **The leading apostrophe** is about what opens the file. A cell beginning
+ * `=`, `+`, `-` or `@` is a formula to Excel, Sheets and LibreOffice alike, so
+ * a record whose name someone set to `=HYPERLINK(...)` runs when a colleague
+ * opens the export. The apostrophe makes it text.
+ *
+ * It is withheld from anything that parses as a number, which is the part worth
+ * getting right: `-1500` is a negative revenue and prefixing it turns a column
+ * of figures into a column of text that will not sum. Only a leading `-` that
+ * is *not* a number can be a formula.
+ */
+export function csvCell(value: string): string {
+    const defused = /^[=+\-@\t\r]/.test(value) && !Number.isFinite(Number(value))
+        ? `'${value}`
+        : value;
+
+    return /[",\r\n]/.test(defused) ? `"${defused.replace(/"/g, '""')}"` : defused;
+}
+
+/**
+ * A CSV document from a header row and the rows below it.
+ *
+ * CRLF because that is what RFC 4180 says and what Excel expects; a BOM because
+ * without one Excel reads UTF-8 as the local codepage, and the export of a view
+ * containing `école` opens as `Ã©cole`. Both are the kind of thing found by a
+ * customer rather than by a test.
+ */
+export function toCsv(headers: string[], rows: string[][]): string {
+    const lines = [headers, ...rows].map((cells) => cells.map(csvCell).join(','));
+
+    // The BOM as an escape rather than the character: a literal BOM in source
+    // is invisible, and eslint's no-irregular-whitespace rejects it outright.
+    return `\ufeff${lines.join('\r\n')}\r\n`;
+}
+
 export function pagerLabel(
     page: number,
     pageSize: number,

@@ -9,6 +9,7 @@ import {
     nextDirection,
     pageSizeChoices,
     SelectionMode,
+    toCsv,
     toggleId,
     visibleColumns,
 } from './components/resolve';
@@ -160,6 +161,7 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
              * keystrokes and changes nothing is worse than no box at all.
              */
             enableFiltering: (context.parameters.enableFiltering.raw ?? true) && Boolean(dataset.filtering),
+            enableExport: context.parameters.enableExport.raw ?? false,
             disabled: context.mode.isControlDisabled,
             visible: context.mode.isVisible,
             isRTL: context.userSettings.isRTL,
@@ -171,6 +173,7 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
             onClearFilters: (): void => this.clearFilters(context),
             onGoToPage: (page: number): void => this.goToPage(dataset, page),
             onPageSize: (size: number): void => this.choosePageSize(context, size),
+            onExport: (): void => this.exportCsv(context, dataset),
             onNextPage: (): void => this.nextPage(dataset),
             onPreviousPage: (): void => this.previousPage(dataset),
             onToggleRow: (id: string): void => this.toggleRow(dataset, id, mode),
@@ -269,6 +272,93 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
         this.page = 1;
         dataset.paging.reset();
         dataset.refresh();
+    }
+
+    /**
+     * Write the rows this control is holding to a CSV file.
+     *
+     * **It exports what has been loaded, not the whole view, and the button
+     * says so.** The dataset holds the pages fetched so far; reaching the rest
+     * means raising the page size, looping `loadExactPage` and reassembling —
+     * an async state machine on top of a lifecycle that re-enters `updateView`
+     * on every fetch. That is worth doing and is not worth doing quietly, so it
+     * is not in this release. An export that silently covers one page of a
+     * 240-row view is the same failure as a client-side sort: a wrong answer
+     * that looks completely right.
+     *
+     * Values come from `getFormattedValue`, which is what the cells render, so
+     * the file matches what the reader was looking at rather than the raw
+     * values underneath it.
+     */
+    private exportCsv(context: ComponentFramework.Context<IInputs>, dataset: DataSet): void {
+        const columns = visibleColumns(dataset.columns ?? []);
+        const ids = dataset.sortedRecordIds ?? [];
+
+        const rows = ids
+            .map((id) => dataset.records[id])
+            .filter((record) => Boolean(record))
+            .map((record) => columns.map((column) => record.getFormattedValue(column.name) ?? ''));
+
+        const csv = toCsv(
+            columns.map((column) => column.displayName),
+            rows,
+        );
+
+        const name = `${dataset.getTitle() || 'records'}.csv`;
+
+        /*
+         * **Two mechanisms, because a model-driven form is an iframe this
+         * control does not own.** Whether a browser download works is a
+         * property of the host's sandbox and Permissions-Policy rather than of
+         * this code — the same reasoning `pcf-copy-field` carries for the
+         * clipboard.
+         *
+         * `navigation.openFile` first, where it exists. It needs no
+         * `<feature-usage>`: it is a method on `context.navigation`, which is
+         * not gated — so this control still declares no features and still
+         * installs without a permission prompt.
+         *
+         * Feature-detect the *method*, not the bag: `context.navigation` is
+         * present on every host, and `openFile` is documented model-driven
+         * only. Checking the bag would pass on canvas and throw.
+         */
+        if (typeof context.navigation?.openFile === 'function') {
+            context.navigation.openFile(
+                {
+                    // Base64 with no `data:` prefix, and `unescape`/`encodeURIComponent`
+                    // rather than a bare `btoa`, which throws on any character
+                    // above U+00FF — the fixture's `école` is one.
+                    fileContent: btoa(unescape(encodeURIComponent(csv))),
+                    fileName: name,
+                    // KB, not bytes. `FileObject.fileSize` is the one field of
+                    // that interface that reads like it means something else.
+                    fileSize: Math.ceil(csv.length / 1024),
+                    mimeType: 'text/csv',
+                },
+                // 2 is Save. 1 is Open, which for a CSV means the host may hand
+                // it to a viewer — so a button saying Export would do something
+                // else. Omitting the options object entirely defaults to Open.
+                { openMode: 2 },
+            );
+
+            return;
+        }
+
+        this.downloadInBrowser(csv, name);
+    }
+
+    /** The fallback: a Blob and a synthetic link, for hosts without `openFile`. */
+    private downloadInBrowser(csv: string, name: string): void {
+        const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+        const link = document.createElement('a');
+
+        link.href = url;
+        link.download = name;
+        link.click();
+
+        // The object URL pins the blob in memory until it is revoked, and this
+        // control can be mounted for as long as the form is open.
+        URL.revokeObjectURL(url);
     }
 
     /** Adopt a page size the reader picked from the pager. */

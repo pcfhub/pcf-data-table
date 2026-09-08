@@ -242,6 +242,21 @@
              * Off by default, because a real form supplies it.
              */
             filteringAbsent: false,
+
+            /**
+             * Whether `context.navigation.openFile` exists.
+             *
+             * Separate from the bag below because it is absent for a different
+             * reason: `openFile` is documented model-driven apps only, while
+             * `context.navigation` itself is present either way. A control that
+             * checks the bag rather than the method passes on a host that
+             * cannot open a file — and then does nothing at all on the one that
+             * matters.
+             */
+            openFileAbsent: false,
+
+            /** Whether `context.navigation` exists at all. Typed non-optional. */
+            navigationAbsent: false,
         },
     };
 
@@ -279,6 +294,15 @@
             renderOwed: false,
             /** Every mutator the control called, in order, with its argument. */
             calls: [],
+            /**
+             * Every file the control handed to `navigation.openFile`, decoded.
+             *
+             * The content and not only the metadata, because for an export the
+             * bytes *are* the behaviour: a control that quotes a CSV cell
+             * wrongly, or writes the raw value where the cell showed a
+             * formatted one, logs an identical call.
+             */
+            files: [],
         };
 
         var sorting = [];
@@ -733,6 +757,50 @@
 
             return {
                 parameters: parameters,
+
+                /**
+                 * `context.navigation`, with `openFile` attached separately.
+                 *
+                 * **Presence is per method, not per bag**, which is the whole
+                 * reason `openFile` is added conditionally rather than written
+                 * into the literal. `context.navigation` is present on every
+                 * host; `openFile` is documented model-driven only. A control
+                 * that feature-detects the bag and then calls the method passes
+                 * on the host it was written on and throws on the next one.
+                 *
+                 * Nothing is performed — the call is recorded, and the file's
+                 * base64 is decoded back so an assertion can be about what the
+                 * reader would actually open.
+                 */
+                navigation: quirks.navigationAbsent
+                    ? undefined
+                    : Object.assign(
+                        { openUrl: function (url) { log('navigation.openUrl', url); } },
+                        quirks.openFileAbsent
+                            ? {}
+                            : {
+                                openFile: function (file, fileOptions) {
+                                    var f = file || {};
+
+                                    log('navigation.openFile', {
+                                        fileName: f.fileName,
+                                        fileSize: f.fileSize,
+                                        mimeType: f.mimeType,
+                                        openMode: (fileOptions || {}).openMode,
+                                    });
+
+                                    state.files.push({
+                                        fileName: f.fileName,
+                                        fileSize: f.fileSize,
+                                        mimeType: f.mimeType,
+                                        openMode: (fileOptions || {}).openMode,
+                                        content: Buffer.from(f.fileContent || '', 'base64').toString('utf8'),
+                                    });
+
+                                    return Promise.resolve();
+                                },
+                            },
+                    ),
 
                 mode: {
                     isVisible: o.visible,

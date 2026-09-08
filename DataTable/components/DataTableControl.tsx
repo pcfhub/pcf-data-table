@@ -65,6 +65,7 @@ export interface IProps {
     enableFiltering: boolean;
     lastPage: number;
     pageSizeOptions: number[];
+    enableExport: boolean;
     disabled: boolean;
     visible: boolean;
     isRTL: boolean;
@@ -75,6 +76,7 @@ export interface IProps {
     onClearFilters: () => void;
     onGoToPage: (page: number) => void;
     onPageSize: (size: number) => void;
+    onExport: () => void;
     onNextPage: () => void;
     onPreviousPage: () => void;
     onToggleRow: (id: string) => void;
@@ -498,6 +500,18 @@ export function DataTableControl(props: IProps): React.ReactElement | null {
                   `<img>` glyph that renders black on a dark form — a check
                   worth keeping meaningful rather than re-baselining.
                 */}
+                {props.enableExport && (
+                    <button
+                        type="button"
+                        className="DataTable-export"
+                        disabled={props.disabled}
+                        title={getString('DataTable_ExportHint')}
+                        onClick={props.onExport}
+                    >
+                        {getString('DataTable_Export')}
+                    </button>
+                )}
+
                 {props.lastPage > 1 && (
                     <span className="DataTable-jump">
                         <label>
