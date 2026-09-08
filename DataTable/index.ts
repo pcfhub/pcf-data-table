@@ -4,7 +4,10 @@ import { DataTableControl, IProps } from './components/DataTableControl';
 import {
     ASCENDING,
     buildFilter,
+    clampPage,
+    lastPage,
     nextDirection,
+    pageSizeChoices,
     SelectionMode,
     toggleId,
     visibleColumns,
@@ -99,6 +102,15 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
     /** The debounce timer, cleared in `destroy()`. */
     private filterTimer: number | null = null;
 
+    /**
+     * The size the *reader* picked, which outranks the maker's property.
+     *
+     * `null` until they pick one, and that is what keeps the unset-property
+     * path intact: with no property and no choice, this control still calls
+     * `setPageSize` exactly zero times and leaves the host paging as it was.
+     */
+    private chosenPageSize: number | null = null;
+
     public init(
         _context: ComponentFramework.Context<IInputs>,
         notifyOutputChanged: () => void,
@@ -133,6 +145,15 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
             page: this.page,
             pageSize: this.appliedPageSize,
             filters: this.filters,
+            lastPage: lastPage(dataset.paging.totalResultCount, this.appliedPageSize),
+            /*
+             * Empty unless the maker listed sizes, and the empty list is what
+             * hides the picker — so the unset case stays exactly as it was.
+             */
+            pageSizeOptions: pageSizeChoices(
+                context.parameters.pageSizeOptions.raw,
+                this.appliedPageSize,
+            ),
             /*
              * The row is offered only where it can work. `dataset.filtering` is
              * typed as always present and is not, and a filter box that accepts
@@ -148,6 +169,8 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
             onFilter: (columnName: string, value: string): void =>
                 this.setFilterValue(context, columnName, value),
             onClearFilters: (): void => this.clearFilters(context),
+            onGoToPage: (page: number): void => this.goToPage(dataset, page),
+            onPageSize: (size: number): void => this.choosePageSize(context, size),
             onNextPage: (): void => this.nextPage(dataset),
             onPreviousPage: (): void => this.previousPage(dataset),
             onToggleRow: (id: string): void => this.toggleRow(dataset, id, mode),
@@ -197,7 +220,9 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
      * guard this is: updateView → setPageSize → refresh → updateView → forever.
      */
     private applyPageSize(context: ComponentFramework.Context<IInputs>, dataset: DataSet): void {
-        const raw = context.parameters.pageSize.raw;
+        // The reader's choice outranks the maker's property, and the property
+        // outranks the host — but only once one of them has actually spoken.
+        const raw = this.chosenPageSize ?? context.parameters.pageSize.raw;
 
         /*
          * **The platform already has a page size, and it is usually the right
@@ -229,7 +254,27 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
 
         this.appliedPageSize = wanted;
         dataset.paging.setPageSize(wanted);
+
+        /*
+         * **Repaginating makes "page 4" mean something else**, so the reader
+         * goes back to the first page — the same move `sortBy` and
+         * `applyFilter` make, and for the same reason.
+         *
+         * This was missing while the size could only come from a property,
+         * because a property changes once at configuration time and almost
+         * always while the reader is on page 1. A picker makes it reachable in
+         * one click from page 3, where the old code asked for page 3 of a
+         * result set that had been recut underneath it.
+         */
+        this.page = 1;
+        dataset.paging.reset();
         dataset.refresh();
+    }
+
+    /** Adopt a page size the reader picked from the pager. */
+    private choosePageSize(context: ComponentFramework.Context<IInputs>, size: number): void {
+        this.chosenPageSize = size;
+        this.applyPageSize(context, context.parameters.records);
     }
 
     /**
@@ -412,14 +457,36 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
      * or not the call underneath honours the request.
      */
     private goToPage(dataset: DataSet, target: number): void {
-        const back = target < this.page;
-
-        this.page = Math.max(1, target);
+        const last = lastPage(dataset.paging.totalResultCount, this.appliedPageSize);
+        const wanted = clampPage(target, last);
+        const back = wanted < this.page;
 
         if (typeof dataset.paging.loadExactPage === 'function') {
+            this.page = wanted;
             dataset.paging.loadExactPage(this.page);
+
             return;
         }
+
+        /*
+         * **The host without `loadExactPage` can only step one page**, and
+         * that gap was unreachable while the pager moved by one: a jump from
+         * page 1 to page 7 called `loadNextPage` once, landed on page 2, and
+         * left `this.page` claiming 7 — a pager reading "page 7" over page 2's
+         * rows, which is worse than refusing.
+         *
+         * So a multi-page jump is refused here rather than half-performed.
+         * Looping the call would be the other answer and is not obviously
+         * right: each step is a round trip, `loadNextPage(true)` accumulates
+         * the whole range on the platform that ignores its argument, and
+         * nothing has watched what that does past page two on a real form.
+         * Refusing is the honest version until it has.
+         */
+        if (Math.abs(wanted - this.page) !== 1) {
+            return;
+        }
+
+        this.page = wanted;
 
         if (back) {
             dataset.paging.loadPreviousPage(true);

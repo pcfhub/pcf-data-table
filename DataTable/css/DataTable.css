@@ -130,6 +130,8 @@
 .DataTable-open:focus-visible,
 .DataTable-filter:focus-visible,
 .DataTable-clearFilters:focus-visible,
+.DataTable-jump input:focus-visible,
+.DataTable-pageSize select:focus-visible,
 .DataTable-pager button:focus-visible {
     outline: 2px solid var(--colorStrokeFocus2, #000000);
     outline-offset: 2px;
@@ -160,6 +162,40 @@
 .DataTable-filter:disabled {
     color: var(--colorNeutralForegroundDisabled, #bdbdbd);
     background: var(--colorNeutralBackgroundDisabled, #f0f0f0);
+}
+
+/*
+ * The jump box and the rows-per-page picker. Both sit in `.DataTable-pager`,
+ * whose `button` rule does not reach them — an `<input>` and a `<select>` are
+ * not buttons — so they carry their own box, matched to the filter input's.
+ */
+.DataTable-jump,
+.DataTable-pageSize {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacingHorizontalXS, 4px);
+    color: var(--colorNeutralForeground3, #616161);
+}
+
+.DataTable-jump label {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacingHorizontalXS, 4px);
+}
+
+.DataTable-jump input,
+.DataTable-pageSize select {
+    font-family: inherit;
+    font-size: var(--fontSizeBase200, 12px);
+    color: var(--colorNeutralForeground1, #242424);
+    background: var(--colorNeutralBackground1, #ffffff);
+    border: 1px solid var(--colorNeutralStroke2, #e0e0e0);
+    border-radius: var(--borderRadiusMedium, 4px);
+    padding: var(--spacingVerticalXS, 2px) var(--spacingHorizontalXS, 4px);
+}
+
+.DataTable-jump input {
+    width: 4em;
 }
 
 .DataTable-clearFilters {

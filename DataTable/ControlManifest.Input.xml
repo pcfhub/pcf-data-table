@@ -77,6 +77,19 @@
               usage="input"
               required="false" />
 
+    <!--
+      A comma-separated list, and NO `default-value` for the same reason
+      `pageSize` has none: unset must mean "no picker", so that a control the
+      maker has not configured still adopts the host's own paging and calls
+      `setPageSize` zero times. A default here would turn that off for everyone.
+    -->
+    <property name="pageSizeOptions"
+              display-name-key="PageSizeOptions_Name"
+              description-key="PageSizeOptions_Desc"
+              of-type="SingleLine.Text"
+              usage="input"
+              required="false" />
+
     <property name="selectionMode"
               display-name-key="SelectionMode_Name"
               description-key="SelectionMode_Desc"

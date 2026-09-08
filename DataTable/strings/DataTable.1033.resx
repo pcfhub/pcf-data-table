@@ -87,6 +87,13 @@
     <value>How many rows to request per page. The platform may clamp large values.</value>
   </data>
 
+  <data name="PageSizeOptions_Name" xml:space="preserve">
+    <value>Rows-per-page choices</value>
+  </data>
+  <data name="PageSizeOptions_Desc" xml:space="preserve">
+    <value>A comma-separated list of page sizes to offer the reader, such as 10,25,50,100. Leave empty for no picker.</value>
+  </data>
+
   <data name="SelectionMode_Name" xml:space="preserve">
     <value>Selection</value>
   </data>
@@ -162,6 +169,16 @@
   <data name="DataTable_RangeStatus" xml:space="preserve">
     <value>{0}–{1} of {2}</value>
   </data>
+  <data name="DataTable_RowsPerPage" xml:space="preserve">
+    <value>Rows per page</value>
+  </data>
+  <data name="DataTable_GoToPage" xml:space="preserve">
+    <value>Go to page</value>
+  </data>
+  <data name="DataTable_OfPages" xml:space="preserve">
+    <value>of {0}</value>
+  </data>
+
   <data name="DataTable_SortBy" xml:space="preserve">
     <value>Sort by {0}</value>
   </data>

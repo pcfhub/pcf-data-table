@@ -145,6 +145,13 @@ const INPUTS = {
     enableSorting: true,
     enableFiltering: true,
     openOnRowClick: true,
+    /*
+     * `null`, not absent, and not a list. The platform builds the parameter
+     * object for every declared property and reports `raw: null` for one the
+     * maker left alone — so `null` is what "no rows-per-page picker" looks like
+     * from inside the control, and it is the default worth testing against.
+     */
+    pageSizeOptions: null,
 };
 
 /**
@@ -445,6 +452,101 @@ check(
     'and declines a sort it has no way to express, rather than throwing',
     unsorted !== null && sortError === null,
     sortError || undefined,
+);
+
+/* ------------------------------------------------- jumping and page sizing */
+
+const jumped = bind({});
+
+jumped.props().onGoToPage(3);
+jumped.settle();
+
+check(
+    'jumping asks for that page by number, not one step at a time',
+    jumped.calls().some((call) => call === 'loadExactPage(3)') && jumped.props().page === 3,
+    `page ${jumped.props().page}; ${jumped.calls().join(' ')}`,
+);
+
+/*
+ * 12 records at a page size of 5 is three pages. A jump past the end used to be
+ * unreachable — the pager moved by one and `hasNextPage` stopped it — and an
+ * unclamped `goToPage` would leave the label reading "page 9" over the rows of
+ * whatever the platform returned for it, which is usually nothing.
+ */
+jumped.props().onGoToPage(9);
+jumped.settle();
+
+check(
+    'a jump past the last page lands on the last page',
+    jumped.props().page === 3,
+    `page ${jumped.props().page} of 3`,
+);
+
+/*
+ * The host without `loadExactPage` can only step one page. A multi-page jump
+ * there is refused rather than half-performed: calling `loadNextPage` once and
+ * setting `page = 7` gives a pager reading "page 7" over page 2's rows, which
+ * is worse than not moving.
+ */
+const stepwise = bind({ quirks: { hasLoadExactPage: false } });
+
+stepwise.props().onGoToPage(3);
+stepwise.settle();
+
+check(
+    'a host that can only step refuses a multi-page jump rather than lying',
+    stepwise.props().page === 1 && !stepwise.calls().some((call) => call.startsWith('loadNextPage')),
+    `page ${stepwise.props().page}; ${stepwise.calls().join(' ') || 'no paging calls'}`,
+);
+
+/*
+ * **The regression the picker exists to expose.** Repaginating makes "page 3"
+ * mean something else, and `applyPageSize` did not reset the page — harmless
+ * while the size could only come from a property, which changes once at
+ * configuration time; one click from page 3 once a reader can change it.
+ */
+const resized = bind({ inputs: { pageSizeOptions: '5,10,25' } });
+
+resized.props().onGoToPage(2);
+resized.settle();
+resized.props().onPageSize(10);
+const afterResize = resized.settle();
+
+check(
+    'changing the page size sends the reader back to page one',
+    resized.props().page === 1 && resized.props().pageSize === 10,
+    `page ${resized.props().page} at size ${resized.props().pageSize}`,
+);
+
+check(
+    'and asks the platform once rather than looping',
+    resized.calls().filter((call) => call === 'setPageSize(10)').length === 1 && !afterResize.looping,
+    `${resized.calls().filter((call) => call === 'setPageSize(10)').length} calls, ${afterResize.passes} passes`,
+);
+
+/*
+ * The picker is opt-in through a property with no `default-value`, and the
+ * adopt-the-host path has to survive it: a maker who configured neither still
+ * gets a control that never calls `setPageSize`. That is asserted for the
+ * property in "an unset page size overrides nothing"; this is the other half.
+ */
+check(
+    'no rows-per-page list means no picker, and no page size asked for',
+    view.props().pageSizeOptions.length === 0 &&
+        !view.calls().some((call) => call.startsWith('setPageSize')),
+    `${view.props().pageSizeOptions.length} options; ${view.calls().join(' ') || 'no calls'}`,
+);
+
+/*
+ * The current size is always offered, however the maker wrote the list —
+ * a picker that cannot show its own state reads as broken.
+ */
+const oddList = bind({ pageSize: 7, inputs: { pageSizeOptions: '10, 25, notanumber, 9999, 25' } });
+
+check(
+    'the list is cleaned up and always contains the size in force',
+    oddList.props().pageSizeOptions.join(',') === '7,10,25',
+    oddList.props().pageSizeOptions.join(','),
 );
 
 /* --------------------------------------------------------------- filtering */

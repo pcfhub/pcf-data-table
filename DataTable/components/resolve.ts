@@ -285,6 +285,55 @@ export function headerCheckState(
  * common on large views. Printing "of -1" is the tell that nobody checked, so
  * fall back to naming the page instead of the range.
  */
+/**
+ * The last page there is, or `0` when that cannot be known.
+ *
+ * Two inputs and both have a live "no answer" value, which is why this is a
+ * function rather than a division at the call site: `totalResultCount` is `-1`
+ * on a view the platform did not count — common on large ones — and `pageSize`
+ * is `0` when the host never reported one. Either way there is no last page to
+ * clamp to, and `0` says so. Dividing by an unchecked `0` yields `Infinity`,
+ * which then clamps every jump to it.
+ */
+export function lastPage(totalResultCount: number, pageSize: number): number {
+    if (totalResultCount < 0 || pageSize <= 0) {
+        return 0;
+    }
+
+    return Math.max(1, Math.ceil(totalResultCount / pageSize));
+}
+
+/** A requested page, held between 1 and the last — where the last is known. */
+export function clampPage(target: number, last: number): number {
+    const wanted = Math.max(1, Math.trunc(target) || 1);
+
+    return last > 0 ? Math.min(wanted, last) : wanted;
+}
+
+/**
+ * The sizes to offer in the rows-per-page picker.
+ *
+ * The current size is always included, however the maker wrote the list: it is
+ * what the control is doing, and a picker that cannot show its own state reads
+ * as broken. Sorted, de-duplicated, and anything outside 1..250 dropped —
+ * `MAX_PAGE_SIZE` is the platform's ceiling, so an option above it would be a
+ * choice that silently does something else.
+ */
+export function pageSizeChoices(raw: string | null, current: number): number[] {
+    const parsed = (raw ?? '')
+        .split(',')
+        .map((part) => Math.trunc(Number(part.trim())))
+        .filter((size) => Number.isFinite(size) && size >= 1 && size <= 250);
+
+    if (parsed.length === 0) {
+        return [];
+    }
+
+    const withCurrent = current > 0 ? parsed.concat(current) : parsed;
+
+    return [...new Set(withCurrent)].sort((a, b) => a - b);
+}
+
 export function pagerLabel(
     page: number,
     pageSize: number,

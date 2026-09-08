@@ -63,6 +63,8 @@ export interface IProps {
     pageSize: number;
     filters: Record<string, string>;
     enableFiltering: boolean;
+    lastPage: number;
+    pageSizeOptions: number[];
     disabled: boolean;
     visible: boolean;
     isRTL: boolean;
@@ -71,6 +73,8 @@ export interface IProps {
     onSort: (columnName: string) => void;
     onFilter: (columnName: string, value: string) => void;
     onClearFilters: () => void;
+    onGoToPage: (page: number) => void;
+    onPageSize: (size: number) => void;
     onNextPage: () => void;
     onPreviousPage: () => void;
     onToggleRow: (id: string) => void;
@@ -485,6 +489,55 @@ export function DataTableControl(props: IProps): React.ReactElement | null {
                     <Chevron d={CHEVRON_PREVIOUS} />
                     {getString('DataTable_Previous')}
                 </button>
+
+                {/*
+                  A number input rather than first/last chevron buttons. Two
+                  reasons and both are real: the reader who wants page 7 of 40
+                  wants 7, not thirty-eight clicks; and the pager's chevron
+                  count is asserted in `dev/smoke.js`, guarding against an
+                  `<img>` glyph that renders black on a dark form — a check
+                  worth keeping meaningful rather than re-baselining.
+                */}
+                {props.lastPage > 1 && (
+                    <span className="DataTable-jump">
+                        <label>
+                            {getString('DataTable_GoToPage')}
+                            <input
+                                type="number"
+                                min={1}
+                                max={props.lastPage}
+                                value={props.page}
+                                disabled={props.disabled}
+                                onChange={(event): void => {
+                                    const wanted = Number(event.target.value);
+
+                                    // A cleared box is mid-edit, not page zero.
+                                    if (Number.isFinite(wanted) && event.target.value !== '') {
+                                        props.onGoToPage(wanted);
+                                    }
+                                }}
+                            />
+                        </label>
+                        <span>{getString('DataTable_OfPages').replace('{0}', String(props.lastPage))}</span>
+                    </span>
+                )}
+
+                {props.pageSizeOptions.length > 0 && (
+                    <label className="DataTable-pageSize">
+                        {getString('DataTable_RowsPerPage')}
+                        <select
+                            value={props.pageSize}
+                            disabled={props.disabled}
+                            onChange={(event): void => props.onPageSize(Number(event.target.value))}
+                        >
+                            {props.pageSizeOptions.map((size) => (
+                                <option key={size} value={size}>
+                                    {size}
+                                </option>
+                            ))}
+                        </select>
+                    </label>
+                )}
 
                 <span className="DataTable-pagerStatus" aria-live="polite">
                     {pagerLabel(
