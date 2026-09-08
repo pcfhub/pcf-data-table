@@ -300,7 +300,15 @@
 .DataTable-pagerTools {
     display: inline-flex;
     align-items: center;
-    gap: var(--spacingHorizontalM, 12px);
+    flex-wrap: wrap;
+    gap: var(--spacingVerticalXS, 4px) var(--spacingHorizontalM, 12px);
+    /*
+     * `auto` pushes the tools to the far end while they share a line with the
+     * pager, and does nothing once they wrap onto their own — which is the
+     * behaviour wanted at both ends without a media query. A code component has
+     * no reliable viewport to write one against anyway: it is sized by the host,
+     * so the width that matters is the box it was handed, not the screen.
+     */
     margin-inline-start: auto;
 }
 
@@ -371,7 +379,18 @@
 .DataTable-pager {
     display: flex;
     align-items: center;
-    gap: var(--spacingHorizontalM, 12px);
+    /*
+     * **Wrapping, because the alternative is unreachable controls.** The pager
+     * needs about 520px to lay out in one line, and a phone subgrid is 320. With
+     * `nowrap` the tools group — the jump box, the page size, Export — was
+     * pushed past the right edge and clipped: not scrolled to, not shrunk,
+     * simply gone, with no scrollbar because the row does not scroll.
+     *
+     * The paging half stays on the first line, which is the half a reader on a
+     * phone needs most.
+     */
+    flex-wrap: wrap;
+    gap: var(--spacingVerticalXS, 4px) var(--spacingHorizontalM, 12px);
     padding: var(--spacingVerticalXS, 4px);
 }
 

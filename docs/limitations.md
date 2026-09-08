@@ -59,6 +59,21 @@ order: 7
   set it reports `-1`, and the pager reads "Page 3" instead of "51–75 of 240".
   That is the platform declining to count, not the control failing to.
 
+## On a narrow host
+
+- **The table scrolls sideways rather than squeezing the columns.** Below about
+  100 pixels a column it stops dividing the space and starts overflowing, and
+  the scrollbar sits inside the control — the form itself does not widen. A
+  phone subgrid at 320px shows two or three columns and scrolls to the rest.
+- **The proportions are still the view's.** The widths divide whatever the table
+  ends up being, so a column the view designer made narrow stays proportionally
+  narrow when scrolling starts; the minimum buys the total width, not a floor
+  under each column.
+- **The pager wraps.** It needs roughly 520 pixels to sit on one line, so under
+  that the paging buttons keep the first line and the page box, rows-per-page
+  and export move below them. Every control stays reachable — nothing is cut
+  off the end.
+
 ## Canvas apps
 
 - Opening a record does nothing — there is no form to open. Use the

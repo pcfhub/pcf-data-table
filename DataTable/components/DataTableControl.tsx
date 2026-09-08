@@ -8,6 +8,7 @@ import {
     pagerLabel,
     primaryColumn,
     SelectionMode,
+    tableMinWidth,
 } from './resolve';
 
 /** The pager chevrons, on a 20×20 grid. Two strokes each. */
@@ -316,7 +317,16 @@ export function DataTableControl(props: IProps): React.ReactElement | null {
     return frame(
         <>
             <div className={dataset.loading ? 'DataTable-scroll is-loading' : 'DataTable-scroll'}>
-                <table className="DataTable-table">
+                {/*
+                  The minimum is what makes the wrapper's `overflow-x: auto` do
+                  anything at all — see `tableMinWidth`. Inline rather than in
+                  the stylesheet because it depends on how many columns the view
+                  has, which CSS cannot count.
+                */}
+                <table
+                    className="DataTable-table"
+                    style={{ minWidth: `${tableMinWidth(columns.length, selectable)}px` }}
+                >
                     <caption className="DataTable-caption">{dataset.getTitle()}</caption>
 
                     {widths && (

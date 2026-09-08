@@ -286,6 +286,40 @@ export function headerCheckState(
  * fall back to naming the page instead of the range.
  */
 /**
+ * The width budgeted per data column before the table starts scrolling.
+ *
+ * **A budget, not a floor.** The `<colgroup>` percentages divide whatever width
+ * the table ends up with, so a column whose `visualSizeFactor` is small still
+ * lands below this — with the view fixture, 69px against a budget of 100. What
+ * the budget buys is the *total*: enough width that no column collapses to an
+ * ellipsis and the reader can scroll to the rest.
+ *
+ * 40px is the select column, which holds a fixed-size checkbox and does not
+ * take part in the proportions.
+ */
+const MIN_COLUMN_WIDTH = 100;
+const SELECT_COLUMN_WIDTH = 40;
+
+/**
+ * The width below which the table should scroll rather than squeeze.
+ *
+ * **`.DataTable-scroll` has `overflow-x: auto` and it is inert without this.**
+ * `table-layout: fixed` with `width: 100%` makes the table exactly as wide as
+ * its container, so there is never anything to scroll — the columns absorb the
+ * shortfall instead. On a 320px phone subgrid that is a seven-column view drawn
+ * at 28 to 63 pixels a column: every cell an ellipsis, and a horizontal scrollbar
+ * that never appears because, as far as the browser is concerned, everything
+ * fits.
+ *
+ * A minimum width is what turns the overflow back on. The `<colgroup>`
+ * percentages still divide whatever width wins, so the view designer's
+ * proportions survive; they simply divide the minimum instead of the container.
+ */
+export function tableMinWidth(columnCount: number, selectable: boolean): number {
+    return columnCount * MIN_COLUMN_WIDTH + (selectable ? SELECT_COLUMN_WIDTH : 0);
+}
+
+/**
  * The last page there is, or `0` when that cannot be known.
  *
  * Two inputs and both have a live "no answer" value, which is why this is a

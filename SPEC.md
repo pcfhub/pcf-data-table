@@ -280,6 +280,39 @@ has been corrected.
   `text-align` had worked there all along only because that rule does not set
   them.
 
+- **`overflow-x: auto` on the scroll wrapper was inert from the first release,
+  and measuring at 320px is what showed it.** `table-layout: fixed` with
+  `width: 100%` makes the table exactly as wide as its container, so it can
+  never overflow and the wrapper never scrolls; the columns absorb the shortfall
+  instead. In a 320px box the seven-column fixture drew columns of 40, 63, 38,
+  47, 28, 35 and 35 — most of them an ellipsis and nothing else — with no
+  scrollbar, because as far as the browser was concerned everything fitted.
+
+  This is the same finding `pcf-row-commands` brought back from a real phone
+  subgrid ("the command column and slivers of everything else"), reached from
+  the other direction. Every dataset control in the catalogue carries the same
+  pair of rules and is worth checking.
+
+  A `min-width` is what turns the overflow back on. It is inline on the table
+  rather than in the stylesheet because it depends on the column count, which
+  CSS cannot read: `columns.length × 100 + 40` for the select column. The
+  `<colgroup>` percentages then divide the minimum instead of the container, so
+  the view designer's proportions survive — which also means the budget is not a
+  per-column floor. The narrowest column went from 28px to 69px, not to 100.
+
+- **The pager needs about 520px and was being clipped, not scrolled.** With
+  `flex-wrap: nowrap` the tools group — jump box, page size, export — was pushed
+  past the right edge of a 320px box and simply gone: no scrollbar, because the
+  row does not scroll, and no shrink, because the controls have intrinsic
+  widths. `flex-wrap: wrap` puts them on their own line and leaves the paging
+  buttons on the first, which is the half a reader on a phone needs most. Four
+  lines at 320px, two at 768, one at 1180.
+
+  **No media query, and a code component should not reach for one.** It is sized
+  by its host, so the width that matters is the box it was handed rather than
+  the screen — a form can put this control in a 300px column on a 27-inch
+  monitor. `flex-wrap` and an `auto` margin respond to the box for free.
+
 - **The rendered-preview rig is worth keeping in mind, and is not in the repo.**
   It is ~90 lines: install `dev/dom.js`, evaluate the built bundle with the
   platform globals read out of it by word-boundary regex, render with

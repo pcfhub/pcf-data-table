@@ -690,6 +690,46 @@ check(
     oddList.props().pageSizeOptions.join(','),
 );
 
+/* ----------------------------------------------------------- narrow hosts */
+
+/*
+ * **A phone subgrid is 320px and the table has to scroll, not squeeze.**
+ *
+ * `.DataTable-scroll` has carried `overflow-x: auto` since the first release and
+ * it was inert: `table-layout: fixed` with `width: 100%` makes the table exactly
+ * as wide as its container, so there is never anything to overflow. Measured in
+ * a 320px box, a seven-column view drew columns of 28 to 63 pixels — every cell
+ * an ellipsis, and no scrollbar, because as far as the browser was concerned it
+ * all fitted.
+ *
+ * The minimum width is what turns the overflow back on, and it is inline on the
+ * table because it depends on the column count, which CSS cannot read. Asserted
+ * on the markup for that reason — this is one of the few style decisions the
+ * control makes rather than the stylesheet.
+ */
+const narrowMarkup = renderDeep(view.driven.element);
+const minWidth = (narrowMarkup.match(/min-width:\s*(\d+)px/) || [])[1];
+
+check(
+    'the table carries a minimum width, so a narrow host scrolls rather than squeezing',
+    // Six visible columns at 100 plus the 40px select column.
+    minWidth === '640',
+    `min-width: ${minWidth || 'absent'}px`,
+);
+
+/*
+ * And it has to scale with the view. A fixed number in the stylesheet would be
+ * too wide for a two-column subgrid and far too narrow for a twelve-column one.
+ */
+const narrowNoSelect = bind({ inputs: { selectionMode: 'none' } });
+const noSelectMin = (renderDeep(narrowNoSelect.driven.element).match(/min-width:\s*(\d+)px/) || [])[1];
+
+check(
+    'and drops the select column from that width when there is no select column',
+    noSelectMin === '600',
+    `min-width: ${noSelectMin || 'absent'}px without checkboxes`,
+);
+
 /* --------------------------------------------------------------- filtering */
 
 /**
