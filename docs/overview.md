@@ -42,4 +42,7 @@ message; and opening a record does nothing, because there is no form to open —
 use the `openedRecordId` output instead. See [Canvas apps](canvas.md).
 :::
 
-Filtering is not in this release. See [Limitations](limitations.md).
+Filtering is applied by the server across the whole result set, not to the rows
+on screen — so it narrows a 4,000-row view rather than the twenty-five rows in
+front of you. Text and numeric columns get a box; dates, choices and lookups do
+not, and [Limitations](limitations.md) says why.

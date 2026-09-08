@@ -19,8 +19,14 @@ order: 3
 
 The control asks for all three through `cds-data-set-options`, but that is a
 model-driven-only attribute — a canvas app has no subgrid chrome to show and
-ignores it. Sorting and paging still come from the control itself; filtering and
-searching are yours to build with `Filter()` and `Search()` on `Items`.
+ignores it. Sorting, paging and filtering all come from the control itself.
+
+Whether the filter row does anything here depends on your data source. The
+control filters through `dataset.filtering`, which a Dataverse connector
+supports and a static collection does not; where it is absent the row is not
+rendered at all rather than accepting keystrokes that change nothing. A
+`Filter()` or `Search()` on `Items` remains the alternative, and is the only
+option for the column types the row does not cover.
 
 ## Columns come from the Fields flyout
 

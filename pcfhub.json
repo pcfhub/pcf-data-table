@@ -43,20 +43,37 @@
             "Paging is inert. The demo harness puts every fixture row on a single page and reports hasNextPage and hasPreviousPage as false, so Next and Previous render disabled and loadNextPage() only re-renders the same rows. The page size property does nothing either, because the harness’s setPageSize() is an empty function.",
             "Sorting a column moves the sort arrow but does not reorder the rows. The control writes into dataset.sorting and calls refresh(), which is what a real view needs because sorting is applied server-side across every page — but the harness rebuilds the dataset with an empty sorting array on each render and discards the request.",
             "Clicking a row calls dataset.openDatasetItem(), which the harness logs as a mock call: there is no Dataverse behind this origin and no form to open. The openedRecordId output still updates, so the value a form would react to is visible.",
-            "Rows tick and untick, but dataset.setSelectedRecordIds() does not survive a re-render for the same reason sorting does not. What you see is the control’s own copy of the selection. On a model-driven form that same call is what tells the command bar which records the ribbon acts on."
+            "Rows tick and untick, but dataset.setSelectedRecordIds() does not survive a re-render for the same reason sorting does not. What you see is the control’s own copy of the selection. On a model-driven form that same call is what tells the command bar which records the ribbon acts on.",
+            "Typing in a filter box narrows nothing here, and that is structural rather than a gap in effort. Filtering is applied by the server across every page — the control calls dataset.filtering.setFilter() and then refresh() — and there is no server behind this origin. What the demo does show is the half worth seeing: the filter row renders per column type, so you can watch which columns get a box and which deliberately do not. The call log records the expression that a real view would have been filtered by.",
+            "Export CSV is on in the second preset and does produce a real file, because building it needs nothing but the records already on the page. It is the one new feature here that is not a mock. What it cannot show is the limitation that matters on a real view: it exports the rows the control has loaded, and this fixture is a single page, so here that happens to be all of them."
         ],
         "presets": [
             {
                 "slug": "default",
                 "name": "Default",
-                "description": "A 24-row view with sortable columns and multi-row selection.",
+                "description": "A 24-row view with sortable columns, a per-column filter row and multi-row selection.",
                 "props": {
                     "pageSize": 25,
                     "selectionMode": "multiple",
                     "enableSorting": true,
+                    "enableFiltering": true,
                     "openOnRowClick": true
                 },
                 "isDefault": true
+            },
+            {
+                "slug": "filter-and-export",
+                "name": "Filtering and export",
+                "description": "The filter row with a rows-per-page picker and CSV export, showing which column types get a box and which do not.",
+                "props": {
+                    "pageSize": 25,
+                    "pageSizeOptions": "10,25,50",
+                    "selectionMode": "none",
+                    "enableSorting": true,
+                    "enableFiltering": true,
+                    "enableExport": true,
+                    "openOnRowClick": true
+                }
             }
         ]
     }

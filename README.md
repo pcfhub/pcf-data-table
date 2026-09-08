@@ -1,6 +1,7 @@
 # Data Table
 
-A sortable, pageable table over any Dataverse view, with row selection.
+A sortable, filterable, pageable table over any Dataverse view, with row
+selection and CSV export.
 
 [![Build](https://github.com/pcfhub/pcf-data-table/actions/workflows/build.yml/badge.svg)](https://github.com/pcfhub/pcf-data-table/actions/workflows/build.yml)
 [![Release](https://github.com/pcfhub/pcf-data-table/actions/workflows/release.yml/badge.svg)](https://github.com/pcfhub/pcf-data-table/actions/workflows/release.yml)
@@ -49,7 +50,10 @@ utils or device — so installing the control raises no permission prompt.
 | --- | --- | --- | --- | --- |
 | `records` | DataSet | dataset | — | The view or collection to render. No property-set roles: the columns are the view's |
 | ↳ `cds-data-set-options` | manifest attribute | — | all three on | Keeps the model-driven subgrid's command bar, view selector and quick find. Design-time only; not a maker-facing property |
-| `pageSize` | Whole.None | input | `25` | Rows requested per page, clamped to 1–250 |
+| `pageSize` | Whole.None | input | *(unset)* | Rows requested per page, clamped to 1–250. Unset adopts the host's own page size and never calls `setPageSize` |
+| `pageSizeOptions` | SingleLine.Text | input | *(unset)* | A comma-separated list, e.g. `10,25,50`, offered as a rows-per-page picker. Unset means no picker |
+| `enableFiltering` | TwoOptions | input | `true` | A filter box under each text and numeric column heading, applied server-side |
+| `enableExport` | TwoOptions | input | `false` | An **Export CSV** button covering the rows loaded so far |
 | `selectionMode` | Enum | input | `single` | `none`, `single` or `multiple` |
 | `enableSorting` | TwoOptions | input | `true` | Show sort controls on the columns the view allows sorting on |
 | `openOnRowClick` | TwoOptions | input | `true` | Open the record on row click, as well as from the primary column |

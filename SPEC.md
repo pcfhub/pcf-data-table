@@ -262,13 +262,115 @@ has been corrected.
   Fields flyout, that widths are absent, and that `openDatasetItem` is a no-op.
   All three are reasoned rather than observed. `addColumn` is typed as optional
   (`addColumn?:`), which is why nothing calls it.
-- **`media/logo.png` is still the template placeholder**, and there is no
-  screenshot. `docs/overview.md` had its `::image` directive removed rather than
-  left pointing at a file that does not exist — `npm run check` validates the
-  media paths in `pcfhub.json` but not images referenced from the docs, so a
-  broken one there ships silently.
 - **English only.** One `.resx` (1033); the other four locales the sibling
   controls carry are a follow-up.
-- **No filtering, no jump-to-page, no multi-column sort.** `loadExactPage` is
-  guarded with `typeof … === 'function'` and unused; the pager is Next/Previous
-  only.
+- **No multi-column sort.** Sorting replaces the order rather than appending,
+  which is what `dataset.sorting` holds as the view's `ORDER BY`.
+- **Nothing in 0.2.0 has been seen on a real form.** Filtering, the jump box and
+  the page-size picker all land on the paging path above, which is the one thing
+  here that measurement has already corrected three times. Until that happens,
+  every claim about them rests on `dev/host.js`.
+
+## 0.2.0
+
+Three features, and the arguments that shaped them.
+
+**Filtering ANDs across columns, and `pcf-view-filter` ORs.** Not a preference:
+that control takes one term and asks for it in *any* of several columns, which
+is an `Or`; this one gives every column its own box, so two filled boxes have to
+mean "both". With `Or` a second filter returns more rows than the first, which
+reads as the control ignoring what was typed. The skill's Filtering section
+teaches the `Or` shape and says multi-column search is "always `Or`" — true of
+the shape it describes and wrong for this one, so the section has been extended
+rather than corrected.
+
+**Only text and numeric columns get a box, and the two exclusions are not the
+same strength of argument.** Dates are deferred: `On`, `OnOrAfter` and
+`OnOrBefore` are not documented as supported on both hosts, and nothing here has
+watched a server accept them. Choices, two-options and lookups are refused: they
+filter on an integer or a GUID, and `Column` carries neither — the whole
+interface is `name`, `displayName`, `dataType`, `alias`, `order`,
+`visualSizeFactor`, `isHidden`, `isPrimary`, `disableSorting`, confirmed by
+reading `componentframework.d.ts:2625-2669`.
+
+**Considered and declined: harvesting choice options from the loaded rows.**
+`getValue()` on an OptionSet returns the integer and `getFormattedValue()` the
+label, so a dropdown could be built from the page in hand with no metadata call.
+It is rejected because it would list only the options present in the rows
+already loaded — two of seven statuses on page one, fewer once a filter is on —
+and a reader has no way to tell a short list from a complete one. That is the
+failure this repo already refuses for client-side sorting. The honest version
+needs `utils.getEntityMetadata()`, which is model-driven only and would add a
+`<uses-feature>` entry, i.e. an install-time prompt on every environment.
+
+**`applyPageSize` never reset the page, and `sortBy` always did.** A real bug
+rather than a missing feature, and unreachable until now: the size could only
+come from a property, which changes once at configuration time and almost always
+while the reader is on page 1. A picker makes it one click from page 3, against
+a result set that has been recut underneath. The same gap is in `_template`'s
+two dataset variants and is fixed there.
+
+**A multi-page jump is refused on a host without `loadExactPage`.** Stepping
+once and setting `page = 7` gives a pager reading "page 7" over page 2's rows,
+which is worse than not moving. Looping the calls is the other answer and is not
+obviously right — each step is a round trip, and `loadNextPage(true)` accumulates
+the whole range on the platform that ignores its argument, which nothing has
+watched past page two on a real form.
+
+**The export covers loaded rows, and the button says so.** Paging the whole
+result set means raising the page size, looping `loadExactPage` and
+reassembling, on a lifecycle that re-enters `updateView` on every fetch. Worth
+doing; not worth doing quietly. Declined alongside it: an `exportedCsv` output
+on the `downloadedRecordId` precedent in `pcf-attachment-list` — a whole CSV
+through a `Multiple` output is the wrong shape for the value.
+
+**The empty-state early return now carries `&& !filtered`.** The filter boxes
+live in `<thead>`, so returning a bare message when nothing matched deleted the
+only UI that could clear it: one character too many and the control was a dead
+end. This is general to any dataset control with UI in its header, and has been
+promoted to the skill.
+
+### What the rig now proves, and what it did not
+
+`dev/host.js` had a `filtering` stub that logged the call and discarded the
+expression, so an assertion against it could only prove a call happened — the
+class of test that passes a control which never calls `refresh()`. It now
+evaluates filters for real, ported from the template: `LIKE` to RegExp including
+the `[c]` bracket escape, `passes()` recursing over child `filters` with the
+`And` default, and the `requestedFilter`/`filter` split that keeps `setFilter`
+from being a fetch. `totalResultCount` and `hasNextPage` follow the filter,
+because on the server they count the result set rather than the table.
+
+The three load-bearing assertions were mutation-tested rather than trusted, and
+one of them was wrong. **The And/Or check was written against `statecode` and
+passed while proving nothing** — an OptionSet contributes no condition, so only
+one filter ever existed and flipping the constant to `Or` still passed. It now
+uses two filterable columns and fails under `Or`. The refresh guards fail under
+a removed signature check; the filter row fails under the old early return.
+
+`dev/host.js` also gains `context.navigation` with `openFile`, and quirks
+removing the method and the bag independently, because that is how they are
+absent in the world. It records the *decoded* file content rather than only the
+metadata: for an export the bytes are the behaviour, and a control that quotes a
+cell wrongly logs an identical call.
+
+Operators `GreaterEqual` (4) and `LessEqual` (5) were added to the rig's map.
+They are in the skill's both-host list and were missing from the six the
+template models, so a `>=` filter would have passed by the "unhonoured operators
+pass rather than fail" rule — looking filtered while filtering nothing.
+
+### Not verified in 0.2.0
+
+- **No filter has been applied on a real form.** Everything above rests on
+  `dev/host.js`, which is a model of the platform written from its
+  documentation and from what sibling controls observed — not from this feature.
+- **Whether the server accepts `GreaterEqual` and `LessEqual` on a Currency
+  column** on both hosts. They are in the skill's table; nothing here has seen
+  one answered.
+- **Whether `navigation.openFile` saves a CSV without a viewer prompt** on a
+  model-driven form, and whether the Blob fallback survives the canvas iframe's
+  sandbox at all. Both paths compile and are exercised in the rig; neither has
+  produced a file on a real host.
+- **Whether Excel opens the export correctly.** The BOM and CRLF are what RFC
+  4180 and Excel's UTF-8 handling call for, and no one has double-clicked the
+  file.

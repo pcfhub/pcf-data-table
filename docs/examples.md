@@ -55,3 +55,33 @@ LookUp(Accounts, account = GUID(DataTable1.openedRecordId))
 
 `openedRecordId` updates before the (no-op) navigation, so this works in canvas
 even though nothing opens.
+
+## A long view people search and export
+
+The case the filter row and the export were built for: a few thousand records
+that readers narrow themselves and occasionally take away.
+
+| Property | Value |
+| --- | --- |
+| `pageSize` | *(leave empty)* |
+| `pageSizeOptions` | `25,50,100,250` |
+| `selectionMode` | `none` |
+| `enableSorting` | `true` |
+| `enableFiltering` | `true` |
+| `enableExport` | `true` |
+
+`pageSize` is deliberately empty so the control adopts whatever the host is
+already paging at, and the picker lets a reader raise it. That pairing matters
+for the export, which covers the rows loaded so far: a reader who wants the
+whole view chooses 250 first, then exports.
+
+Filters combine with `And`, so typing `contoso` under **Account name** and
+`>50000` under **Annual revenue** asks the server for records matching both. The
+work happens server-side across every page, so the count in the pager is the
+count of the whole filtered result, not of what is on screen.
+
+:::callout{type=warning}
+A filter that matches nothing leaves the table standing with its filter row
+intact and a **Clear filters** button in the body. That is on purpose — an empty
+table with no way back to your own data is a dead end.
+:::
