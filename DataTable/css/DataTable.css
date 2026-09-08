@@ -160,6 +160,7 @@
 .DataTable-sort:focus-visible,
 .DataTable-open:focus-visible,
 .DataTable-filter:focus-visible,
+.DataTable-filterClear:focus-visible,
 .DataTable-clearFilters:focus-visible,
 .DataTable-jump input:focus-visible,
 .DataTable-pageSize select:focus-visible,
@@ -186,10 +187,29 @@
     border-bottom: 1px solid var(--colorNeutralStroke1, #d1d1d1);
 }
 
+/*
+ * The box the input and its clear button share.
+ *
+ * `display: block` rather than the span's default inline, so it fills the cell
+ * the way the bare input used to and the absolutely positioned cross has a
+ * box to be positioned against.
+ */
+.DataTable-filterBox {
+    display: block;
+    position: relative;
+}
+
 .DataTable-filter {
     width: 100%;
     box-sizing: border-box;
-    padding: 3px var(--spacingHorizontalS, 8px);
+    /*
+     * Room at the *inline end* for the clear button, which overlaps the input's
+     * box. Logical rather than `padding-right`: the cross sits at the inline end
+     * in both directions, so a physical value puts the gap on the wrong side of
+     * a right-to-left form and the text runs under the button.
+     */
+    padding-block: 3px;
+    padding-inline: var(--spacingHorizontalS, 8px) 24px;
     font-family: inherit;
     font-size: var(--fontSizeBase200, 12px);
     line-height: 1.4;
@@ -219,6 +239,43 @@
 .DataTable-filter:disabled {
     color: var(--colorNeutralForegroundDisabled, #bdbdbd);
     background: var(--colorNeutralBackgroundDisabled, #f0f0f0);
+}
+
+/*
+ * The clear button, inside the input's box at the inline end.
+ *
+ * A real `<button>` rather than `input[type=search]`'s native cross: that one
+ * cannot be styled, is absent in Firefox, and fires no event this control can
+ * route through its debounce. This one is in the tab order, has a name, and
+ * clears through the same path as everything else.
+ */
+.DataTable-filterClear {
+    position: absolute;
+    inset-inline-end: 3px;
+    top: 50%;
+    transform: translateY(-50%);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    color: var(--colorNeutralForeground3, #616161);
+    background: none;
+    border: 0;
+    border-radius: var(--borderRadiusSmall, 2px);
+    cursor: pointer;
+}
+
+.DataTable-filterClear:hover {
+    color: var(--colorNeutralForeground1, #242424);
+    background: var(--colorNeutralBackground3Hover, #ebebeb);
+}
+
+.DataTable-clearGlyph {
+    flex: 0 0 auto;
+    width: 12px;
+    height: 12px;
 }
 
 /*
@@ -297,10 +354,25 @@
     color: var(--colorNeutralForeground3, #616161);
 }
 
+/*
+ * **The padding is what keeps a focus ring from being cut in half.**
+ *
+ * The focus outline is 2px at an `outline-offset` of 2px, so it is drawn up to
+ * 4px outside the control it belongs to. The pager is the last child of the
+ * root, and its controls sit flush against the root's edges — so on a real form
+ * the ring around the jump box was clipped along the bottom by the host's own
+ * container, and the ring around Export would have gone the same way at the
+ * right edge.
+ *
+ * 4px on every side is exactly the outline's reach. It is not decoration: a
+ * focus indicator that is half drawn is a focus indicator a keyboard user
+ * cannot rely on, and nothing in the rig can see it.
+ */
 .DataTable-pager {
     display: flex;
     align-items: center;
     gap: var(--spacingHorizontalM, 12px);
+    padding: var(--spacingVerticalXS, 4px);
 }
 
 .DataTable-pager button {

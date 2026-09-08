@@ -834,6 +834,40 @@ check(
 );
 
 /*
+ * **The clear button appears only once there is something to clear**, and it
+ * does not wait for the debounce. Pressing it is a finished decision, not
+ * typing, so holding the result for 300 ms makes the button feel broken.
+ *
+ * `settle()` alone, with no `time.advance`, is what asserts that: if the clear
+ * went through the debounce this would still show the old filter.
+ */
+const clearBox = bind({ pageSize: 50 });
+
+check(
+    'no clear button until a filter has something in it',
+    !renderDeep(clearBox.driven.element).includes('DataTable-filterClear'),
+);
+
+typeFilter(clearBox, 'name', 'tra');
+
+check(
+    'and one appears in the box that has',
+    (renderDeep(clearBox.driven.element).match(/DataTable-filterClear/g) || []).length === 1 &&
+        renderDeep(clearBox.driven.element).includes('resx:DataTable_ClearFilter'),
+    `${(renderDeep(clearBox.driven.element).match(/DataTable-filterClear/g) || []).length} clear buttons`,
+);
+
+clearBox.props().onClearFilter('name');
+clearBox.settle();
+
+check(
+    'clearing one filter takes effect without waiting for the debounce',
+    clearBox.props().pageIds.length === 12 &&
+        !renderDeep(clearBox.driven.element).includes('DataTable-filterClear'),
+    `${clearBox.props().pageIds.length} rows back`,
+);
+
+/*
  * A column whose values the server cannot be asked about gets no box at all.
  * The fixture's date and lookup columns are there for this: a text input over
  * a date builds a comparison against the wrong thing, and a choice or lookup

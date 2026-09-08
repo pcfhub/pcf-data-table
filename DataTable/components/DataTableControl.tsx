@@ -17,6 +17,36 @@ const CHEVRON_NEXT = 'M7.5 5l5 5-5 5';
 /** A tray with an arrow into it, on the same 20×20 grid as the chevrons. */
 const DOWNLOAD_GLYPH = 'M10 3v8m0 0 3-3m-3 3-3-3M4 14v2h12v-2';
 
+/** The clear-filter cross, on the same grid but drawn smaller — see the CSS. */
+const CLEAR_GLYPH = 'M6 6l8 8M14 6l-8 8';
+
+/**
+ * The cross inside a filter box.
+ *
+ * Its own class rather than `DataTable-chevron`: it is drawn at 12px against
+ * the chevrons' 16, and it must not pick up their right-to-left mirror — a
+ * cross is symmetrical, so flipping it is a no-op that would still have to be
+ * read and dismissed by whoever next edits that rule.
+ */
+function ClearGlyph(): React.ReactElement {
+    return (
+        <svg
+            className="DataTable-clearGlyph"
+            viewBox="0 0 20 20"
+            aria-hidden="true"
+            focusable="false"
+        >
+            <path
+                d={CLEAR_GLYPH}
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+            />
+        </svg>
+    );
+}
+
 /**
  * The export glyph.
  *
@@ -103,6 +133,7 @@ export interface IProps {
     getString: (id: string) => string;
     onSort: (columnName: string) => void;
     onFilter: (columnName: string, value: string) => void;
+    onClearFilter: (columnName: string) => void;
     onClearFilters: () => void;
     onGoToPage: (page: number) => void;
     onPageSize: (size: number) => void;
@@ -399,6 +430,7 @@ export function DataTableControl(props: IProps): React.ReactElement | null {
 
                                     return (
                                         <th key={column.name}>
+                                            <span className="DataTable-filterBox">
                                             <input
                                                 type="text"
                                                 className="DataTable-filter"
@@ -424,6 +456,35 @@ export function DataTableControl(props: IProps): React.ReactElement | null {
                                                     props.onFilter(column.name, event.target.value);
                                                 }}
                                             />
+
+                                            {/*
+                                              Only once there is something to
+                                              clear. A cross sitting in an empty
+                                              box is a control that does nothing,
+                                              and it would compete with the
+                                              placeholder for the same few
+                                              pixels.
+                                            */}
+                                            {(filters[column.name] ?? '') !== '' && !props.disabled && (
+                                                <button
+                                                    type="button"
+                                                    className="DataTable-filterClear"
+                                                    aria-label={getString(
+                                                        'DataTable_ClearFilter',
+                                                    ).replace('{0}', column.displayName)}
+                                                    title={getString('DataTable_ClearFilter').replace(
+                                                        '{0}',
+                                                        column.displayName,
+                                                    )}
+                                                    onClick={(): void => {
+                                                        setFilter(column.name, '');
+                                                        props.onClearFilter(column.name);
+                                                    }}
+                                                >
+                                                    <ClearGlyph />
+                                                </button>
+                                            )}
+                                            </span>
                                         </th>
                                     );
                                 })}

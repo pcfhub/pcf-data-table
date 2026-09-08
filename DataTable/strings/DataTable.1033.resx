@@ -212,6 +212,9 @@
     <value>{0} cannot be filtered here. Dates, choices and lookups are filtered by the view.</value>
   </data>
 
+  <data name="DataTable_ClearFilter" xml:space="preserve">
+    <value>Clear the filter on {0}</value>
+  </data>
   <data name="DataTable_ClearFilters" xml:space="preserve">
     <value>Clear filters</value>
   </data>

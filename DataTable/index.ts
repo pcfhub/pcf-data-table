@@ -170,6 +170,7 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
             onSort: (columnName: string): void => this.sortBy(dataset, columnName),
             onFilter: (columnName: string, value: string): void =>
                 this.setFilterValue(context, columnName, value),
+            onClearFilter: (columnName: string): void => this.clearFilterValue(context, columnName),
             onClearFilters: (): void => this.clearFilters(context),
             onGoToPage: (page: number): void => this.goToPage(dataset, page),
             onPageSize: (size: number): void => this.choosePageSize(context, size),
@@ -467,6 +468,27 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
             this.filterTimer = null;
             this.applyFilter(context);
         }, FILTER_DEBOUNCE_MS);
+    }
+
+    /**
+     * Empty one filter box and ask for the result straight away.
+     *
+     * Separate from `setFilterValue` because it is not typing: pressing a clear
+     * button is a finished decision, and holding it for the debounce makes the
+     * button feel broken for a third of a second. `pcf-view-filter` treats its
+     * own Clear the same way.
+     */
+    private clearFilterValue(
+        context: ComponentFramework.Context<IInputs>,
+        columnName: string,
+    ): void {
+        if (this.filterTimer !== null) {
+            window.clearTimeout(this.filterTimer);
+            this.filterTimer = null;
+        }
+
+        this.filters = { ...this.filters, [columnName]: '' };
+        this.applyFilter(context);
     }
 
     /** Drop every filter and ask for the unfiltered view, with no debounce. */
