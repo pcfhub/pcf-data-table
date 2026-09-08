@@ -38,6 +38,7 @@ const path = require('path');
 const root = path.join(__dirname, '..');
 const dom = require('./dom.js');
 const host = require('./host.js');
+const clock = require('./clock.js');
 const fixture = require('./fixture.js');
 
 const BUNDLE = path.join(root, 'out', 'controls', 'DataTable', 'bundle.js');
@@ -50,6 +51,17 @@ if (!fs.existsSync(BUNDLE)) {
 /* ----------------------------------------------------------- the platform */
 
 dom.install(global);
+
+/*
+ * The filter debounce is a `window.setTimeout`, and `dom.install` makes `window`
+ * the global — so replacing the timers here is what the bundle closes over.
+ *
+ * Installed rather than waited on: a real 300 ms wait would make every filter
+ * assertion asynchronous and the suite three seconds slower for nothing, and a
+ * test that waits *almost* long enough fails intermittently, which is worse
+ * than one that fails.
+ */
+const time = clock.install(Date.parse('2026-01-01T09:00:00Z'), global);
 
 const registration = host.captureRegistration(global);
 const source = fs.readFileSync(BUNDLE, 'utf8');
@@ -128,7 +140,12 @@ function check(label, ok, detail) {
 const marked = (key) => `resx:${key}`;
 
 /** The control's own input properties, at their manifest defaults. */
-const INPUTS = { selectionMode: 'multiple', enableSorting: true, openOnRowClick: true };
+const INPUTS = {
+    selectionMode: 'multiple',
+    enableSorting: true,
+    enableFiltering: true,
+    openOnRowClick: true,
+};
 
 /**
  * Bind a fresh control to a fresh view and render until it settles.
@@ -428,6 +445,189 @@ check(
     'and declines a sort it has no way to express, rather than throwing',
     unsorted !== null && sortError === null,
     sortError || undefined,
+);
+
+/* --------------------------------------------------------------- filtering */
+
+/**
+ * Type into one filter box and let the debounce expire.
+ *
+ * The 300 ms is the control's, and 500 is comfortably past it without being a
+ * guess about scheduling: `clock.advance` fires everything due in the window.
+ */
+const typeFilter = (handle, columnName, value) => {
+    handle.props().onFilter(columnName, value);
+    time.advance(500);
+
+    return handle.settle();
+};
+
+const filtered = bind({ pageSize: 50 });
+
+typeFilter(filtered, 'name', 'tra');
+
+/*
+ * The whole point of doing this server-side. A control filtering the array on
+ * screen would narrow twelve rows out of a view that may hold thousands, which
+ * is a wrong answer that looks completely right — the same argument that keeps
+ * sorting off the client here.
+ *
+ * Asserted on the ids rather than on the call, because `setFilter` without a
+ * `refresh()` logs identically and moves nothing. The rig models that split
+ * deliberately; see the note on `requestedFilter` in `dev/host.js`.
+ */
+check(
+    'filtering narrows the result set rather than the page',
+    filtered.props().pageIds.length === 1 && filtered.props().pageIds[0] === 'a03',
+    `${filtered.props().pageIds.length} rows: ${filtered.props().pageIds.join(',')}`,
+);
+
+check(
+    'a filter sends the reader back to page one',
+    filtered.calls().some((call) => call === 'paging.reset') && filtered.props().page === 1,
+    `page ${filtered.props().page}`,
+);
+
+/*
+ * **The guard that stops this being a hang.**
+ *
+ * `refresh()` fires `updateView`, so a control that re-applies the expression
+ * it is already filtering by refreshes forever. Counting refreshes is what
+ * catches it: `drive()` would otherwise report a settled render either way,
+ * because the rig's `fetched()` does not re-enter `updateView` itself.
+ */
+const beforeRepeat = filtered.handle.state.refreshes;
+
+typeFilter(filtered, 'name', 'tra');
+
+check(
+    're-applying an identical filter asks the platform for nothing',
+    filtered.handle.state.refreshes === beforeRepeat,
+    `${filtered.handle.state.refreshes - beforeRepeat} extra refreshes`,
+);
+
+/*
+ * The `'none'` initial state, and why it is not `''`. A view arrives
+ * unfiltered, so clearing a filter nobody set is already the platform's state —
+ * and starting from `''` spends a `clearFilter`, a `paging.reset()` and a round
+ * trip on the first keystroke of every session before anything can match.
+ */
+const untouched = bind({});
+const beforeClear = untouched.handle.state.refreshes;
+
+untouched.props().onClearFilters();
+untouched.settle();
+
+check(
+    'clearing a filter that was never set costs no round trip',
+    untouched.handle.state.refreshes === beforeClear,
+    `${untouched.handle.state.refreshes - beforeClear} extra refreshes`,
+);
+
+/*
+ * Two boxes have to mean "both". `pcf-view-filter` ORs, because it takes one
+ * term and looks for it in any of several columns; a filter *row* is the other
+ * shape, and with `Or` a second filter would return more rows than the first —
+ * which reads as the control ignoring what was typed.
+ */
+/*
+ * Both columns have to be filterable ones, and that is not a detail. Written
+ * first against `statecode`, this passed while proving nothing: an OptionSet
+ * contributes no condition, so there was only ever one filter and `And` versus
+ * `Or` could not show. Flipping the constant to `Or` still passed. `Or` here
+ * returns 10 rows against `And`'s 4.
+ *
+ * 10 rather than 12 on the first filter: `a09`'s account number is null and
+ * `a11`'s is ACC-0007, and neither matches `%ACC-1%`.
+ */
+const narrowed = bind({ pageSize: 50 });
+
+typeFilter(narrowed, 'accountnumber', 'ACC-1');
+const afterOne = narrowed.props().pageIds.length;
+typeFilter(narrowed, 'revenue', '>3000000');
+
+check(
+    'a second filter narrows rather than widens',
+    afterOne === 10 && narrowed.props().pageIds.length === 4,
+    `${afterOne} rows on one filter, ${narrowed.props().pageIds.length} on two`,
+);
+
+/*
+ * The numeric box takes a comparison prefix, and a half-typed one must send
+ * nothing rather than a condition comparing against NaN — which the server
+ * rejects by naming the column, in a network trace nobody is reading.
+ */
+const halfTyped = bind({ pageSize: 50 });
+
+typeFilter(halfTyped, 'revenue', '>');
+
+check(
+    'a half-typed comparison filters nothing rather than filtering wrongly',
+    halfTyped.props().pageIds.length === 12,
+    `${halfTyped.props().pageIds.length} rows`,
+);
+
+/*
+ * **The filter row has to survive matching nothing.**
+ *
+ * The boxes live in `<thead>`, and the control used to return a bare message
+ * the moment `pageIds` was empty — so one character too many would delete the
+ * only UI that can undo it, leaving the reader no route back to their own data.
+ *
+ * Asserted against rendered markup rather than props: the early return is in
+ * the component, and `updateView` only builds an element.
+ */
+const empty = bind({ pageSize: 50 });
+
+typeFilter(empty, 'name', 'zzzznothing');
+const emptyMarkup = renderDeep(empty.driven.element);
+
+check(
+    'a filter that matches nothing keeps the row that can clear it',
+    empty.props().pageIds.length === 0 &&
+        emptyMarkup.includes('DataTable-filterRow') &&
+        emptyMarkup.includes('resx:DataTable_NoMatches'),
+    `${empty.props().pageIds.length} rows; filter row ${emptyMarkup.includes('DataTable-filterRow') ? 'kept' : 'GONE'}`,
+);
+
+/*
+ * A column whose values the server cannot be asked about gets no box at all.
+ * The fixture's date and lookup columns are there for this: a text input over
+ * a date builds a comparison against the wrong thing, and a choice or lookup
+ * filters on an integer or a GUID that `Column` does not carry.
+ */
+check(
+    'only the columns that can be filtered get a box',
+    (emptyMarkup.match(/class="DataTable-filter"/g) || []).length === 4,
+    `${(emptyMarkup.match(/class="DataTable-filter"/g) || []).length} inputs across 6 visible columns`,
+);
+
+/*
+ * The host that removes `filtering` altogether. Same shape of risk as
+ * `sortingAbsent` and one step less certain — the types declare it required, so
+ * a control that calls `setFilter` through it unguarded has taken them at their
+ * word.
+ */
+let unfilterable = null;
+let filterRenderError = null;
+
+try {
+    unfilterable = bind({ quirks: { filteringAbsent: true } });
+    renderDeep(unfilterable.driven.element);
+} catch (error) {
+    filterRenderError = `${error.constructor.name}: ${error.message}`;
+}
+
+check(
+    'renders on a host that supplies no filtering at all',
+    filterRenderError === null,
+    filterRenderError || 'filtering was undefined',
+);
+
+check(
+    'and offers no filter row rather than boxes that do nothing',
+    unfilterable !== null && unfilterable.props().enableFiltering === false,
+    unfilterable === null ? 'did not render' : `enableFiltering ${unfilterable.props().enableFiltering}`,
 );
 
 /* --------------------------------------------------------------- selection */

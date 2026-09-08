@@ -8,12 +8,190 @@
 
 type Column = ComponentFramework.PropertyHelper.DataSetApi.Column;
 type SortDirection = ComponentFramework.PropertyHelper.DataSetApi.Types.SortDirection;
+type FilterExpression = ComponentFramework.PropertyHelper.DataSetApi.FilterExpression;
 
 /** `SortDirection` is a numeric union, not an enum object — there is nothing to import. */
 export const ASCENDING = 0 as SortDirection;
 export const DESCENDING = 1 as SortDirection;
 
 export type SelectionMode = 'none' | 'single' | 'multiple';
+
+/**
+ * `FilterOperator`: 0 And, 1 Or. Numeric unions again, so again no import.
+ *
+ * **This control ANDs, and `pcf-view-filter` ORs, and the difference is the
+ * whole shape of the feature rather than a preference.** That control takes one
+ * term and asks for it in *any* of several columns, which is an `Or`. This one
+ * gives every column its own box, and two filled boxes have to mean "both" —
+ * with `Or` a second filter would return *more* rows than the first, which
+ * reads as the control ignoring what was typed.
+ */
+const AND = 0;
+
+/**
+ * The `ConditionOperator` values used here, out of the ~90 the platform
+ * defines. All are supported on canvas and model-driven alike; reaching past
+ * this set is choosing a host.
+ *
+ * `Like` (6) is case-insensitive and takes SQL wildcards rather than a
+ * substring, which is why the value is wrapped in `%` below rather than passed
+ * bare.
+ */
+const EQUAL = 0;
+const GREATER_THAN = 2;
+const LESS_THAN = 3;
+const GREATER_EQUAL = 4;
+const LESS_EQUAL = 5;
+const LIKE = 6;
+
+/**
+ * What kind of filter input a column can carry, decided from `dataType`.
+ *
+ * **The comparison vetoes rather than enables**, following `pcf-star-rating`: a
+ * `dataType` this list does not recognise yields `'none'` and no input, rather
+ * than falling through to a text box and building a `Like` the server rejects.
+ * An unfilterable column is a visible, explicable state; a query that fails
+ * names the column rather than the control, and only in a network trace.
+ */
+export type FilterKind = 'text' | 'number' | 'none';
+
+const TEXT_TYPES = [
+    'SingleLine.Text',
+    'SingleLine.TextArea',
+    'SingleLine.Email',
+    'SingleLine.Phone',
+    'SingleLine.URL',
+    'SingleLine.Ticker',
+    'Multiple',
+];
+
+const NUMBER_TYPES = ['Whole.None', 'Decimal', 'Currency', 'FP'];
+
+export function filterKindFor(column: Column): FilterKind {
+    if (TEXT_TYPES.includes(column.dataType)) {
+        return 'text';
+    }
+
+    if (NUMBER_TYPES.includes(column.dataType)) {
+        return 'number';
+    }
+
+    /*
+     * Everything else — dates, choices, two-options, lookups — gets no input,
+     * and for two different reasons worth keeping apart.
+     *
+     * Dates: the operators that would express "on or after this day" (`On`,
+     * `OnOrAfter`, `OnOrBefore`) are not documented as supported on both hosts,
+     * and a `GreaterThan` against a date column compares the wrong thing.
+     *
+     * Choices, two-options and lookups: the value the server filters on is an
+     * integer or a GUID, and **`Column` carries neither.** The whole interface
+     * is name, displayName, dataType, alias, order, visualSizeFactor, isHidden,
+     * isPrimary and disableSorting — there is no option list on it. Reading one
+     * means `utils.getEntityMetadata()`, which is model-driven only and would
+     * add a `<uses-feature>` entry, i.e. an install-time permission prompt on
+     * every environment. See SPEC.md for the option that was considered and
+     * declined.
+     */
+    return 'none';
+}
+
+/**
+ * Escape what SQL `LIKE` treats as a wildcard, so a typed `%` matches a `%`.
+ *
+ * `%`, `_` and `[` are the three, and the escape is a character class rather
+ * than a backslash: `[%]`, `[_]`, `[[]`. A backslash is not an escape character
+ * here and would be searched for literally.
+ *
+ * Without this, typing `%` matches every record in the table — a filter box
+ * that appears to ignore what was typed — and typing `_` quietly matches any
+ * single character.
+ */
+export function escapeLike(term: string): string {
+    return term.replace(/[%_[]/g, (character) => `[${character}]`);
+}
+
+/**
+ * A numeric filter box, which accepts a comparison prefix.
+ *
+ * `>1000`, `>=1000`, `<1000`, `<=1000`, or a bare `1000` for equality. Returns
+ * `null` when what is left after the prefix is not a number, so a half-typed
+ * `>` sends no condition at all rather than one comparing against `NaN`.
+ */
+function numericCondition(attributeName: string, typed: string): Condition | null {
+    const match = /^\s*(>=|<=|>|<)?\s*(-?[\d.]+)\s*$/.exec(typed);
+
+    if (!match) {
+        return null;
+    }
+
+    const value = Number(match[2]);
+
+    if (!Number.isFinite(value)) {
+        return null;
+    }
+
+    const operator = { '>': GREATER_THAN, '>=': GREATER_EQUAL, '<': LESS_THAN, '<=': LESS_EQUAL }[
+        match[1] ?? ''
+    ];
+
+    return { attributeName, conditionOperator: operator ?? EQUAL, value };
+}
+
+interface Condition {
+    attributeName: string;
+    conditionOperator: number;
+    value: string | number;
+}
+
+/**
+ * The expression for what is typed across the filter row, or `null` for none.
+ *
+ * One condition per filled box, combined with `And`. A column whose box is
+ * empty contributes nothing — an empty filter is not a filter for `''`.
+ */
+export function buildFilter(
+    filters: Record<string, string>,
+    columns: Column[],
+): FilterExpression | null {
+    const conditions: Condition[] = [];
+
+    columns.forEach((column) => {
+        const typed = (filters[column.name] ?? '').trim();
+
+        if (typed === '') {
+            return;
+        }
+
+        const kind = filterKindFor(column);
+
+        if (kind === 'text') {
+            conditions.push({
+                attributeName: column.name,
+                conditionOperator: LIKE,
+                value: `%${escapeLike(typed)}%`,
+            });
+
+            return;
+        }
+
+        if (kind === 'number') {
+            const condition = numericCondition(column.name, typed);
+
+            if (condition) {
+                conditions.push(condition);
+            }
+        }
+    });
+
+    if (conditions.length === 0) {
+        return null;
+    }
+
+    // Cast because the typed shape does not accept the bare numeric literals
+    // these operators are; the union has no enum object to name them through.
+    return { filterOperator: AND, conditions } as unknown as FilterExpression;
+}
 
 /**
  * The columns to render, in the order the view asks for.

@@ -2,6 +2,8 @@ import * as React from 'react';
 import { FluentProvider, webLightTheme } from '@fluentui/react-components';
 import {
     columnWidths,
+    DESCENDING,
+    filterKindFor,
     headerCheckState,
     pagerLabel,
     primaryColumn,
@@ -59,12 +61,16 @@ export interface IProps {
     openOnRowClick: boolean;
     page: number;
     pageSize: number;
+    filters: Record<string, string>;
+    enableFiltering: boolean;
     disabled: boolean;
     visible: boolean;
     isRTL: boolean;
     theme: Record<string, string> | undefined;
     getString: (id: string) => string;
     onSort: (columnName: string) => void;
+    onFilter: (columnName: string, value: string) => void;
+    onClearFilters: () => void;
     onNextPage: () => void;
     onPreviousPage: () => void;
     onToggleRow: (id: string) => void;
@@ -98,6 +104,34 @@ function useMirroredSelection(selected: string[]): [string[], (next: string[]) =
     return [local, setLocal];
 }
 
+/**
+ * The filter boxes, mirrored locally for the same reason the selection is.
+ *
+ * Here it is not only about the demo harness. The value handed down is debounced
+ * — `index.ts` waits 300 ms before applying it — so rendering the boxes straight
+ * from props would make each one lag a third of a second behind the keystroke
+ * that filled it, and a fast typist would watch characters arrive out of order.
+ * Local state is what the user is typing; props are what the platform was asked
+ * for, and the resync key is the applied content.
+ */
+function useMirroredFilters(
+    filters: Record<string, string>,
+): [Record<string, string>, (columnName: string, value: string) => void] {
+    const [local, setLocal] = React.useState(filters);
+    const key = JSON.stringify(filters);
+
+    React.useEffect(() => {
+        setLocal(filters);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [key]);
+
+    return [
+        local,
+        (columnName: string, value: string): void =>
+            setLocal((current) => ({ ...current, [columnName]: value })),
+    ];
+}
+
 /** `indeterminate` is a DOM property, not an attribute — React will not set it. */
 function useIndeterminate(state: 'none' | 'some' | 'all'): React.RefObject<HTMLInputElement> {
     const ref = React.useRef<HTMLInputElement>(null);
@@ -115,8 +149,14 @@ export function DataTableControl(props: IProps): React.ReactElement | null {
     const { dataset, columns, pageIds, getString } = props;
 
     const [selected, setSelected] = useMirroredSelection(props.selected);
+    const [filters, setFilter] = useMirroredFilters(props.filters);
     const checkState = headerCheckState(selected, pageIds);
     const headerRef = useIndeterminate(checkState);
+
+    // Whether the reader has narrowed the view themselves. It decides whether
+    // an empty result is "this view is empty" or "your filters matched nothing"
+    // — and, below, whether the table is drawn at all when nothing came back.
+    const filtered = Object.values(props.filters).some((value) => value.trim() !== '');
 
     // Canvas relies on this; a model-driven form hides the section itself, so
     // honouring it costs a line and covers both hosts.
@@ -150,9 +190,19 @@ export function DataTableControl(props: IProps): React.ReactElement | null {
         );
     }
 
-    // `loading` is true on the first updateView, before any records arrive, so
-    // rendering the empty state here would flash "No records" on every load.
-    if (pageIds.length === 0) {
+    /*
+     * `loading` is true on the first updateView, before any records arrive, so
+     * rendering the empty state here would flash "No records" on every load.
+     *
+     * **The `!filtered` is load-bearing and not a tidy-up.** The filter boxes
+     * live in `<thead>`, so returning a bare message here at the moment a
+     * filter matches nothing would delete the only UI that can clear it: the
+     * reader types one character too many and the control becomes a dead end
+     * with no way back to their own data. When a filter is in force the table
+     * is drawn regardless, and the message goes in the body — see the empty
+     * `<tbody>` branch below.
+     */
+    if (pageIds.length === 0 && !filtered) {
         return frame(
             <p className="DataTable-message">
                 {dataset.loading ? getString('DataTable_Loading') : getString('DataTable_Empty')}
@@ -193,7 +243,7 @@ export function DataTableControl(props: IProps): React.ReactElement | null {
             return 'none';
         }
 
-        return status.sortDirection === 1 ? 'descending' : 'ascending';
+        return status.sortDirection === DESCENDING ? 'descending' : 'ascending';
     };
 
     return frame(
@@ -268,9 +318,80 @@ export function DataTableControl(props: IProps): React.ReactElement | null {
                                 );
                             })}
                         </tr>
+
+                        {/*
+                          A second row in the same `<thead>`, which inherits the
+                          `<colgroup>` alignment above rather than needing its
+                          own — including the leading select column, which is
+                          why the empty `<th>` below is not optional.
+                        */}
+                        {props.enableFiltering && (
+                            <tr className="DataTable-filterRow">
+                                {selectable && <th className="DataTable-selectCell" />}
+
+                                {columns.map((column) => {
+                                    const kind = filterKindFor(column);
+
+                                    if (kind === 'none') {
+                                        return <th key={column.name} />;
+                                    }
+
+                                    const label = (
+                                        kind === 'number'
+                                            ? getString('DataTable_FilterNumberHint')
+                                            : getString('DataTable_FilterColumn')
+                                    ).replace('{0}', column.displayName);
+
+                                    return (
+                                        <th key={column.name}>
+                                            <input
+                                                type="text"
+                                                className="DataTable-filter"
+                                                value={filters[column.name] ?? ''}
+                                                disabled={props.disabled}
+                                                aria-label={label}
+                                                title={label}
+                                                onChange={(event): void => {
+                                                    setFilter(column.name, event.target.value);
+                                                    props.onFilter(column.name, event.target.value);
+                                                }}
+                                            />
+                                        </th>
+                                    );
+                                })}
+                            </tr>
+                        )}
                     </thead>
 
                     <tbody>
+                        {/*
+                          The other half of the early-return fix above: the
+                          table is standing, so the reason there are no rows
+                          goes in it. Naming the filters rather than saying "no
+                          records" is the difference between a reader reaching
+                          for the boxes they filled and one concluding the view
+                          is empty.
+                        */}
+                        {pageIds.length === 0 && (
+                            <tr>
+                                <td colSpan={columns.length + (selectable ? 1 : 0)}>
+                                    <span className="DataTable-message">
+                                        {dataset.loading
+                                            ? getString('DataTable_Loading')
+                                            : getString('DataTable_NoMatches')}
+                                    </span>{' '}
+                                    <button
+                                        type="button"
+                                        className="DataTable-clearFilters"
+                                        disabled={props.disabled}
+                                        onClick={props.onClearFilters}
+                                    >
+                                        {getString('DataTable_ClearFilters')}
+                                    </button>
+                                </td>
+                            </tr>
+                        )}
+
                         {pageIds.map((id) => {
                             const record = dataset.records[id];
 

@@ -97,6 +97,24 @@
               required="false"
               default-value="true" />
 
+    <!--
+      Filtering is server-side, through `dataset.filtering`. That is a property
+      of the dataset rather than a capability, so it adds no `<feature-usage>`
+      and no install-time prompt.
+
+      Only text and numeric columns get an input. A date needs operators that
+      are not supported on both hosts, and a choice or a lookup filters on an
+      integer or a GUID that `Column` does not carry — see the note in
+      `components/resolve.ts`.
+    -->
+    <property name="enableFiltering"
+              display-name-key="EnableFiltering_Name"
+              description-key="EnableFiltering_Desc"
+              of-type="TwoOptions"
+              usage="input"
+              required="false"
+              default-value="true" />
+
     <property name="openOnRowClick"
               display-name-key="OpenOnRowClick_Name"
               description-key="OpenOnRowClick_Desc"

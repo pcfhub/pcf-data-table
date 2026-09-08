@@ -128,9 +128,49 @@
 
 .DataTable-sort:focus-visible,
 .DataTable-open:focus-visible,
+.DataTable-filter:focus-visible,
+.DataTable-clearFilters:focus-visible,
 .DataTable-pager button:focus-visible {
     outline: 2px solid var(--colorStrokeFocus2, #000000);
     outline-offset: 2px;
+}
+
+/*
+ * The filter row: a second row of the same `<thead>`, so it inherits the
+ * column widths and needs no geometry of its own. Only the weight has to be
+ * undone — a `<th>` is bold and these cells hold inputs, not headings.
+ */
+.DataTable-filterRow th {
+    font-weight: var(--fontWeightRegular, 400);
+    padding-top: 0;
+}
+
+.DataTable-filter {
+    width: 100%;
+    box-sizing: border-box;
+    padding: var(--spacingVerticalXS, 2px) var(--spacingHorizontalXS, 4px);
+    font-family: inherit;
+    font-size: var(--fontSizeBase200, 12px);
+    color: var(--colorNeutralForeground1, #242424);
+    background: var(--colorNeutralBackground1, #ffffff);
+    border: 1px solid var(--colorNeutralStroke2, #e0e0e0);
+    border-radius: var(--borderRadiusMedium, 4px);
+}
+
+.DataTable-filter:disabled {
+    color: var(--colorNeutralForegroundDisabled, #bdbdbd);
+    background: var(--colorNeutralBackgroundDisabled, #f0f0f0);
+}
+
+.DataTable-clearFilters {
+    font-family: inherit;
+    font-size: inherit;
+    color: var(--colorBrandForegroundLink, #0f6cbd);
+    background: none;
+    border: 0;
+    padding: 0;
+    cursor: pointer;
+    text-decoration: underline;
 }
 
 .DataTable-arrow {

@@ -1,13 +1,28 @@
 import * as React from 'react';
 import { IInputs, IOutputs } from './generated/ManifestTypes';
 import { DataTableControl, IProps } from './components/DataTableControl';
-import { ASCENDING, nextDirection, SelectionMode, toggleId, visibleColumns } from './components/resolve';
+import {
+    ASCENDING,
+    buildFilter,
+    nextDirection,
+    SelectionMode,
+    toggleId,
+    visibleColumns,
+} from './components/resolve';
 
 type DataSet = ComponentFramework.PropertyTypes.DataSet;
 type SortDirection = ComponentFramework.PropertyHelper.DataSetApi.Types.SortDirection;
 
 /** The platform's ceiling on a page. Not in the type definitions; see SPEC.md. */
 const MAX_PAGE_SIZE = 250;
+
+/**
+ * How long to wait after the last keystroke before filtering.
+ *
+ * Each application is a server round trip, so this is not a rendering
+ * optimisation — it is the difference between one query and one per character.
+ */
+const FILTER_DEBOUNCE_MS = 300;
 
 /**
  * A virtual (React) dataset control.
@@ -58,6 +73,32 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
      */
     private page = 1;
 
+    /**
+     * What is typed in the filter row, by column name.
+     *
+     * The control's own copy, for the same reason `selected` is: the platform's
+     * `filtering.getFilter()` is `undefined` in the local rigs and is an
+     * expression rather than the text a box should show even when it is not.
+     * Round-tripping the UI through it would mean parsing back out what was
+     * just built.
+     */
+    private filters: Record<string, string> = {};
+
+    /**
+     * The filter expression last handed to the platform, serialised.
+     *
+     * **Starts at `'none'` rather than at `''`, and that is the initial state
+     * rather than a sentinel** — a view arrives unfiltered, so "no filter" is
+     * already what the platform is doing. Starting from `''` makes the first
+     * keystroke of every session clear a filter nobody set: a `clearFilter`, a
+     * `paging.reset()` and a full round trip before the user has typed enough
+     * to match anything.
+     */
+    private appliedFilter = 'none';
+
+    /** The debounce timer, cleared in `destroy()`. */
+    private filterTimer: number | null = null;
+
     public init(
         _context: ComponentFramework.Context<IInputs>,
         notifyOutputChanged: () => void,
@@ -91,12 +132,22 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
             openOnRowClick: context.parameters.openOnRowClick.raw ?? true,
             page: this.page,
             pageSize: this.appliedPageSize,
+            filters: this.filters,
+            /*
+             * The row is offered only where it can work. `dataset.filtering` is
+             * typed as always present and is not, and a filter box that accepts
+             * keystrokes and changes nothing is worse than no box at all.
+             */
+            enableFiltering: (context.parameters.enableFiltering.raw ?? true) && Boolean(dataset.filtering),
             disabled: context.mode.isControlDisabled,
             visible: context.mode.isVisible,
             isRTL: context.userSettings.isRTL,
             theme: context.fluentDesignLanguage?.tokenTheme,
             getString: (id: string): string => context.resources.getString(id),
             onSort: (columnName: string): void => this.sortBy(dataset, columnName),
+            onFilter: (columnName: string, value: string): void =>
+                this.setFilterValue(context, columnName, value),
+            onClearFilters: (): void => this.clearFilters(context),
             onNextPage: (): void => this.nextPage(dataset),
             onPreviousPage: (): void => this.previousPage(dataset),
             onToggleRow: (id: string): void => this.toggleRow(dataset, id, mode),
@@ -125,8 +176,17 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
     }
 
     public destroy(): void {
-        // The platform unmounts the React tree for a virtual control, and this
-        // control holds no listeners, timers or observers of its own.
+        /*
+         * The platform unmounts the React tree for a virtual control, but the
+         * filter debounce is this control's own and outlives it. Left running
+         * it fires against a dataset the platform has already released — and on
+         * a form the user is navigating between records, that is every
+         * navigation.
+         */
+        if (this.filterTimer !== null) {
+            window.clearTimeout(this.filterTimer);
+            this.filterTimer = null;
+        }
     }
 
     /**
@@ -245,6 +305,94 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
         sorting.push({ name: columnName, sortDirection: direction });
 
         // A new order makes "page 4" meaningless.
+        this.page = 1;
+        dataset.paging.reset();
+        dataset.refresh();
+    }
+
+    /**
+     * Record what was typed in one filter box, then ask for the result.
+     *
+     * Debounced, because this runs on every keystroke and each application is a
+     * round trip. Called only from the component's callback — never from
+     * `updateView`, which `applyFilter` would re-enter.
+     */
+    private setFilterValue(
+        context: ComponentFramework.Context<IInputs>,
+        columnName: string,
+        value: string,
+    ): void {
+        this.filters = { ...this.filters, [columnName]: value };
+
+        if (this.filterTimer !== null) {
+            window.clearTimeout(this.filterTimer);
+        }
+
+        this.filterTimer = window.setTimeout(() => {
+            this.filterTimer = null;
+            this.applyFilter(context);
+        }, FILTER_DEBOUNCE_MS);
+    }
+
+    /** Drop every filter and ask for the unfiltered view, with no debounce. */
+    private clearFilters(context: ComponentFramework.Context<IInputs>): void {
+        if (this.filterTimer !== null) {
+            window.clearTimeout(this.filterTimer);
+            this.filterTimer = null;
+        }
+
+        this.filters = {};
+        this.applyFilter(context);
+    }
+
+    /**
+     * Hand the filter to the platform, reset the page, ask for the data.
+     *
+     * The same five moves as `sortBy`, in the same order and for the same
+     * reasons, plus one that sorting does not need:
+     *
+     *  1. **`setFilter` is not a fetch.** It records an expression and nothing
+     *     moves until `refresh()`. A control that omits the refresh looks
+     *     exactly like one whose filter matched nothing.
+     *  2. **`refresh()` fires `updateView`**, so re-applying an expression the
+     *     platform is already filtering by refreshes again, and again. The
+     *     signature comparison below is what makes that terminate; without it
+     *     this is an unbounded loop, which a browser shows as a hang.
+     *  3. **Filtering does not reset the page**, and the platform will not do
+     *     it. Filter from page three and the control asks for page three of a
+     *     result set that may have one page in it, and what comes back is
+     *     nothing at all — which reads as "no matches" for a term with plenty.
+     */
+    private applyFilter(context: ComponentFramework.Context<IInputs>): void {
+        const dataset = context.parameters.records;
+        const filtering = dataset.filtering;
+
+        /*
+         * Typed as always present, which is a claim about the type definitions
+         * rather than about the host — so it is checked rather than trusted,
+         * exactly as `sorting` is in `sortBy`. With no filtering there is
+         * nothing to express a filter through, and the row is not rendered at
+         * all; this guard covers the host that removes it between renders.
+         */
+        if (!filtering) {
+            return;
+        }
+
+        const expression = buildFilter(this.filters, visibleColumns(dataset.columns ?? []));
+        const signature = expression === null ? 'none' : JSON.stringify(expression);
+
+        if (signature === this.appliedFilter) {
+            return;
+        }
+
+        this.appliedFilter = signature;
+
+        if (expression === null) {
+            filtering.clearFilter();
+        } else {
+            filtering.setFilter(expression);
+        }
+
         this.page = 1;
         dataset.paging.reset();
         dataset.refresh();

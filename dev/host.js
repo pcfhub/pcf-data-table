@@ -88,14 +88,23 @@
      * The `ConditionOperator` values this stand-in honours, out of the ~90 the
      * platform defines.
      *
-     * These six are the ones a control can use on **both** hosts. The rest of
+     * These eight are the ones a control can use on **both** hosts. The rest of
      * the enum is where the hosts disagree, and the disagreement is not
      * symmetric: `NotLike` (7) and `NotNull` (13) are canvas-only, while
      * `Yesterday` (14), `Today` (15) and `Tomorrow` (16) are model-driven-only.
      * A control that reaches past this object is choosing a host, and should
      * say so in `docs/limitations.md`.
      */
-    var OPERATOR = { Equal: 0, NotEqual: 1, GreaterThan: 2, LessThan: 3, Like: 6, Null: 12 };
+    var OPERATOR = {
+        Equal: 0,
+        NotEqual: 1,
+        GreaterThan: 2,
+        LessThan: 3,
+        GreaterEqual: 4,
+        LessEqual: 5,
+        Like: 6,
+        Null: 12,
+    };
 
     var STRINGS = {
         DataTable_Name: 'Data Table',
@@ -320,6 +329,10 @@
                     return Number(actual) > Number(condition.value);
                 case OPERATOR.LessThan:
                     return Number(actual) < Number(condition.value);
+                case OPERATOR.GreaterEqual:
+                    return Number(actual) >= Number(condition.value);
+                case OPERATOR.LessEqual:
+                    return Number(actual) <= Number(condition.value);
                 case OPERATOR.Null:
                     return actual === null || actual === undefined || actual === '';
                 case OPERATOR.Like:

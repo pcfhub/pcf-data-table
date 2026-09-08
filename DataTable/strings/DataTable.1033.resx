@@ -110,6 +110,13 @@
     <value>Show a sort control on each column the view allows sorting on.</value>
   </data>
 
+  <data name="EnableFiltering_Name" xml:space="preserve">
+    <value>Allow filtering</value>
+  </data>
+  <data name="EnableFiltering_Desc" xml:space="preserve">
+    <value>Show a filter box under each text and numeric column heading. Filtering is applied by the server, across every page.</value>
+  </data>
+
   <data name="OpenOnRowClick_Name" xml:space="preserve">
     <value>Open on row click</value>
   </data>
@@ -158,6 +165,19 @@
   <data name="DataTable_SortBy" xml:space="preserve">
     <value>Sort by {0}</value>
   </data>
+  <data name="DataTable_FilterColumn" xml:space="preserve">
+    <value>Filter by {0}</value>
+  </data>
+  <data name="DataTable_FilterNumberHint" xml:space="preserve">
+    <value>Filter by {0}. Type a number, or a comparison such as &gt;1000.</value>
+  </data>
+  <data name="DataTable_ClearFilters" xml:space="preserve">
+    <value>Clear filters</value>
+  </data>
+  <data name="DataTable_NoMatches" xml:space="preserve">
+    <value>No records match these filters.</value>
+  </data>
+
   <data name="DataTable_SelectRow" xml:space="preserve">
     <value>Select {0}</value>
   </data>
