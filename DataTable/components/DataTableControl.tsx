@@ -14,6 +14,36 @@ import {
 const CHEVRON_PREVIOUS = 'M12.5 5 7.5 10l5 5';
 const CHEVRON_NEXT = 'M7.5 5l5 5-5 5';
 
+/** A tray with an arrow into it, on the same 20×20 grid as the chevrons. */
+const DOWNLOAD_GLYPH = 'M10 3v8m0 0 3-3m-3 3-3-3M4 14v2h12v-2';
+
+/**
+ * The export glyph.
+ *
+ * Same class as `DataTable-chevron` rather than one of its own: it wants the
+ * identical box and the identical RTL treatment, and a second class that only
+ * repeated the first would be two places to change the size.
+ */
+function DownloadGlyph(): React.ReactElement {
+    return (
+        <svg
+            className="DataTable-chevron"
+            viewBox="0 0 20 20"
+            aria-hidden="true"
+            focusable="false"
+        >
+            <path
+                d={DOWNLOAD_GLYPH}
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+            />
+        </svg>
+    );
+}
+
 /**
  * A chevron, inline, so it can follow the theme.
  *
@@ -339,7 +369,26 @@ export function DataTableControl(props: IProps): React.ReactElement | null {
                                     const kind = filterKindFor(column);
 
                                     if (kind === 'none') {
-                                        return <th key={column.name} />;
+                                        /*
+                                          Empty, and it has to say why. A blank
+                                          cell between two filter boxes reads as
+                                          a box that failed to render — on the
+                                          first real form it was the thing that
+                                          looked broken — so it carries the
+                                          reason on hover and a dash for the eye.
+                                        */
+                                        return (
+                                            <th
+                                                key={column.name}
+                                                className="DataTable-filterNone"
+                                                title={getString('DataTable_Unfilterable').replace(
+                                                    '{0}',
+                                                    column.displayName,
+                                                )}
+                                            >
+                                                <span aria-hidden="true">—</span>
+                                            </th>
+                                        );
                                     }
 
                                     const label = (
@@ -357,6 +406,19 @@ export function DataTableControl(props: IProps): React.ReactElement | null {
                                                 disabled={props.disabled}
                                                 aria-label={label}
                                                 title={label}
+                                                /*
+                                                  A visible placeholder, not only
+                                                  the accessible name. Without it
+                                                  the row is a line of empty
+                                                  boxes with no stated purpose,
+                                                  which is what it looked like on
+                                                  the first real form.
+                                                */
+                                                placeholder={
+                                                    kind === 'number'
+                                                        ? getString('DataTable_FilterNumberPlaceholder')
+                                                        : getString('DataTable_FilterPlaceholder')
+                                                }
                                                 onChange={(event): void => {
                                                     setFilter(column.name, event.target.value);
                                                     props.onFilter(column.name, event.target.value);
@@ -492,26 +554,44 @@ export function DataTableControl(props: IProps): React.ReactElement | null {
                     {getString('DataTable_Previous')}
                 </button>
 
-                {/*
-                  A number input rather than first/last chevron buttons. Two
-                  reasons and both are real: the reader who wants page 7 of 40
-                  wants 7, not thirty-eight clicks; and the pager's chevron
-                  count is asserted in `dev/smoke.js`, guarding against an
-                  `<img>` glyph that renders black on a dark form — a check
-                  worth keeping meaningful rather than re-baselining.
-                */}
-                {props.enableExport && (
-                    <button
-                        type="button"
-                        className="DataTable-export"
-                        disabled={props.disabled}
-                        title={getString('DataTable_ExportHint')}
-                        onClick={props.onExport}
-                    >
-                        {getString('DataTable_Export')}
-                    </button>
-                )}
+                <span className="DataTable-pagerStatus" aria-live="polite">
+                    {pagerLabel(
+                        props.page,
+                        props.pageSize,
+                        pageIds.length,
+                        dataset.paging.totalResultCount,
+                        getString('DataTable_RangeStatus'),
+                        getString('DataTable_PageStatus'),
+                    )}
+                </span>
 
+                <button
+                    type="button"
+                    disabled={props.disabled || !dataset.paging.hasNextPage}
+                    onClick={props.onNextPage}
+                >
+                    {/* Label then chevron: the glyph points the way the button
+                        goes, so it trails rather than leads. */}
+                    {getString('DataTable_Next')}
+                    <Chevron d={CHEVRON_NEXT} />
+                </button>
+
+                {/*
+                  Everything past here is a *tool*, not a way through the pages,
+                  and it is separated for that reason. Previous / status / Next
+                  are one control read left to right; a jump box, a page size and
+                  an export dropped between them made the row read as five peers
+                  and put Export where Next belongs. On a real form that was the
+                  first thing anyone noticed.
+
+                  The jump box is a number input rather than first/last chevron
+                  buttons: the reader who wants page 7 of 40 wants 7, not
+                  thirty-eight clicks, and the pager's chevron count is asserted
+                  in `dev/smoke.js` against an `<img>` glyph that renders black
+                  on a dark form — a check worth keeping meaningful rather than
+                  re-baselining.
+                */}
+                <span className="DataTable-pagerTools">
                 {props.lastPage > 1 && (
                     <span className="DataTable-jump">
                         <label>
@@ -553,27 +633,19 @@ export function DataTableControl(props: IProps): React.ReactElement | null {
                     </label>
                 )}
 
-                <span className="DataTable-pagerStatus" aria-live="polite">
-                    {pagerLabel(
-                        props.page,
-                        props.pageSize,
-                        pageIds.length,
-                        dataset.paging.totalResultCount,
-                        getString('DataTable_RangeStatus'),
-                        getString('DataTable_PageStatus'),
-                    )}
+                {props.enableExport && (
+                    <button
+                        type="button"
+                        className="DataTable-export"
+                        disabled={props.disabled}
+                        title={getString('DataTable_ExportHint')}
+                        onClick={props.onExport}
+                    >
+                        <DownloadGlyph />
+                        {getString('DataTable_Export')}
+                    </button>
+                )}
                 </span>
-
-                <button
-                    type="button"
-                    disabled={props.disabled || !dataset.paging.hasNextPage}
-                    onClick={props.onNextPage}
-                >
-                    {/* Label then chevron: the glyph points the way the button
-                        goes, so it trails rather than leads. */}
-                    {getString('DataTable_Next')}
-                    <Chevron d={CHEVRON_NEXT} />
-                </button>
             </div>
         </>,
     );

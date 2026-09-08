@@ -202,6 +202,16 @@
   <data name="DataTable_FilterNumberHint" xml:space="preserve">
     <value>Filter by {0}. Type a number, or a comparison such as &gt;1000.</value>
   </data>
+  <data name="DataTable_FilterPlaceholder" xml:space="preserve">
+    <value>Filter</value>
+  </data>
+  <data name="DataTable_FilterNumberPlaceholder" xml:space="preserve">
+    <value>e.g. &gt;1000</value>
+  </data>
+  <data name="DataTable_Unfilterable" xml:space="preserve">
+    <value>{0} cannot be filtered here. Dates, choices and lookups are filtered by the view.</value>
+  </data>
+
   <data name="DataTable_ClearFilters" xml:space="preserve">
     <value>Clear filters</value>
   </data>

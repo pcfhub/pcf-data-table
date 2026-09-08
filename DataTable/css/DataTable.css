@@ -87,9 +87,40 @@
     width: 40px;
 }
 
-.DataTable-selectCell {
+/*
+ * **The stray dot beside every checkbox was an ellipsis, and this is the fix.**
+ *
+ * The rule above gives every `th` and `td` `overflow: hidden` with
+ * `text-overflow: ellipsis`, which is right for a column of text and wrong for
+ * a cell holding a control. This column is 40px with 12px of padding a side, so
+ * its content box is 16px — and a checkbox is 13px wide with a user-agent
+ * margin of 4px left and 3px right, which is 20px. The checkbox overflowed by
+ * 4px, so the browser drew the ellipsis it was told to, clipped at that width
+ * to a single dot.
+ *
+ * It looked like a character nobody had written, in the header row and every
+ * body row alike, which is exactly what it was — `…` rendered by the UA rather
+ * than emitted by the component. It survived review three times because the
+ * markup is innocent: the cell holds an `<input>` and nothing else, no rule in
+ * the page matches that input, and it has no pseudo-elements.
+ *
+ * Two changes, either of which alone would do it, kept together because they
+ * fix different halves: the ellipsis has no business on a cell of controls, and
+ * the checkbox should fit its column rather than merely be clipped politely.
+ *
+ * **The selector is qualified with `th`/`td` on purpose.** `text-overflow` and
+ * `padding` are set by `.DataTable-table th, .DataTable-table td` above, which
+ * is one type selector more specific than a bare `.DataTable-selectCell` — so
+ * the first version of this fix changed nothing at all and looked identical in
+ * the browser. `width` and `text-align` had always worked here only because
+ * that rule does not set them.
+ */
+.DataTable-table th.DataTable-selectCell,
+.DataTable-table td.DataTable-selectCell {
     width: 40px;
     text-align: center;
+    text-overflow: clip;
+    padding-inline: var(--spacingHorizontalXS, 4px);
 }
 
 /*
@@ -139,29 +170,81 @@
 
 /*
  * The filter row: a second row of the same `<thead>`, so it inherits the
- * column widths and needs no geometry of its own. Only the weight has to be
- * undone — a `<th>` is bold and these cells hold inputs, not headings.
+ * column widths and needs no geometry of its own.
+ *
+ * **It has to read as part of the header, not as the first row of data.** On
+ * the first real form it did not: white cells the full height of a record, each
+ * holding an empty bordered box, so the row looked like a record somebody had
+ * left in edit mode. The tinted ground and the tighter box are what separate
+ * "this is chrome" from "this is content".
  */
 .DataTable-filterRow th {
     font-weight: var(--fontWeightRegular, 400);
-    padding-top: 0;
+    padding-top: var(--spacingVerticalXS, 2px);
+    padding-bottom: var(--spacingVerticalXS, 2px);
+    background: var(--colorNeutralBackground3, #f5f5f5);
+    border-bottom: 1px solid var(--colorNeutralStroke1, #d1d1d1);
 }
 
 .DataTable-filter {
     width: 100%;
     box-sizing: border-box;
-    padding: var(--spacingVerticalXS, 2px) var(--spacingHorizontalXS, 4px);
+    padding: 3px var(--spacingHorizontalS, 8px);
     font-family: inherit;
     font-size: var(--fontSizeBase200, 12px);
+    line-height: 1.4;
     color: var(--colorNeutralForeground1, #242424);
     background: var(--colorNeutralBackground1, #ffffff);
+    /* Subtle at rest, definite on contact: a filter row is chrome until
+       somebody reaches for it. */
     border: 1px solid var(--colorNeutralStroke2, #e0e0e0);
     border-radius: var(--borderRadiusMedium, 4px);
+}
+
+.DataTable-filter::placeholder {
+    color: var(--colorNeutralForeground4, #707070);
+    /* Italic so the hint cannot be mistaken for a value already applied. */
+    font-style: italic;
+}
+
+.DataTable-filter:hover:not(:disabled) {
+    border-color: var(--colorNeutralStroke1, #d1d1d1);
+}
+
+.DataTable-filter:focus {
+    border-color: var(--colorCompoundBrandStroke, #0f6cbd);
+    outline: none;
 }
 
 .DataTable-filter:disabled {
     color: var(--colorNeutralForegroundDisabled, #bdbdbd);
     background: var(--colorNeutralBackgroundDisabled, #f0f0f0);
+}
+
+/*
+ * A column that cannot be filtered. The dash is for the eye only — the reason
+ * is on the cell's `title`, and the accessible name of the row's other cells
+ * already carries the column each one belongs to.
+ */
+.DataTable-filterNone {
+    color: var(--colorNeutralForeground4, #707070);
+    text-align: center;
+}
+
+/*
+ * The tools half of the pager, pushed away from the paging half.
+ *
+ * **Previous / status / Next are one control read left to right, and anything
+ * dropped between them joins it.** Export CSV was, and on a real form it read
+ * as a third way through the pages sitting where Next belongs. `margin-inline-
+ * start: auto` is what separates a group of peers from a row of five buttons —
+ * logical rather than `margin-left`, so RTL moves it with everything else.
+ */
+.DataTable-pagerTools {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacingHorizontalM, 12px);
+    margin-inline-start: auto;
 }
 
 /*
@@ -237,6 +320,29 @@
     color: var(--colorNeutralForegroundDisabled, #bdbdbd);
     border-color: var(--colorNeutralStrokeDisabled, #e0e0e0);
     cursor: default;
+}
+
+/*
+ * Export is not a pager button, and the rule above had made it one.
+ *
+ * `.DataTable-pager button` is written for Previous and Next, so an `<button>`
+ * added anywhere in that row inherits their box and reads as a third one — the
+ * bordered chip labelled "Export CSV" sitting between Previous and the jump
+ * box on the first real form. Subtle here rather than outlined: it is a
+ * secondary action beside a primary navigation control, and the icon plus the
+ * word already make it findable. This was called out as a risk when the button
+ * was added; it shipped anyway, which is the argument for looking at a form.
+ */
+.DataTable-pager .DataTable-export {
+    padding: var(--spacingVerticalXS, 4px) var(--spacingHorizontalS, 8px);
+    color: var(--colorNeutralForeground2, #424242);
+    background-color: transparent;
+    border-color: transparent;
+}
+
+.DataTable-pager .DataTable-export:hover:not(:disabled) {
+    color: var(--colorNeutralForeground1, #242424);
+    background-color: var(--colorNeutralBackground1Hover, #f5f5f5);
 }
 
 /*

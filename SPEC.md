@@ -251,13 +251,44 @@ has been corrected.
 - **Still genuinely unknown:** whether `reset()` before `refresh()` costs two
   round trips, and whether the platform clamps `setPageSize` and echoes the
   clamped value back.
-- **A mark renders after every selection checkbox**, in the header row and each
-  body row alike, visible in `media/screenshot.png`. It is consistent enough to
-  look systematic rather than a scaling artifact, but nothing in
-  `DataTableControl.tsx` emits a character there — the cell contains only the
-  `<input>`. Unresolved: it may be a host stylesheet applying `content` to a
-  descendant, or something in `DataTable.css`. Reproduce on a form and inspect
-  the cell before guessing.
+- ~~**A mark renders after every selection checkbox**~~ — **closed in 0.2.0, and
+  it was an ellipsis.** `.DataTable-table th, .DataTable-table td` sets
+  `overflow: hidden` with `text-overflow: ellipsis`, which is right for a column
+  of text and wrong for a cell holding a control. The select column is 40px with
+  12px of padding a side, so its content box is 16px — and a checkbox is 13px
+  wide with a user-agent margin of 4px left and 3px right, i.e. 20px. It
+  overflowed by 4px, so the browser drew the ellipsis it had been told to,
+  clipped at that width to a single dot.
+
+  Every earlier guess was wrong in the same way: the markup is innocent. The
+  cell holds an `<input>` and nothing else, no rule in the page matches that
+  input, and it has no pseudo-elements — so three passes looking for a stray
+  character found none, because the character was the UA's.
+
+  **What settled it was rendering the built bundle to a static page with only
+  this control's stylesheet and probing it**, which also disproves the
+  host-stylesheet theory this file carried: there is no host. The sequence that
+  named it: hiding the `<input>` removed the mark, so it belonged to the
+  checkbox; resizing the checkbox to 40px removed it too, which is not how a
+  glyph behaves but is exactly how an overflow does; and `text-overflow: clip`
+  on the cell removed it outright.
+
+  The fix qualifies its selector as `th.DataTable-selectCell` /
+  `td.DataTable-selectCell`, and that matters: `.DataTable-table td` is one type
+  selector more specific than a bare `.DataTable-selectCell`, so the first
+  version of the fix changed nothing and looked identical. `width` and
+  `text-align` had worked there all along only because that rule does not set
+  them.
+
+- **The rendered-preview rig is worth keeping in mind, and is not in the repo.**
+  It is ~90 lines: install `dev/dom.js`, evaluate the built bundle with the
+  platform globals read out of it by word-boundary regex, render with
+  `react-dom/server`, replace the Fluent stub's `<FluentProvider>` with a
+  `<div>`, and write the markup under `DataTable.css`. Every token then resolves
+  to its literal fallback, which is the light theme — so it checks layout and
+  the fallbacks, and nothing about the real Fluent palette. `dev/smoke.js` reads
+  props and markup; this reads pixels, and the ellipsis was only ever visible in
+  pixels.
 - **Not opened in a canvas app.** `docs/canvas.md` claims columns come from the
   Fields flyout, that widths are absent, and that `openDatasetItem` is a no-op.
   All three are reasoned rather than observed. `addColumn` is typed as optional

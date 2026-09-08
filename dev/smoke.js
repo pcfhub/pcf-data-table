@@ -324,21 +324,32 @@ check(
  */
 const markup = renderDeep(view.driven.element);
 
+/*
+ * Three, not two: Previous, Next, and the export glyph, which reuses the same
+ * class because it wants the identical box and the identical RTL treatment.
+ *
+ * The count stays exact rather than becoming `>= 2`. A glyph added without a
+ * thought about `currentColor` is precisely what this check exists to catch, so
+ * it is worth making somebody come here and change the number — the two below
+ * are written against this one so there is only ever one number to change.
+ */
+const glyphs = (markup.match(/<svg[^>]*DataTable-chevron/g) || []).length;
+
 check(
-    'the pager renders inline svg chevrons, not images',
-    (markup.match(/<svg[^>]*DataTable-chevron/g) || []).length === 2 && !markup.includes('<img'),
-    `${(markup.match(/<svg[^>]*DataTable-chevron/g) || []).length} chevrons, ${(markup.match(/<img/g) || []).length} images`,
+    'the pager renders inline svg glyphs, not images',
+    glyphs === 3 && !markup.includes('<img'),
+    `${glyphs} glyphs, ${(markup.match(/<img/g) || []).length} images`,
 );
 
 check(
     'stroked with currentColor, so the Fluent theme decides their colour',
-    (markup.match(/stroke="currentColor"/g) || []).length === 2,
+    (markup.match(/stroke="currentColor"/g) || []).length === glyphs,
 );
 
 /* Decorative: each sits on a button that already reads “Previous page”. */
 check(
     'and hidden from the accessibility tree',
-    (markup.match(/<svg[^>]*aria-hidden="true"/g) || []).length === 2,
+    (markup.match(/<svg[^>]*aria-hidden="true"/g) || []).length === glyphs,
 );
 
 /* The label is still there — the chevron was added beside it, not instead of
@@ -556,6 +567,23 @@ try {
 } catch (error) {
     canvasExportError = `${error.constructor.name}: ${error.message}`;
 }
+
+/*
+ * **Export is not a way through the pages, and the markup has to say so.**
+ *
+ * `.DataTable-pager button` is written for Previous and Next, so a button added
+ * anywhere in that row inherits their box and joins the group. It did: on the
+ * first real form Export CSV was a bordered chip between Previous and the jump
+ * box, reading as a third pager control. It now lives in a tools group after
+ * Next, which is what this asserts — position rather than appearance, since the
+ * appearance is CSS the rig cannot see.
+ */
+check(
+    'the export button sits after the paging controls, not among them',
+    markup.indexOf('DataTable-pagerTools') > markup.indexOf('resx:DataTable_Next') &&
+        markup.indexOf('DataTable-export') > markup.indexOf('DataTable-pagerTools'),
+    `Next at ${markup.indexOf('resx:DataTable_Next')}, tools at ${markup.indexOf('DataTable-pagerTools')}, export at ${markup.indexOf('DataTable-export')}`,
+);
 
 check(
     'a host without openFile falls back rather than throwing',
@@ -815,6 +843,30 @@ check(
     'only the columns that can be filtered get a box',
     (emptyMarkup.match(/class="DataTable-filter"/g) || []).length === 4,
     `${(emptyMarkup.match(/class="DataTable-filter"/g) || []).length} inputs across 6 visible columns`,
+);
+
+/*
+ * **A row of empty bordered boxes does not say it is a filter row**, which is
+ * what it looked like on the first real form. The accessible name was there
+ * from the start; the visible hint was not, and a sighted reader had nothing to
+ * go on but the shape.
+ */
+check(
+    'each filter box says what it is, visibly and not only to a screen reader',
+    (emptyMarkup.match(/placeholder="resx:DataTable_Filter\w*Placeholder"/g) || []).length === 4,
+    `${(emptyMarkup.match(/placeholder="/g) || []).length} placeholders`,
+);
+
+/*
+ * And the gap between them says why it is a gap. A blank cell in the middle of
+ * a filter row reads as a box that failed to render rather than as a column
+ * that cannot be filtered — the same failure in the other direction.
+ */
+check(
+    'a column that cannot be filtered says so rather than showing a blank',
+    (emptyMarkup.match(/class="DataTable-filterNone"/g) || []).length === 2 &&
+        emptyMarkup.includes('resx:DataTable_Unfilterable'),
+    `${(emptyMarkup.match(/class="DataTable-filterNone"/g) || []).length} unfilterable cells`,
 );
 
 /*
