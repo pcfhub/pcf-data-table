@@ -29,7 +29,8 @@
     "media": {
         "logo": "media/logo.png",
         "screenshots": [
-            "media/screenshot.png"
+            "media/screenshot.png",
+            "media/screenshot-narrow.png"
         ]
     },
     "demo": {

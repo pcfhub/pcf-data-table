@@ -218,7 +218,8 @@ non-linked view column reports.
 
 ## On a real form
 
-`media/screenshot.png` is the control on an Accounts subgrid, and it settles
+`media/screenshot-form.png` — named `media/screenshot.png` until 0.2.0 renamed
+it — is the control on an Accounts subgrid, and it settles
 several claims that were previously reasoned rather than observed:
 
 - **`cds-data-set-options` works.** The platform's command bar — New, Refresh,
@@ -312,6 +313,29 @@ has been corrected.
   by its host, so the width that matters is the box it was handed rather than
   the screen — a form can put this control in a 300px column on a 27-inch
   monitor. `flex-wrap` and an `auto` margin respond to the box for free.
+
+### The published screenshots are harness renders, and that is a trade
+
+`media/screenshot.png` and `media/screenshot-narrow.png` are captured from the
+preview rig — headless Chrome at a device scale factor of 2 against a page
+carrying the built bundle and `DataTable.css` — rather than from a form. The
+real-form picture is kept as `media/screenshot-form.png` and is still what
+`docs/model-driven.md` uses, because the command bar above the table is the
+host's and only a real form has one.
+
+**What the trade buys:** a picture of the current design, at a chosen width, in
+a known state — a filter typed, the clear cross showing, and a pager whose count
+agrees with it. **What it costs:** the screenshot is no longer evidence. The old
+one settled five claims at once just by existing; this one proves only that the
+bundle renders, which the smoke suite already says.
+
+Two details that keep it from misrepresenting the control. The fixture's values
+are pre-formatted — `$2,450,000.00`, `14/08/2026` — because the rig's
+`getFormattedValue` is `String(value)` and a real platform's is not, so raw
+numbers would have shown a control that does not exist. And the filter is `in`
+rather than something narrower on purpose: it leaves 12 of 24 records and three
+pages, so the jump box is in the picture. A filter matching one page hides it,
+which is correct behaviour and a screenshot missing a feature.
 
 - **The rendered-preview rig is worth keeping in mind, and is not in the repo.**
   It is ~90 lines: install `dev/dom.js`, evaluate the built bundle with the

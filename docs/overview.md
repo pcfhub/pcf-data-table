@@ -8,7 +8,7 @@ order: 1
 
 A sortable, pageable table over any Dataverse view, with row selection.
 
-::image{src=media/screenshot.png alt="Data Table on an Accounts subgrid, showing the command bar, a sorted Account Name column, selection checkboxes and a pager reading 1–5 of 6" zoom}
+::image{src=media/screenshot.png alt="Data Table over an Accounts view: a filter row under the headings with in typed into Account name and a clear cross beside it, four columns filterable and Status and Modified on showing a dash, five rows of formatted currency and dates, and a pager reading 1 to 5 of 12 with a Go to page box, a rows-per-page picker and an Export CSV button" zoom}
 
 Drop it on a subgrid and it renders the view the maker already chose — the same
 columns, in the same order, at the same widths — as a semantic HTML table with a

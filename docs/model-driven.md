@@ -45,11 +45,16 @@ out-of-the-box grid:
 | **View selector** | Switch view, and the columns change with it — the control re-reads `dataset.columns` on the next render, so a different view is a different table with no reconfiguration. |
 | **Quick find** | The platform filters the result set; the control renders whatever comes back, and the pager follows. |
 
-::image{src=media/screenshot.png alt="An Accounts subgrid with the platform's command bar above the control's own table and pager" zoom}
+::image{src=media/screenshot-form.png alt="An Accounts subgrid with the platform's command bar above the control's own table and pager" zoom}
 
 Above the table in that screenshot — New, Refresh, the overflow menu — is the
 platform's command bar, not the control's. Below it, the header row, the sort
 indicator and the pager are the control's.
+
+That picture is from a real form on 0.1.x, which is why it is the one used here:
+the command bar is the host's and only a real form has one. It predates the
+filter row, so the table under it is a version behind — see
+[Overview](overview.md) for what the control looks like now.
 
 :::callout{type=info}
 This is a manifest attribute, read by the host when the form loads, so it is not
