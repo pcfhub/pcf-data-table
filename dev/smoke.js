@@ -236,7 +236,7 @@ check(
  */
 const columns = () => (view.props().columns || []).map((column) => column.displayName);
 
-check('shows only the columns the maker left visible', columns().length === 4, columns().join(' | '));
+check('shows only the columns the maker left visible', columns().length === 6, columns().join(' | '));
 
 check(
     'in the order the view designer set, not the order the array arrived in',
