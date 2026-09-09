@@ -50,6 +50,12 @@ interface EditableRecord {
      * ones that are not editable. A bug shaped like working code.
      */
     isEditable(columnName: string): Promise<boolean>;
+    /**
+     * Measured present, and measured to answer `false` immediately after a
+     * resolved `setValue` — which is the loose thread 0.3.2 is pulling on.
+     * Nothing gates on it; the diagnostics in `writeCell` only report it.
+     */
+    isDirty?(): Promise<boolean> | boolean;
 }
 
 /**
@@ -411,14 +417,51 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
             return Promise.reject(new Error('This host cannot write to a dataset record.'));
         }
 
+        /*
+         * **TEMPORARY diagnostics — remove once the write is understood.**
+         *
+         * 0.3.1 hung on "Saving…" against a real subgrid and the values reverted
+         * on reload, and the console measurement that preceded it had already
+         * said why without being read properly: `setValue` resolved, `isDirty()`
+         * came back **false**, and `save resolved` never printed at all. So the
+         * suspicion is that `setValue` resolves without staging anything and
+         * `save()` never settles.
+         *
+         * That is a guess. These lines make it a measurement: they timestamp
+         * each step and report `isDirty()` between them, so the next report says
+         * which of the two calls is the one that does not come back.
+         */
+        const started = Date.now();
+        const since = (): string => `+${Date.now() - started}ms`;
+
+        console.info('[DataTable write] setValue', column, value, since());
+
         return record
             .setValue(column, value)
-            .then(() => record.save())
             .then(() => {
+                console.info('[DataTable write] setValue resolved', since());
+
+                return Promise.resolve(record.isDirty ? record.isDirty() : 'no isDirty').then(
+                    (dirty) => console.info('[DataTable write] isDirty', dirty, since()),
+                    (error) => console.info('[DataTable write] isDirty threw', error, since()),
+                );
+            })
+            .then(() => {
+                console.info('[DataTable write] save', since());
+
+                return record.save();
+            })
+            .then(() => {
+                console.info('[DataTable write] save resolved', since());
                 this.editedRecordId = id;
                 // The one thing here that *is* an output, and the one thing
                 // `notifyOutputChanged` is actually for.
                 this.notifyOutputChanged();
+            })
+            .catch((error: unknown) => {
+                console.info('[DataTable write] rejected', error, since());
+
+                throw error;
             });
     }
     public destroy(): void {

@@ -174,6 +174,49 @@ function pinCell(
 /** The select column sticks whenever anything is pinned at the start. */
 const SELECT_PIN: PinnedColumn = { pinned: 'start', width: null, offset: 0, edge: false };
 
+/**
+ * How long to wait for a write before giving up on it.
+ *
+ * **A promise that never settles is not a hypothetical.** 0.3.1 on a real
+ * subgrid left four cells reading "Saving…" indefinitely, and the values were
+ * gone on reload — so the platform never came back, one way or the other. With
+ * no bound the control asserts "saving" forever about a write that is not
+ * happening, which is the worst of the three states it could be in: a reader
+ * who sees a failure retries, a reader who sees success moves on, and a reader
+ * who sees "Saving…" waits.
+ *
+ * Fifteen seconds is far longer than a Dataverse write and short enough to be
+ * an answer. Timing out is not the same as knowing the write failed, and the
+ * message says so rather than claiming the change was rejected.
+ */
+const WRITE_TIMEOUT_MS = 15000;
+
+/**
+ * The write, or a rejection once `WRITE_TIMEOUT_MS` has passed.
+ *
+ * The timer is cleared either way. Left running it would hold the component's
+ * closure alive for fifteen seconds past every successful edit, and on a form
+ * somebody is paging through, that is a timer per cell they touched.
+ */
+function withTimeout(promise: Promise<void>, message: string): Promise<void> {
+    let timer: number | undefined;
+
+    const expiry = new Promise<void>((_resolve, reject) => {
+        timer = window.setTimeout(() => reject(new Error(message)), WRITE_TIMEOUT_MS);
+    });
+
+    const clear = (): void => window.clearTimeout(timer);
+
+    return Promise.race([promise, expiry]).then(
+        () => clear(),
+        (error: unknown) => {
+            clear();
+
+            throw error;
+        },
+    );
+}
+
 /** The pager chevrons, on a 20×20 grid. Two strokes each. */
 const CHEVRON_PREVIOUS = 'M12.5 5 7.5 10l5 5';
 const CHEVRON_NEXT = 'M7.5 5l5 5-5 5';
@@ -565,7 +608,10 @@ function useEditing(props: IProps): {
             setPending((current) => new Map(current).set(key, coerced.value));
             setSaving((current) => new Set(current).add(key));
 
-            props.onCommitEdit(id, column, coerced.value).then(
+            withTimeout(
+                props.onCommitEdit(id, column, coerced.value),
+                getString('DataTable_SaveTimedOut'),
+            ).then(
                 () => drop(saving, key),
                 (error: unknown) => {
                     drop(saving, key);

@@ -185,6 +185,9 @@
   <data name="DataTable_SaveFailedGeneric" xml:space="preserve">
     <value>The platform refused the change.</value>
   </data>
+  <data name="DataTable_SaveTimedOut" xml:space="preserve">
+    <value>The platform did not confirm this change. It may not have been saved — reload the form to see the stored value.</value>
+  </data>
   <data name="DataTable_NotANumber" xml:space="preserve">
     <value>That is not a number, so nothing was saved.</value>
   </data>
