@@ -151,6 +151,44 @@
     <value>How many of the view's last columns stay in place while the table scrolls sideways. Leave empty to pin none.</value>
   </data>
 
+  <data name="EnableEditing_Name" xml:space="preserve">
+    <value>Inline editing</value>
+  </data>
+  <data name="EnableEditing_Desc" xml:space="preserve">
+    <value>Let readers edit a cell in place and save it. Only columns the platform reports as editable for that record are offered.</value>
+  </data>
+  <data name="EditableColumns_Name" xml:space="preserve">
+    <value>Editable columns</value>
+  </data>
+  <data name="EditableColumns_Desc" xml:space="preserve">
+    <value>A comma-separated list of column logical names to limit editing to. Leave empty for every column the platform says is editable. This list can only narrow that, never widen it.</value>
+  </data>
+  <data name="EditedRecordId_Name" xml:space="preserve">
+    <value>Edited record ID</value>
+  </data>
+  <data name="EditedRecordId_Desc" xml:space="preserve">
+    <value>The ID of the row most recently saved by an inline edit.</value>
+  </data>
+
+  <data name="DataTable_EditCell" xml:space="preserve">
+    <value>Edit {0}</value>
+  </data>
+  <data name="DataTable_EditEmpty" xml:space="preserve">
+    <value>(empty)</value>
+  </data>
+  <data name="DataTable_Saving" xml:space="preserve">
+    <value>Saving…</value>
+  </data>
+  <data name="DataTable_SaveFailed" xml:space="preserve">
+    <value>{0} could not be saved. {1}</value>
+  </data>
+  <data name="DataTable_SaveFailedGeneric" xml:space="preserve">
+    <value>The platform refused the change.</value>
+  </data>
+  <data name="DataTable_NotANumber" xml:space="preserve">
+    <value>That is not a number, so nothing was saved.</value>
+  </data>
+
   <data name="SelectedRecordIds_Name" xml:space="preserve">
     <value>Selected record IDs</value>
   </data>

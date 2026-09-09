@@ -279,6 +279,33 @@
              * one is ever found.
              */
             resizeUntracked: true,
+
+            /**
+             * Whether the record carries the write half of `EntityRecord` at
+             * all — `setValue`, `save`, `isDirty`, `isEditable`.
+             *
+             * Off by default, because a real model-driven subgrid has them:
+             * measured 2026-09-09. On, it models the host that does not, which
+             * a control has to survive by offering no editors rather than by
+             * offering ones that discard what is typed. None of these methods
+             * is in the typings, so "the host has them" is a claim about one
+             * measurement rather than about a contract.
+             */
+            editableAbsent: false,
+
+            /** `save()` rejects. The path the whole rollback exists for. */
+            saveRejects: false,
+
+            /**
+             * Columns `isEditable` answers `false` for.
+             *
+             * Not hypothetical: on the measured subgrid `statuscode` came back
+             * `false` while two other columns on the same row came back `true`.
+             * Column-level editability is per column *and* per record, and it is
+             * invisible on `Column` — so a control that inferred it from
+             * `dataType` would offer an editor over exactly this case.
+             */
+            readOnlyColumns: ['statecode'],
         },
     };
 
@@ -525,7 +552,7 @@
         }
 
         function recordFor(row) {
-            return {
+            var record = {
                 getRecordId: function () {
                     return row.id;
                 },
@@ -539,6 +566,98 @@
                     return { id: row.id, name: formatted(row.values.name), etn: fixture.targetEntityType };
                 },
             };
+
+            /*
+             * **The write half of `EntityRecord`, which the type definitions do
+             * not declare.**
+             *
+             * Measured on a real model-driven subgrid, 2026-09-09: a live record
+             * carries twenty-three methods where
+             * `@types/powerapps-component-framework@1.3.18` declares four, and
+             * none of the four writes. `setValue`, `save`, `isDirty` and
+             * `isEditable` are all really there, and `setValue` + `save`
+             * committed a value that survived a reload.
+             *
+             * It is worth a control reaching past the typings for, because the
+             * alternative — `webAPI.updateRecord` — needs
+             * `<uses-feature name="WebAPI" />`, an install-time permission
+             * prompt in every environment, and does nothing at all in canvas.
+             */
+            if (quirks.editableAbsent) {
+                return record;
+            }
+
+            /*
+             * Staged, not applied. `setValue` on the platform does not commit —
+             * `save()` does — and a rig that applied immediately would let a
+             * control pass while never calling `save` at all.
+             */
+            row.staged = row.staged || {};
+
+            record.setValue = function (name, value) {
+                log('record.setValue', name);
+                row.staged[name] = value;
+
+                return Promise.resolve();
+            };
+
+            record.save = function () {
+                log('record.save', row.id);
+
+                if (quirks.saveRejects) {
+                    // Rejected with an Error, but do not rely on that: a
+                    // rejected platform call is typed `unknown` and is not
+                    // reliably one — the caveat `pcf-kanban-board` records.
+                    row.staged = {};
+
+                    return Promise.reject(new Error('The platform refused this write.'));
+                }
+
+                /*
+                 * **Resolving is not applying, and collapsing the two makes the
+                 * rig lie.**
+                 *
+                 * A resolved `save()` means Dataverse accepted the write. It
+                 * does *not* mean the dataset has re-read — that is a separate
+                 * fetch, and until it lands the record still reports the old
+                 * value. The gap is the entire reason an optimistic control
+                 * keeps an override and retires it on the refresh rather than
+                 * on the promise.
+                 *
+                 * This rig used to apply the values synchronously here, before
+                 * resolving. So a control that retired its override the moment
+                 * `save()` resolved passed every assertion — the record already
+                 * agreed, and there was no window in which the old value could
+                 * come back. On a form there is one, and the cell visibly jumps
+                 * back and then forward.
+                 *
+                 * Committed values now wait for `handle.reread()`, which is the
+                 * host re-reading. A rig more generous than the platform does
+                 * not fail safe; it certifies the failure.
+                 */
+                row.committed = Object.assign(row.committed || {}, row.staged);
+                row.staged = {};
+
+                return Promise.resolve();
+            };
+
+            record.isDirty = function () {
+                return Promise.resolve(Object.keys(row.staged).length > 0);
+            };
+
+            /*
+             * **A Promise, because the platform's is.** `isEditable`,
+             * `isSecured`, `isReadable` and `getFieldRequiredLevel` are async
+             * while `isValid` and `getCurrencyDecimalPrecision` are not, and
+             * nothing distinguishes them by name — so an unawaited call returns
+             * a truthy Promise and every column looks editable. Returning a
+             * bare boolean here would let exactly that bug pass.
+             */
+            record.isEditable = function (name) {
+                return Promise.resolve(quirks.readOnlyColumns.indexOf(name) === -1);
+            };
+
+            return record;
         }
 
         var filtering = {
@@ -909,6 +1028,29 @@
             },
             settled: function () {
                 state.renderOwed = false;
+            },
+            /**
+             * The host re-reading after a write — a separate fetch from the
+             * `save()` that resolved.
+             *
+             * Values committed by `record.save()` become visible on the records
+             * only here. Until it is called, a control's own override is the
+             * only thing holding the new value on screen, which is exactly the
+             * state a control that retires too early gets wrong.
+             */
+            reread: function () {
+                allRecords.forEach(function (row) {
+                    if (!row.committed) {
+                        return;
+                    }
+
+                    Object.keys(row.committed).forEach(function (name) {
+                        row.values[name] = row.committed[name];
+                    });
+                    row.committed = null;
+                });
+
+                state.renderOwed = true;
             },
         };
     }

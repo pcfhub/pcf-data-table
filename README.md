@@ -44,6 +44,21 @@ There is no `<feature-usage>` at all. `openDatasetItem()` is a method on the
 dataset rather than on `context.navigation`, and nothing here touches Web API,
 utils or device — so installing the control raises no permission prompt.
 
+**That survives inline editing, which is the whole reason editing is built the
+way it is.** The write goes through `record.setValue()` and `record.save()` on
+the dataset record itself — measured working on a real subgrid, 2026-09-09,
+committed and survived a reload. Neither method is in
+`@types/powerapps-component-framework@1.3.18`, where `EntityRecord` declares
+four methods and none of them writes, so both are feature-detected at runtime
+before an editor is offered. The obvious alternative, `webAPI.updateRecord`,
+needs `<uses-feature name="WebAPI" />` — an install-time prompt in every
+environment — and does nothing at all in a canvas app.
+
+The same undocumented surface answers `isEditable(column)` per column *and* per
+record, which is what lets the control render a cell the user cannot write as
+plain text instead of offering an editor and discovering the truth when the save
+is refused.
+
 ## Properties
 
 | Property | Type | Usage | Default | What it controls |
@@ -59,6 +74,9 @@ utils or device — so installing the control raises no permission prompt.
 | `openOnRowClick` | TwoOptions | input | `true` | Open the record on row click, as well as from the primary column |
 | `pinnedStart` | Whole.None | input | *(unset)* | How many of the view's first columns stay put while the table scrolls sideways. Pins the select column with them |
 | `pinnedEnd` | Whole.None | input | *(unset)* | The same at the other end. One column is always left unpinned, and pinning drops itself entirely where it would leave nothing to scroll |
+| `enableEditing` | TwoOptions | input | `false` | Edit a cell in place and save it. Only cells the platform reports as editable are offered |
+| `editableColumns` | SingleLine.Text | input | *(unset)* | A comma-separated allow-list of logical names. It narrows what the platform permits; it never widens it |
+| `editedRecordId` | SingleLine.Text | output | — | The row most recently saved by an inline edit |
 | `selectedRecordIds` | Multiple | output | — | Selected row IDs, one per line |
 | `openedRecordId` | SingleLine.Text | output | — | The row most recently opened |
 

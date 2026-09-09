@@ -45,12 +45,15 @@ order: 7
 - **No column resizing or reordering by the user.** The widths and order are the
   view's, and changing them is a view-designer job.
 - **No grouping and no aggregate row.**
-- **No inline editing yet.** It is the next thing this control is getting, and
-  it is waiting on a measurement rather than on the work: the write path it
-  wants — `setValue()` and `save()` on a dataset record, which would cost no
-  install-time permission prompt and would work in a canvas app — is documented
-  by Microsoft and **absent from the published TypeScript definitions**. Nothing
-  is being written against a guess about it.
+- **Inline editing covers text, number, yes/no and date columns only.** Choice
+  and lookup columns are refused rather than deferred: the value the platform
+  stores for them is an integer or a GUID, and a dataset column carries neither.
+  Building a faithful picker needs entity metadata, which is model-driven only
+  and would add an install-time permission prompt to a control that currently
+  raises none.
+- **Editing writes one cell at a time.** There is no row-level Save/Cancel and
+  no batching: leaving a cell commits it. A column that is part of a rule
+  spanning several columns is better edited on the form.
 - **Columns can only be pinned from the ends.** `Pinned columns (start)` and
   `Pinned columns (end)` take counts, so a column out of the middle of the view
   cannot be pinned without moving it in the view designer first.
@@ -59,6 +62,20 @@ order: 7
 
 ## Behaviour worth knowing
 
+- **A cell is editable only if the platform says so.** The control asks
+  Dataverse about every cell it is about to offer an editor for, per column
+  *and* per record — so a column locked by column-level security, or one the
+  platform reports as read-only on that particular row, renders as plain text.
+  The **Editable columns** property can narrow that further; it can never widen
+  it.
+- **Editors appear a moment after the rows do.** Asking whether a cell is
+  editable is a call to the platform rather than something the control can work
+  out for itself, so cells render read-only until the answers arrive. That is
+  deliberate: offering an editor and taking it away is worse than showing it a
+  moment late.
+- **A refused write rolls the cell back and says why.** The value returns to
+  what it was and the reason appears under the cell. This is the path worth
+  knowing about, because it is the one the demo on this page cannot show.
 - **Pinning switches itself off on a narrow host.** If the columns you pinned
   would leave less than one column's worth of table still moving — a wide
   column pinned in a phone-width subgrid, say — the table renders unpinned

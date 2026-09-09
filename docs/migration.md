@@ -9,14 +9,36 @@ appliesTo: ">=0.2.0"
 
 ## 0.2.0 → 0.3.0
 
-0.3.0 adds pinned columns. **Nothing was renamed and nothing was removed**, and
-the two new properties are both unset by default — so an upgraded table renders
-exactly as it did before until you pin something.
+0.3.0 adds pinned columns and inline editing. **Nothing was renamed and nothing
+was removed**, and every new property is off or unset by default — so an
+upgraded table renders exactly as it did before, and writes nothing, until you
+turn something on.
 
 | Property | Default | What it does |
 | --- | --- | --- |
 | `pinnedStart` | *(unset)* | How many of the view's first columns stay put while the table scrolls sideways |
 | `pinnedEnd` | *(unset)* | The same at the other end |
+| `enableEditing` | **off** | Edit a cell in place and save it |
+| `editableColumns` | *(unset)* | Narrow editing to named columns |
+| `editedRecordId` | *(output)* | The row most recently saved |
+
+### Turning editing on
+
+Set **Inline editing** to Yes. Nothing else is required — the control asks
+Dataverse which cells this user may write, per column and per record, and offers
+an editor only where the answer is yes. **Editable columns** narrows that
+further if you want only some of them; it cannot widen it, so a column locked by
+column-level security stays read-only however it is listed.
+
+Text, number, yes/no and date columns get an editor. Choice and lookup columns
+do not — see [Limitations](limitations.md) for why that is a refusal rather
+than an omission.
+
+:::callout{type=info}
+**Editing still asks nothing of the environment.** The write goes through the
+dataset record rather than the Web API, so re-importing the solution raises no
+new permission prompt — the same as every previous release of this control.
+:::
 
 Both take a **count**, not a list of column names: the view designer already
 decides which columns come first, so `1` pins whichever column the view puts at
@@ -39,11 +61,6 @@ Three behaviours to expect, none of which is an error:
 The control still declares no features, so re-importing the solution raises no
 new permission prompt. Pinning is layout and nothing else.
 
-:::callout{type=info}
-Inline editing is **not** in 0.3.0. The write path it wants would also cost no
-permission prompt, and it is waiting on a measurement rather than on the work —
-see [Limitations](limitations.md).
-:::
 
 ## 0.1.x → 0.2.0
 

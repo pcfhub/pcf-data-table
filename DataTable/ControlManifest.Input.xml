@@ -190,6 +190,50 @@
               required="false" />
 
     <!--
+      Inline editing. Off by default, on the `enableExport` precedent: a
+      property that changes what a control *writes* is one a maker turns on
+      having read what it does.
+
+      **This costs no `<uses-feature>`, and that is the whole reason it is built
+      this way.** The write goes through `record.setValue()` and `record.save()`
+      on the dataset record itself — measured on a real subgrid, 2026-09-09,
+      value committed and survived a reload. The obvious alternative,
+      `webAPI.updateRecord`, needs `<uses-feature name="WebAPI" />`, which is an
+      install-time permission prompt in every environment, and does nothing at
+      all in a canvas app. `pcf-kanban-board` predates the finding and pays it.
+
+      Neither method is in `@types/powerapps-component-framework@1.3.18` —
+      `EntityRecord` there declares four methods and none of them writes — so
+      both are feature-detected at runtime before anything is offered. See
+      `index.ts`.
+    -->
+    <property name="enableEditing"
+              display-name-key="EnableEditing_Name"
+              description-key="EnableEditing_Desc"
+              of-type="TwoOptions"
+              usage="input"
+              required="false"
+              default-value="false" />
+
+    <!--
+      A comma-separated allow-list, and NO `default-value` — unset means "every
+      column the platform says is editable" rather than "none".
+
+      **It only ever narrows.** The platform is asked `record.isEditable(name)`
+      for every cell regardless, and a maker naming a column here does not make
+      a read-only column writable. That ordering matters: column-level security
+      is invisible on `Column`, so a control that trusted this list alone would
+      offer an editor over a column the user cannot write and discover it when
+      the save was refused.
+    -->
+    <property name="editableColumns"
+              display-name-key="EditableColumns_Name"
+              description-key="EditableColumns_Desc"
+              of-type="SingleLine.Text"
+              usage="input"
+              required="false" />
+
+    <!--
       Two outputs rather than one. "Which rows are ticked" and "which row was
       opened" are different questions, and a form reacts to them differently.
 
@@ -205,6 +249,22 @@
     <property name="openedRecordId"
               display-name-key="OpenedRecordId_Name"
               description-key="OpenedRecordId_Desc"
+              of-type="SingleLine.Text"
+              usage="output" />
+
+    <!--
+      A third output on the same argument as the first two: "which row was
+      edited" is a different question from "which row was opened", and a form
+      reacts to it differently.
+
+      One id rather than a list of pending changes. The approved plan carried a
+      `pendingChanges` output as the canvas escape hatch, on the assumption that
+      canvas could not write — the measurement removed the assumption, and an
+      output nothing needs is a permanent API surface that cannot be taken back.
+    -->
+    <property name="editedRecordId"
+              display-name-key="EditedRecordId_Name"
+              description-key="EditedRecordId_Desc"
               of-type="SingleLine.Text"
               usage="output" />
 

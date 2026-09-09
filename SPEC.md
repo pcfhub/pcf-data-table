@@ -583,12 +583,142 @@ worth catching is a pinned **header** over unpinned **cells**, which separates a
 column into a heading that stays and a body that scrolls away. That is one
 missing class and it looks like two different bugs.
 
-### Not verified in 0.3.0
+### Inline editing, and what the probe answered
+
+The probe of 2026-09-09 came back with more than it was sent for.
+
+**The write path exists.** `setValue`, `save` and `isDirty` are all functions on
+a live record. Driven from the console against a real row, the value committed
+and survived a reload. So editing writes through the dataset and this control
+still declares **no `<uses-feature>`** — confirmed by grepping the *built*
+manifest, which has zero, and by grepping the bundle, where `webAPI` appears
+only inside comments.
+
+**`getColumnInfo` and `DataSet.newRecord` are absent**, matching Microsoft's
+"canvas apps" annotation on both. So a dataset control can write to rows it
+already holds on either host, and can only *create* rows in canvas. Row creation
+is therefore out of scope rather than deferred.
+
+**The record answers `isEditable(column)`, and that changed the design.** The
+approved plan conceded that column-level editability is invisible on `Column` —
+the interface is name, displayName, dataType, alias, order, visualSizeFactor,
+isHidden, isPrimary, disableSorting and nothing else — and settled for offering
+an editor on every column of a writable *type*, letting the server refuse the
+rest. It does not have to. On the measured subgrid two columns answered `true`
+and `statuscode` answered `false` **on the same record**, so editability is per
+column and per record, and the control asks rather than infers.
+
+Also present and unmeasured beyond their existence: `isSecured`, `isReadable`,
+`getFieldRequiredLevel`, `isValid`, `getValidationError`, `reformatValue`,
+`getCurrencyDecimalPrecision`, `getFileObject`, `isRecordValid`, and three
+persona methods. Twenty-three methods on the record against four in the typings.
+
+### Three traps, each measured rather than reasoned
+
+**The per-column methods are async and the others are not.** `isEditable`,
+`isSecured`, `isReadable` and `getFieldRequiredLevel` return Promises; `isValid`
+and `getCurrencyDecimalPrecision` return values. Nothing distinguishes them by
+name. An unawaited call returns a Promise, which is **truthy** — so
+`if (record.isEditable(name))` is true for every column including the ones that
+are not editable, a bug shaped like working code. It is how the first
+measurement came back: `{}` four times, which is what `JSON.stringify` does to a
+Promise. `dev/host.js` returns Promises for exactly these four so the rig cannot
+let that pass.
+
+**A wrong column name throws `UciError: Invalid snapshot with id undefined`**,
+naming neither the column nor the record. Microsoft documents that exact string
+on the `save` reference page as the symptom. Reproduced here by writing to
+`name` on a table whose primary column is `cll_accountname`.
+
+**`isDirty()` returned `false` immediately after a resolved `setValue`, and the
+write still committed.** Unexplained, and recorded as unexplained. Nothing in
+this control gates on it.
+
+### The design that came out of it
+
+Editing is off by default, on the `enableExport` precedent. `editableColumns`
+is an allow-list that only ever **narrows** what the platform permits — the
+order matters, because a list that was trusted on its own would offer an editor
+over a column locked by column-level security.
+
+Commit is cell-level, on blur, with Enter to commit and Escape to revert.
+Escape has to set a flag before the blur handler runs, or blurring the input
+commits the value that was being cancelled.
+
+**Absent means read-only.** `isEditable` is a fetch, so the first render after
+editing is switched on knows nothing about any cell. Rendering an editor there
+would mean offering one on every writable *type* — the behaviour asking the
+platform was meant to replace — and withdrawing it a frame later.
+
+The resolution terminates on `editableAsked`, a set that only grows. The last
+answer home calls `notifyOutputChanged()` for the render that shows the editors,
+and that render re-enters `updateView`; a version that re-asked would notify
+forever. Same shape as the `setPageSize` loop, same shape of guard.
+
+The primary column keeps its open-record link and gets a pencil beside it,
+rather than having editing folded into the link. Two behaviours on one target is
+the ambiguity, and the column that names the row is exactly the one people most
+want to rename.
+
+### The rig was more generous than the platform, twice
+
+Both were found by mutation testing, and both had certified a bug as working.
+
+**`allocatedWidth` was answered whether or not anything asked.** On a real form
+it is `-1` until `trackContainerResize(true)` is called, which this control never
+did — so the pinning clamp shipped in 0.3.0's first commit was dead code on
+every host. Now a getter behind `quirks.resizeUntracked`, defaulted on.
+
+**`save()` applied its values synchronously before resolving.** So a control
+that retired its optimistic override the moment `save()` resolved passed every
+assertion: the record already agreed and there was no window in which the old
+value could come back. On a form there is one — a resolved save means Dataverse
+accepted the write, not that the dataset has re-read — and the cell visibly
+jumps back and then forward. Committed values now wait for `handle.reread()`,
+and the mutation is caught.
+
+The lesson is one line and it is now in the skill: **a rig more generous than
+the platform does not fail safe, it certifies the failure.**
+
+### Two stale-bundle incidents, same root cause
+
+`pcf-scripts build` exits 0 when ESLint fails, emitting no bundle. Twice a
+mutation tripped `no-constant-condition` and the suite reported green against
+the previous build. The bundle hash check caught both.
+
+A third came from the other direction: restoring a mutated source file without
+rebuilding left the *mutated* bundle in `out/`, and half an hour went into
+theorising about why an override was being retired early. It was being retired
+early — by the mutation still in the bundle. **Rebuild after restoring, not just
+after mutating.**
+
+### Not verified in 0.3.0's editing
+
+- **No edit has been made through the control's own UI on a real form.** The
+  write path was driven from the console against a live record; the control's
+  editor, its rollback and its `isEditable` gating are asserted only against
+  `dev/host.js`.
+- **Canvas is unmeasured.** Microsoft annotates `setValue`/`save` as canvas
+  **experimental**, and documents Decimal and Floating Point as unsupported
+  there. This control attempts the write and reports the refusal rather than
+  special-casing the host, which is a decision that has never been watched.
+- **`isEditable` was measured on three columns of one table.** Whether it
+  reflects column-level security, form-level locking, or something else is not
+  established — only that it varies per column and is not a function of
+  `dataType`.
+- **The `UciError` rejection shape.** The control reads `(error as Error)?.message`
+  with a fallback, because a rejected platform call is typed `unknown`. Whether
+  a refused *privilege* rejects with a useful message, rather than that opaque
+  snapshot string, is unknown.
+
+### Not verified in 0.3.0's pinning
 
 - **Nothing about pinning has been seen on a real form.** The offsets, the
   clamp and the cell counts are asserted against `dev/host.js` and rendered
   markup. Whether a sticky cell actually sticks is a browser behaviour that
-  neither the rig nor `react-dom/server` can observe.
+  neither the rig nor `react-dom/server` can observe. The clamp itself is
+  finally *reachable* there — `allocatedWidth` came back 2454 on a real subgrid
+  once `trackContainerResize(true)` was called — but reachable is not observed.
 - **Right-to-left is reasoned, not rendered.** The assertion proves the control
   writes `inset-inline-start` rather than `left`; it does not prove a
   right-to-left form pins the correct edge. Logical inset properties on sticky
@@ -596,5 +726,6 @@ missing class and it looks like two different bugs.
 - **The pinned-cell background over a hovered row is a pixel claim**, and
   pixels are where the select-column ellipsis hid for three reviews. It has not
   been through the rendered-preview rig yet.
-- **Whether `setValue` and `save` exist at all**, which is the whole of the
-  editing feature. The probe build has been handed over and not yet run.
+- ~~**Whether `setValue` and `save` exist at all**~~ — **answered.** They do,
+  they write, and the value survived a reload. See *Inline editing, and what the
+  probe answered* above; the open questions that replaced it are listed there.

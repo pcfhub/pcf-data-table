@@ -622,3 +622,171 @@ export function pagerLabel(
         .replace('{1}', String(Math.min(first + rowsOnPage - 1, totalResultCount)))
         .replace('{2}', String(totalResultCount));
 }
+
+/* -------------------------------------------------------------------------
+ * Editing
+ * ---------------------------------------------------------------------- */
+
+/**
+ * What kind of editor a column can carry, decided from `dataType`.
+ *
+ * **A veto, exactly like `filterKindFor` above**, and the exclusions are the
+ * same ones for the same reason. A `dataType` this list does not recognise
+ * yields `'none'` and no editor, rather than falling through to a text box that
+ * builds a value the platform rejects.
+ *
+ * Choices and lookups are refused, not deferred. The value the platform stores
+ * is an integer or a GUID, and **`Column` carries neither** — the whole
+ * interface is name, displayName, dataType, alias, order, visualSizeFactor,
+ * isHidden, isPrimary and disableSorting. Building a faithful picker needs
+ * `utils.getEntityMetadata()`, which is model-driven only and would add a
+ * `<uses-feature>` entry — an install-time permission prompt on every
+ * environment, which is the exact cost this whole feature was shaped to avoid.
+ * `pcf-grid-cell-styler` declines the same two cells for the same reason.
+ */
+export type EditKind = 'text' | 'number' | 'boolean' | 'date' | 'none';
+
+const BOOLEAN_TYPES = ['TwoOptions'];
+
+/**
+ * Date-only and date-and-time both edit as a date.
+ *
+ * The time half of a `DateAndTime.DateAndTime` is preserved rather than
+ * offered: an `<input type="date">` cannot express it, and zeroing it silently
+ * would move every appointment to midnight.
+ */
+const DATE_TYPES = ['DateAndTime.DateOnly', 'DateAndTime.DateAndTime'];
+
+export function editKindFor(column: Column): EditKind {
+    if (TEXT_TYPES.includes(column.dataType)) {
+        return 'text';
+    }
+
+    if (NUMBER_TYPES.includes(column.dataType)) {
+        return 'number';
+    }
+
+    if (BOOLEAN_TYPES.includes(column.dataType)) {
+        return 'boolean';
+    }
+
+    if (DATE_TYPES.includes(column.dataType)) {
+        return 'date';
+    }
+
+    return 'none';
+}
+
+/**
+ * Turn what was typed into the value `setValue` should receive.
+ *
+ * `ok: false` means "do not write this" rather than "write nothing" — a
+ * half-typed number commits nothing at all, on the same argument
+ * `numericCondition` makes for a half-typed filter. Writing `NaN` would be a
+ * wrong answer that looks like a finished one.
+ *
+ * An empty box is a real value — `null`, i.e. clear the column — for everything
+ * but text, where it is the empty string the platform already stores.
+ */
+export function coerceValue(kind: EditKind, typed: string): { ok: boolean; value: unknown } {
+    if (kind === 'text') {
+        return { ok: true, value: typed };
+    }
+
+    if (kind === 'number') {
+        if (typed.trim() === '') {
+            return { ok: true, value: null };
+        }
+
+        const value = Number(typed);
+
+        return Number.isFinite(value) ? { ok: true, value } : { ok: false, value: null };
+    }
+
+    if (kind === 'boolean') {
+        return { ok: true, value: typed === 'true' };
+    }
+
+    if (kind === 'date') {
+        if (typed.trim() === '') {
+            return { ok: true, value: null };
+        }
+
+        /*
+         * **Built from local components rather than parsed from the string**,
+         * and this repository has already paid for the difference.
+         *
+         * `<input type="date">` yields `YYYY-MM-DD`. `new Date('2026-03-01')`
+         * parses that as **UTC** midnight, so west of Greenwich it is the
+         * evening of 29 February — the column comes back a day early. The same
+         * class of one-day shift took `pcf-date-range-picker` five releases,
+         * and three of the theories along the way were wrong because they were
+         * reasoned rather than measured.
+         *
+         * `new Date(y, m - 1, d)` is local midnight, unambiguously, with no
+         * parsing rules involved.
+         */
+        const parts = typed.split('-').map(Number);
+
+        if (parts.length !== 3 || parts.some((part) => !Number.isFinite(part))) {
+            return { ok: false, value: null };
+        }
+
+        const value = new Date(parts[0], parts[1] - 1, parts[2]);
+
+        return Number.isNaN(value.getTime()) ? { ok: false, value: null } : { ok: true, value };
+    }
+
+    return { ok: false, value: null };
+}
+
+/**
+ * The columns the maker restricted editing to, or `null` for "no restriction".
+ *
+ * `null` rather than "every column" because the two are not the same question:
+ * unrestricted still defers to what the *platform* says about each column, and
+ * this set only ever narrows that further. A maker naming a column the platform
+ * reports as read-only does not make it editable.
+ */
+export function editableColumnSet(raw: string | null): Set<string> | null {
+    const names = (raw ?? '')
+        .split(',')
+        .map((part) => part.trim())
+        .filter((part) => part !== '');
+
+    return names.length > 0 ? new Set(names) : null;
+}
+
+/** One cell, addressed. Record ids are GUIDs and column names have no `|`. */
+export function cellKey(recordId: string, columnName: string): string {
+    return `${recordId}|${columnName}`;
+}
+
+/** The value an editor should open with, formatted for its input type. */
+export function editorValue(kind: EditKind, raw: unknown): string {
+    if (raw === null || raw === undefined) {
+        return '';
+    }
+
+    if (kind === 'date') {
+        const date = raw instanceof Date ? raw : new Date(String(raw));
+
+        if (Number.isNaN(date.getTime())) {
+            return '';
+        }
+
+        // Local components again, for the same reason `coerceValue` builds
+        // them: `toISOString()` here would show the previous day west of
+        // Greenwich, and the editor would round-trip a value nobody typed.
+        const month = `${date.getMonth() + 1}`.padStart(2, '0');
+        const day = `${date.getDate()}`.padStart(2, '0');
+
+        return `${date.getFullYear()}-${month}-${day}`;
+    }
+
+    if (kind === 'boolean') {
+        return raw === true || raw === 1 || raw === '1' ? 'true' : 'false';
+    }
+
+    return String(raw);
+}

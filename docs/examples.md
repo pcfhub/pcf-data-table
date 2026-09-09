@@ -121,3 +121,37 @@ Two things pinning is not. It does not let a reader drag a column somewhere else
 — the order is the view's, and the view designer is where it changes. And it
 cannot pin a column out of the middle: the properties take counts from each end,
 so a column you want pinned has to be a column the view puts first or last.
+
+## A subgrid people correct without opening records
+
+A team triaging rows: most of the work is fixing a name or a number, and opening
+each record to change one field costs more than the change is worth.
+
+| Property | Value |
+| --- | --- |
+| `enableEditing` | `true` |
+| `editableColumns` | *(leave empty)* |
+| `openOnRowClick` | `false` |
+| `selectionMode` | `none` |
+
+`openOnRowClick` is off on purpose. With editing on, a click is much more likely
+to mean "change this" than "take me away from here", and a row that navigates
+out from under a half-finished edit is the worst of both. The primary column
+keeps its link, so opening a record is still one click — it is just a deliberate
+one.
+
+Leaving `editableColumns` empty is the usual answer. The control asks Dataverse
+which cells this user may write, per column and per record, so an empty list
+already means "everything they are allowed to change" rather than "everything".
+Fill it in when a column is *technically* writable and you would still rather
+nobody edited it here.
+
+:::callout{type=warning}
+**A refused write rolls the cell back and says why**, under the cell. That path
+is the reason this control catches at all, and it is the one thing the demo on
+this page cannot show — there is no Dataverse behind it to refuse anything.
+:::
+
+Editing and pinning work together, and the pairing is the point on a wide view:
+pin the column that names the row, scroll to the column that needs fixing, and
+the row you are editing is still identified.

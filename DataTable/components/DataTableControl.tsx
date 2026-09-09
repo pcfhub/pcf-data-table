@@ -1,8 +1,12 @@
 import * as React from 'react';
 import { FluentProvider, webLightTheme } from '@fluentui/react-components';
 import {
+    cellKey,
     columnWidths,
     DESCENDING,
+    EditKind,
+    editKindFor,
+    editorValue,
     filterKindFor,
     headerCheckState,
     pagerLabel,
@@ -12,6 +16,123 @@ import {
     SelectionMode,
     tableMinWidth,
 } from './resolve';
+
+/** A pencil, on the same 20×20 grid as the chevrons. */
+const PENCIL_GLYPH = 'M4 16v-3l8-8 3 3-8 8H4zM12.5 4.5l3 3';
+
+/**
+ * The edit affordance.
+ *
+ * Inline `<svg>` inheriting the button's `color`, for the reason the chevrons
+ * are: an icon behind `<img src>` renders in an isolated document that cannot
+ * read this stylesheet, so its `currentColor` resolves to black and a dark form
+ * gets a black glyph on a dark ground. `pcf-file-drop` shipped exactly that.
+ */
+function PencilGlyph(): React.ReactElement {
+    return (
+        <svg className="DataTable-pencil" viewBox="0 0 20 20" aria-hidden="true" focusable="false">
+            <path
+                d={PENCIL_GLYPH}
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+            />
+        </svg>
+    );
+}
+
+/**
+ * One open cell editor.
+ *
+ * **Its own component so it can hold the typed value in its own state**, which
+ * matters more here than it looks: the control's `updateView` re-renders this
+ * whole table on every platform pass, and a value living in the parent would be
+ * re-derived from the record on each one — so a save landing elsewhere, or the
+ * editability of another cell resolving, would wipe out what the user was
+ * halfway through typing. Mounted only while a cell is being edited, so the
+ * state starts fresh and dies with the editor.
+ *
+ * Commit on blur, Enter and Tab; revert on Escape. Escape has to call
+ * `onCancel` before the blur handler sees it, which is why the flag exists —
+ * without it, pressing Escape blurs the input and commits the value it was
+ * cancelling.
+ */
+function CellEditor(props: {
+    kind: EditKind;
+    initial: string;
+    label: string;
+    onCommit: (typed: string) => void;
+    onCancel: () => void;
+}): React.ReactElement {
+    const [value, setValue] = React.useState(props.initial);
+    const cancelled = React.useRef(false);
+    const ref = React.useRef<HTMLInputElement & HTMLSelectElement>(null);
+
+    React.useEffect(() => {
+        if (ref.current) {
+            ref.current.focus();
+
+            if (typeof ref.current.select === 'function') {
+                ref.current.select();
+            }
+        }
+    }, []);
+
+    const finish = (): void => {
+        if (!cancelled.current) {
+            props.onCommit(value);
+        }
+    };
+
+    const onKeyDown = (event: React.KeyboardEvent): void => {
+        if (event.key === 'Escape') {
+            cancelled.current = true;
+            event.stopPropagation();
+            props.onCancel();
+
+            return;
+        }
+
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            props.onCommit(value);
+        }
+    };
+
+    const shared = {
+        ref,
+        className: 'DataTable-editor',
+        'aria-label': props.label,
+        value,
+        onBlur: finish,
+        onKeyDown,
+        // A click inside the editor must not reach the row, which opens the
+        // record — the same guard the select cell carries.
+        onClick: (event: React.MouseEvent): void => event.stopPropagation(),
+    };
+
+    if (props.kind === 'boolean') {
+        return (
+            <select
+                {...shared}
+                onChange={(event): void => setValue(event.target.value)}
+            >
+                <option value="true">Yes</option>
+                <option value="false">No</option>
+            </select>
+        );
+    }
+
+    return (
+        <input
+            {...shared}
+            type={props.kind === 'number' ? 'number' : props.kind === 'date' ? 'date' : 'text'}
+            onChange={(event): void => setValue(event.target.value)}
+        />
+    );
+}
 
 /**
  * The class list and sticky offset for one pinned cell, or nothing at all.
@@ -187,6 +308,19 @@ export interface IProps {
     onToggleRow: (id: string) => void;
     onToggleAll: (ids: string[], selectAll: boolean) => void;
     onOpenRecord: (id: string) => void;
+
+    enableEditing: boolean;
+    /** The maker's allow-list, or `null` for "whatever the platform permits". */
+    allowedColumns: Set<string> | null;
+    /** What the platform answered for each cell. Absent means "not yet asked". */
+    editableCells: Map<string, boolean>;
+    editing: { id: string; column: string } | null;
+    pendingValues: Map<string, unknown>;
+    savingCells: Set<string>;
+    editFailure: { key: string; message: string } | null;
+    onBeginEdit: (id: string, column: string) => void;
+    onCancelEdit: () => void;
+    onCommitEdit: (id: string, column: string, kind: EditKind, typed: string) => void;
 }
 
 /**
@@ -641,34 +775,237 @@ export function DataTableControl(props: IProps): React.ReactElement | null {
                                         </td>
                                     )}
 
-                                    {columns.map((column, index) => (
-                                        <td key={column.name} {...pinCell(pins.columns[index])}>
-                                            {/*
-                                                The primary cell is a button so
-                                                open-record is reachable by
-                                                keyboard. A clickable <tr> alone
-                                                is not.
-                                            */}
-                                            {primary && column.name === primary.name ? (
-                                                <button
-                                                    type="button"
-                                                    className="DataTable-open"
-                                                    title={getString('DataTable_OpenRecord').replace(
-                                                        '{0}',
-                                                        rowName,
-                                                    )}
-                                                    onClick={(event): void => {
-                                                        event.stopPropagation();
-                                                        props.onOpenRecord(id);
-                                                    }}
-                                                >
-                                                    {record.getFormattedValue(column.name)}
-                                                </button>
-                                            ) : (
-                                                record.getFormattedValue(column.name)
-                                            )}
-                                        </td>
-                                    ))}
+                                    {columns.map((column, index) => {
+                                        const key = cellKey(id, column.name);
+                                        const kind = editKindFor(column);
+                                        const isPrimaryCell =
+                                            Boolean(primary) && column.name === primary?.name;
+
+                                        /*
+                                          **Three conditions, and the platform's
+                                          is the last word.** The maker's
+                                          allow-list narrows; `editKindFor`
+                                          vetoes types with no editor; and
+                                          `editableCells` is what the platform
+                                          said about this cell on this record.
+                                          Absent means "not answered yet" — which
+                                          renders read-only, because declining
+                                          to offer an editor is always safe and
+                                          offering one the platform then refuses
+                                          is not.
+                                        */
+                                        const editable =
+                                            props.enableEditing
+                                            && kind !== 'none'
+                                            && (props.allowedColumns === null
+                                                || props.allowedColumns.has(column.name))
+                                            && props.editableCells.get(key) === true;
+
+                                        const isEditingCell =
+                                            props.editing?.id === id
+                                            && props.editing?.column === column.name;
+
+                                        const saving = props.savingCells.has(key);
+                                        const hasPending = props.pendingValues.has(key);
+                                        const failure =
+                                            props.editFailure?.key === key
+                                                ? props.editFailure.message
+                                                : null;
+
+                                        /*
+                                          The optimistic value outranks the
+                                          record's, because the record has not
+                                          been re-read yet. Formatted through
+                                          `editorValue` rather than the
+                                          platform's formatter, which cannot see
+                                          a value the dataset does not hold — so
+                                          a date reads as `2026-03-01` for the
+                                          moment between the save landing and
+                                          the refresh arriving.
+                                        */
+                                        const text = hasPending
+                                            ? editorValue(kind, props.pendingValues.get(key))
+                                            : record.getFormattedValue(column.name);
+
+                                        const cellClass = [
+                                            saving ? 'is-saving' : '',
+                                            failure ? 'is-invalid' : '',
+                                        ]
+                                            .filter(Boolean)
+                                            .join(' ');
+
+                                        const pinned = pinCell(pins.columns[index]);
+
+                                        return (
+                                            <td
+                                                key={column.name}
+                                                {...pinned}
+                                                className={
+                                                    [pinned.className, cellClass]
+                                                        .filter(Boolean)
+                                                        .join(' ') || undefined
+                                                }
+                                            >
+                                                {isEditingCell ? (
+                                                    <CellEditor
+                                                        kind={kind}
+                                                        initial={editorValue(
+                                                            kind,
+                                                            record.getValue(column.name),
+                                                        )}
+                                                        label={getString(
+                                                            'DataTable_EditCell',
+                                                        ).replace('{0}', column.displayName)}
+                                                        onCommit={(typed): void =>
+                                                            props.onCommitEdit(
+                                                                id,
+                                                                column.name,
+                                                                kind,
+                                                                typed,
+                                                            )
+                                                        }
+                                                        onCancel={props.onCancelEdit}
+                                                    />
+                                                ) : (
+                                                    <>
+                                                        {/*
+                                                          The primary cell is a
+                                                          button so open-record
+                                                          is reachable by
+                                                          keyboard. A clickable
+                                                          <tr> alone is not.
+                                                        */}
+                                                        {isPrimaryCell ? (
+                                                            <button
+                                                                type="button"
+                                                                className="DataTable-open"
+                                                                title={getString(
+                                                                    'DataTable_OpenRecord',
+                                                                ).replace('{0}', rowName)}
+                                                                onClick={(event): void => {
+                                                                    event.stopPropagation();
+                                                                    props.onOpenRecord(id);
+                                                                }}
+                                                            >
+                                                                {text}
+                                                            </button>
+                                                        ) : editable ? (
+                                                            /*
+                                                              A real button, for
+                                                              the same reason the
+                                                              primary cell is
+                                                              one: an editor
+                                                              reachable only by
+                                                              mouse is an editor
+                                                              half the users
+                                                              cannot open.
+                                                            */
+                                                            <button
+                                                                type="button"
+                                                                className="DataTable-editTrigger"
+                                                                title={getString(
+                                                                    'DataTable_EditCell',
+                                                                ).replace(
+                                                                    '{0}',
+                                                                    column.displayName,
+                                                                )}
+                                                                onClick={(event): void => {
+                                                                    event.stopPropagation();
+                                                                    props.onBeginEdit(
+                                                                        id,
+                                                                        column.name,
+                                                                    );
+                                                                }}
+                                                            >
+                                                                <span>
+                                                                    {text
+                                                                        || getString(
+                                                                            'DataTable_EditEmpty',
+                                                                        )}
+                                                                </span>
+                                                            </button>
+                                                        ) : (
+                                                            text
+                                                        )}
+
+                                                        {/*
+                                                          The primary cell keeps
+                                                          its open-record link
+                                                          and gets the pencil
+                                                          beside it. Folding
+                                                          editing into that
+                                                          button would put two
+                                                          behaviours on one
+                                                          target — and the
+                                                          column that names the
+                                                          row is exactly the one
+                                                          people most want to
+                                                          rename.
+                                                        */}
+                                                        {isPrimaryCell && editable && (
+                                                            <button
+                                                                type="button"
+                                                                className="DataTable-editPencil"
+                                                                aria-label={getString(
+                                                                    'DataTable_EditCell',
+                                                                ).replace(
+                                                                    '{0}',
+                                                                    column.displayName,
+                                                                )}
+                                                                title={getString(
+                                                                    'DataTable_EditCell',
+                                                                ).replace(
+                                                                    '{0}',
+                                                                    column.displayName,
+                                                                )}
+                                                                onClick={(event): void => {
+                                                                    event.stopPropagation();
+                                                                    props.onBeginEdit(
+                                                                        id,
+                                                                        column.name,
+                                                                    );
+                                                                }}
+                                                            >
+                                                                <PencilGlyph />
+                                                            </button>
+                                                        )}
+
+                                                        {saving && (
+                                                            <span className="DataTable-savingNote">
+                                                                {getString('DataTable_Saving')}
+                                                            </span>
+                                                        )}
+
+                                                        {/*
+                                                          The refusal is named
+                                                          against the cell that
+                                                          caused it, and it is
+                                                          `role="alert"` because
+                                                          a rollback a screen
+                                                          reader never hears is
+                                                          a value that silently
+                                                          changed back.
+                                                        */}
+                                                        {failure && (
+                                                            <span
+                                                                className="DataTable-cellError"
+                                                                role="alert"
+                                                            >
+                                                                {getString(
+                                                                    'DataTable_SaveFailed',
+                                                                )
+                                                                    .replace(
+                                                                        '{0}',
+                                                                        column.displayName,
+                                                                    )
+                                                                    .replace('{1}', failure)}
+                                                            </span>
+                                                        )}
+                                                    </>
+                                                )}
+                                            </td>
+                                        );
+                                    })}
                                 </tr>
                             );
                         })}
