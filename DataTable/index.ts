@@ -116,11 +116,37 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
     private chosenPageSize: number | null = null;
 
     public init(
-        _context: ComponentFramework.Context<IInputs>,
+        context: ComponentFramework.Context<IInputs>,
         notifyOutputChanged: () => void,
     ): void {
         // No container: a virtual control never receives one.
         this.notifyOutputChanged = notifyOutputChanged;
+
+        /*
+         * **Without this call the platform does not report `allocatedWidth` at
+         * all**, and the pinning clamp in `pinPlan()` is dead code.
+         *
+         * Measured on a real Accounts subgrid, 2026-09-09, on the build that
+         * shipped pinning: `mode.allocatedWidth` came back **-1**, alongside
+         * `allocatedHeight: -1`. The clamp reads a non-positive width as "the
+         * host did not measure" and pins as asked — which is the right answer
+         * for `npm start` and exactly the wrong one for a phone subgrid, the
+         * case the clamp exists for. So the feature was measured against a
+         * number that a real form was never going to send.
+         *
+         * The rig missed it because `dev/host.js` answers `allocatedWidth` from
+         * its `width` option whether or not anything asked, so a control that
+         * never subscribes still reads a width there. That gap is now closed
+         * with the `resizeUntracked` quirk.
+         *
+         * Feature-detected rather than called outright: `mode` is typed as
+         * always carrying this method, and that is a claim about the type
+         * definitions rather than about the host — the same reasoning
+         * `goToPage` applies to `loadExactPage`.
+         */
+        if (typeof context.mode.trackContainerResize === 'function') {
+            context.mode.trackContainerResize(true);
+        }
     }
 
     public updateView(context: ComponentFramework.Context<IInputs>): React.ReactElement {

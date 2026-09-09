@@ -757,6 +757,25 @@ check(
 const pinCount = (markup, edge) =>
     (markup.match(new RegExp(`is-pinned-${edge}`, 'g')) || []).length;
 
+/*
+ * **The control has to ask for its own width before it can read one.**
+ *
+ * `mode.allocatedWidth` stays -1 until `trackContainerResize(true)` is called —
+ * measured on a real Accounts subgrid, 2026-09-09, where a build that never
+ * subscribed read -1 with `allocatedHeight` at -1 beside it. Everything the
+ * clamp below decides rests on that number.
+ *
+ * This assertion exists because the rig used to hand over the `width` option
+ * whether or not anything asked, so the clamp passed here and was dead code on
+ * every form. `quirks.resizeUntracked` closes the gap; this states the
+ * requirement so it fails loudly rather than silently reverting to "unmeasured".
+ */
+check(
+    'the control asks to be told its width, or it can never know one',
+    view.calls().some((call) => call.indexOf('trackContainerResize(true)') === 0),
+    view.calls().filter((call) => call.startsWith('trackContainerResize')).join(' ') || 'never asked',
+);
+
 check(
     'nothing is pinned unless the maker asked',
     !narrowMarkup.includes('is-pinned'),

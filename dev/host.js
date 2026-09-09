@@ -257,6 +257,28 @@
 
             /** Whether `context.navigation` exists at all. Typed non-optional. */
             navigationAbsent: false,
+
+            /**
+             * `allocatedWidth` stays -1 until the control calls
+             * `trackContainerResize(true)`.
+             *
+             * **Defaulted on, because that is what a real form does.** Measured
+             * on an Accounts subgrid, 2026-09-09: a control that never
+             * subscribed read `allocatedWidth` as -1, with `allocatedHeight`
+             * at -1 beside it.
+             *
+             * It is a quirk rather than plain behaviour because it hid a real
+             * bug for a whole release. The rig used to answer the `width`
+             * option unconditionally, so `pcf-data-table`'s pinning clamp —
+             * which drops pinning where it would leave nothing to scroll —
+             * passed its assertions here and was dead code on every form. A rig
+             * that is more generous than the platform does not fail safe; it
+             * certifies the failure.
+             *
+             * Turn it off to model a host that measures without being asked, if
+             * one is ever found.
+             */
+            resizeUntracked: true,
         },
     };
 
@@ -292,6 +314,17 @@
             requestedPageSize: o.pageSize,
             refreshes: 0,
             renderOwed: false,
+            /**
+             * Whether the control has subscribed to container resize.
+             *
+             * **The platform does not report `allocatedWidth` until it has.**
+             * Measured on a real Accounts subgrid, 2026-09-09: a control that
+             * never called `trackContainerResize(true)` read `allocatedWidth`
+             * as -1 there, while this rig handed it the `width` option
+             * regardless — so a layout gated on a measured width tested green
+             * here and was dead code on a form. See `quirks.resizeUntracked`.
+             */
+            resizeTracked: false,
             /** Every mutator the control called, in order, with its argument. */
             calls: [],
             /**
@@ -811,11 +844,22 @@
                     // resize itself comes from the `width` option.
                     trackContainerResize: function (value) {
                         log('trackContainerResize', value);
+                        state.resizeTracked = value !== false;
                     },
                     setFullScreen: function (value) {
                         log('setFullScreen', value);
                     },
-                    allocatedWidth: o.width,
+                    /*
+                     * A getter, because the answer depends on something the
+                     * control does rather than on how the host was configured:
+                     * **the platform reports no width until the control has
+                     * subscribed.** A plain property handed one over whether or
+                     * not anything asked, which is how `pcf-data-table` shipped
+                     * a pinning clamp that could never fire on a real form.
+                     */
+                    get allocatedWidth() {
+                        return quirks.resizeUntracked && !state.resizeTracked ? -1 : o.width;
+                    },
                     // Pinned at -1 under `heightUnmeasured`, whatever `height`
                     // says — a main grid answers the width and never this.
                     allocatedHeight: quirks.heightUnmeasured ? -1 : o.height,

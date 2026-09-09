@@ -86,11 +86,50 @@ export function probe(context: ComponentFramework.Context<IInputs>): void {
         allocatedHeight: context.mode.allocatedHeight,
 
         targetEntityType: dataset.getTargetEntityType(),
-        columns: (dataset.columns ?? []).map((column) => ({
-            name: column.name,
-            dataType: column.dataType,
-            visualSizeFactor: column.visualSizeFactor,
-        })),
+
+        /*
+         * **Round two: the per-column methods nobody documented.**
+         *
+         * Round one came back with a record carrying `isEditable`, `isSecured`,
+         * `isReadable`, `getFieldRequiredLevel`, `isValid`, `getValidationError`
+         * and `getCurrencyDecimalPrecision` — none of them in the typings, none
+         * of them on Microsoft Learn, and every one of them the answer to a
+         * question this control had already decided it could not ask.
+         *
+         * The editing design was going to offer an editor on every column of a
+         * writable type and let the server refuse the ones the user cannot
+         * write, because column-level security is invisible on `Column`. If
+         * `isEditable(name)` answers, that whole compromise goes away.
+         *
+         * So: call each one against each column and report what comes back,
+         * including the throw. A method whose *signature* is a guess is not a
+         * measurement — `undefined` from a wrong argument list looks exactly
+         * like `false`.
+         */
+        columns: (dataset.columns ?? []).map((column) => {
+            const ask = (method: string): unknown => {
+                try {
+                    return typeof asAny[method] === 'function'
+                        ? asAny[method](column.name)
+                        : `no such method (${typeof asAny[method]})`;
+                } catch (error) {
+                    return `threw: ${(error as Error).message}`;
+                }
+            };
+
+            return {
+                name: column.name,
+                dataType: column.dataType,
+                visualSizeFactor: column.visualSizeFactor,
+                isEditable: ask('isEditable'),
+                isSecured: ask('isSecured'),
+                isReadable: ask('isReadable'),
+                requiredLevel: ask('getFieldRequiredLevel'),
+                isValid: ask('isValid'),
+                validationError: ask('getValidationError'),
+                currencyPrecision: ask('getCurrencyDecimalPrecision'),
+            };
+        }),
     });
 
     /*
