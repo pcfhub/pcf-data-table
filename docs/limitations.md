@@ -44,12 +44,33 @@ order: 7
 
 - **No column resizing or reordering by the user.** The widths and order are the
   view's, and changing them is a view-designer job.
-- **No grouping, no aggregate row, no inline editing.**
+- **No grouping and no aggregate row.**
+- **No inline editing yet.** It is the next thing this control is getting, and
+  it is waiting on a measurement rather than on the work: the write path it
+  wants — `setValue()` and `save()` on a dataset record, which would cost no
+  install-time permission prompt and would work in a canvas app — is documented
+  by Microsoft and **absent from the published TypeScript definitions**. Nothing
+  is being written against a guess about it.
+- **Columns can only be pinned from the ends.** `Pinned columns (start)` and
+  `Pinned columns (end)` take counts, so a column out of the middle of the view
+  cannot be pinned without moving it in the view designer first.
 - **No multi-column sort.** Sorting one column replaces the order rather than
   adding to it, which is what the view's own `ORDER BY` holds.
 
 ## Behaviour worth knowing
 
+- **Pinning switches itself off on a narrow host.** If the columns you pinned
+  would leave less than one column's worth of table still moving — a wide
+  column pinned in a phone-width subgrid, say — the table renders unpinned
+  rather than pinned to a sliver. Nothing is reported: on a wide screen the
+  same configuration pins, so this is a layout that adapts rather than a
+  setting that failed.
+- **Pinning the first column pins the selection checkboxes with it.** They are
+  the first column, and left loose they would slide underneath the one pinned
+  beside them.
+- **You cannot pin every column.** One is always left to scroll, and the count
+  at the end is reduced before the count at the start — the columns that name
+  the row are the ones worth keeping.
 - **Selection is not persisted across a form reload.** It lives in the control
   for the lifetime of the page. Reopen the form and nothing is ticked.
 - **Page size may be clamped.** The control asks for what you configure, capped

@@ -138,6 +138,19 @@
     <value>Open the record when its row is clicked, as well as from the primary column.</value>
   </data>
 
+  <data name="PinnedStart_Name" xml:space="preserve">
+    <value>Pinned columns (start)</value>
+  </data>
+  <data name="PinnedStart_Desc" xml:space="preserve">
+    <value>How many of the view's first columns stay in place while the table scrolls sideways. Leave empty to pin none.</value>
+  </data>
+  <data name="PinnedEnd_Name" xml:space="preserve">
+    <value>Pinned columns (end)</value>
+  </data>
+  <data name="PinnedEnd_Desc" xml:space="preserve">
+    <value>How many of the view's last columns stay in place while the table scrolls sideways. Leave empty to pin none.</value>
+  </data>
+
   <data name="SelectedRecordIds_Name" xml:space="preserve">
     <value>Selected record IDs</value>
   </data>

@@ -46,7 +46,8 @@
             "Clicking a row calls dataset.openDatasetItem(), which the harness logs as a mock call: there is no Dataverse behind this origin and no form to open. The openedRecordId output still updates, so the value a form would react to is visible.",
             "Rows tick and untick, but dataset.setSelectedRecordIds() does not survive a re-render for the same reason sorting does not. What you see is the control’s own copy of the selection. On a model-driven form that same call is what tells the command bar which records the ribbon acts on.",
             "Typing in a filter box narrows nothing here, and that is structural rather than a gap in effort. Filtering is applied by the server across every page — the control calls dataset.filtering.setFilter() and then refresh() — and there is no server behind this origin. What the demo does show is the half worth seeing: the filter row renders per column type, so you can watch which columns get a box and which deliberately do not. The call log records the expression that a real view would have been filtered by.",
-            "Export CSV is on in the second preset and does produce a real file, because building it needs nothing but the records already on the page. It is the one new feature here that is not a mock. What it cannot show is the limitation that matters on a real view: it exports the rows the control has loaded, and this fixture is a single page, so here that happens to be all of them."
+            "Export CSV is on in the second preset and does produce a real file, because building it needs nothing but the records already on the page. It is the one new feature here that is not a mock. What it cannot show is the limitation that matters on a real view: it exports the rows the control has loaded, and this fixture is a single page, so here that happens to be all of them.",
+            "Pinned columns are the one thing on this page that is not simulated at all — pinning is layout, so it needs no server and no dataset call, and what the Pinned columns preset shows is exactly what a form shows. The catch is that a pinned column is only visible once there is something to scroll, and this fixture has six columns against a table that starts scrolling at about 740px. Narrow the browser window until the table scrolls sideways and the first and last columns stay put. A real view with fifteen columns scrolls without being asked."
         ],
         "presets": [
             {
@@ -61,6 +62,20 @@
                     "openOnRowClick": true
                 },
                 "isDefault": true
+            },
+            {
+                "slug": "pinned-columns",
+                "name": "Pinned columns",
+                "description": "The account name held at the start and the modified date at the end while the columns between them scroll. Narrow the browser until the table scrolls sideways to see it.",
+                "props": {
+                    "pageSize": 25,
+                    "pinnedStart": 1,
+                    "pinnedEnd": 1,
+                    "selectionMode": "multiple",
+                    "enableSorting": true,
+                    "enableFiltering": true,
+                    "openOnRowClick": true
+                }
             },
             {
                 "slug": "filter-and-export",

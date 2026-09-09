@@ -44,8 +44,25 @@
     opacity: 0.6;
 }
 
+/*
+ * **`separate` rather than `collapse`, and pinned columns are the reason.**
+ *
+ * With `border-collapse: collapse` the borders belong to the *table*, not to
+ * the cells — that is what "collapsed" means. A `position: sticky` cell then
+ * scrolls over the rows beside it carrying no borders of its own, so a pinned
+ * column loses its horizontal rules the moment the table is scrolled and gains
+ * them back when it is not. It reads as a rendering fault rather than as a
+ * feature.
+ *
+ * Safe to change here because only `border-bottom` is ever set on a cell, so
+ * there are no adjacent borders to double up: `separate` with `border-spacing:
+ * 0` draws the identical single line the collapsed table did. The spacing has
+ * to be stated — its initial value is 2px, which would open a gap between every
+ * cell in the table.
+ */
 .DataTable-table {
-    border-collapse: collapse;
+    border-collapse: separate;
+    border-spacing: 0;
     width: 100%;
     table-layout: fixed;
 }
@@ -85,6 +102,82 @@
 
 .DataTable-selectCol {
     width: 40px;
+}
+
+/*
+ * Pinned columns.
+ *
+ * The offsets are inline styles rather than rules, because they are a running
+ * sum of the pinned widths and CSS cannot add them up — see `pinPlan` in
+ * `components/resolve.ts`. What lives here is everything that is the same for
+ * every pinned cell.
+ *
+ * **The background is not decoration.** A table cell is transparent by default,
+ * and a sticky cell stays where it is while the rest of the row slides
+ * underneath it — so without an opaque ground a pinned column renders the
+ * scrolling text of its neighbours straight through itself. This was the whole
+ * of the first attempt's appearance: two columns of overlapping words.
+ */
+.DataTable-table th.is-pinned,
+.DataTable-table td.is-pinned {
+    position: sticky;
+    /* Above the cells sliding past, and below nothing — there is no other
+       stacking context in the table. */
+    z-index: 1;
+    background-color: var(--colorNeutralBackground1, #ffffff);
+}
+
+/* The filter row is tinted to read as chrome, and a pinned cell of it has to
+   keep that tint rather than reverting to the body's white. */
+.DataTable-filterRow th.is-pinned {
+    background-color: var(--colorNeutralBackground3, #f5f5f5);
+}
+
+/*
+ * **Hover and selection are `tr` rules, and a pinned cell paints over them.**
+ *
+ * `tbody tr:hover` sets the background on the row; the cell's own opaque ground
+ * sits on top of it, so a pinned column stayed white down a highlighted row —
+ * the row appearing to break in half at the seam. These two restate the row's
+ * colours on the cell.
+ *
+ * Order matters and mirrors the `tr` rules above: `:hover` and `.is-selected`
+ * carry the same specificity, so the later one wins for a row that is both.
+ */
+.DataTable-table tbody tr:hover td.is-pinned {
+    background-color: var(--colorNeutralBackground1Hover, #f5f5f5);
+}
+
+.DataTable-table tbody tr.is-selected td.is-pinned {
+    background-color: var(--colorNeutralBackground1Selected, #ebebeb);
+}
+
+/*
+ * The seam at the end of a pinned run — the only thing that tells a reader
+ * these columns are still and the others are moving.
+ *
+ * A pseudo-element rather than a border, because under `border-spacing: 0` a
+ * border on the cell takes part in the layout: adding one would widen the
+ * pinned column by a pixel and shift every offset after it. This is drawn
+ * inside the cell's own box and costs no width.
+ *
+ * `position: absolute` resolves against the cell because a sticky cell is a
+ * positioned element. The inline-end side for a run pinned at the start, and
+ * the inline-start side for one pinned at the end — the seam always faces the
+ * columns that move.
+ */
+.DataTable-table .is-pinnedEdge::after {
+    content: '';
+    position: absolute;
+    inset-block: 0;
+    inset-inline-end: 0;
+    width: 1px;
+    background-color: var(--colorNeutralStroke1, #d1d1d1);
+}
+
+.DataTable-table .is-pinned-end.is-pinnedEdge::after {
+    inset-inline-end: auto;
+    inset-inline-start: 0;
 }
 
 /*

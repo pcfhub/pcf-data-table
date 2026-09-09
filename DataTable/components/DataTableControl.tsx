@@ -6,10 +6,51 @@ import {
     filterKindFor,
     headerCheckState,
     pagerLabel,
+    PinnedColumn,
+    PinPlan,
     primaryColumn,
     SelectionMode,
     tableMinWidth,
 } from './resolve';
+
+/**
+ * The class list and sticky offset for one pinned cell, or nothing at all.
+ *
+ * **Logical insets rather than `left`/`right`.** The offsets are measured from
+ * the *start* of the table, and in a right-to-left form the start is the right —
+ * so a physical `left` would pin the first column to the far side of the row it
+ * belongs to. The rest of this control's CSS already reasons in logical
+ * properties (`padding-inline`, `margin-inline-start`) for the same reason.
+ *
+ * `is-pinnedEdge` marks the last column of a run. The seam it draws is the only
+ * thing that tells a reader the columns beside it are moving and these are not;
+ * without it a pinned column reads as a rendering fault.
+ */
+function pinCell(
+    pin: PinnedColumn | undefined,
+    base?: string,
+): { className: string | undefined; style: React.CSSProperties | undefined } {
+    if (!pin || !pin.pinned) {
+        return { className: base, style: undefined };
+    }
+
+    const classes = [base, 'is-pinned', `is-pinned-${pin.pinned}`];
+
+    if (pin.edge) {
+        classes.push('is-pinnedEdge');
+    }
+
+    return {
+        className: classes.filter(Boolean).join(' '),
+        style:
+            pin.pinned === 'start'
+                ? { insetInlineStart: `${pin.offset}px` }
+                : { insetInlineEnd: `${pin.offset}px` },
+    };
+}
+
+/** The select column sticks whenever anything is pinned at the start. */
+const SELECT_PIN: PinnedColumn = { pinned: 'start', width: null, offset: 0, edge: false };
 
 /** The pager chevrons, on a 20×20 grid. Two strokes each. */
 const CHEVRON_PREVIOUS = 'M12.5 5 7.5 10l5 5';
@@ -115,6 +156,8 @@ type DataSet = ComponentFramework.PropertyTypes.DataSet;
 export interface IProps {
     dataset: DataSet;
     columns: Column[];
+    /** Which columns stick, how wide they are, and how far in they sit. */
+    pins: PinPlan;
     pageIds: string[];
     selected: string[];
     selectionMode: SelectionMode;
@@ -278,10 +321,26 @@ export function DataTableControl(props: IProps): React.ReactElement | null {
         );
     }
 
-    const widths = columnWidths(columns);
     const primary = primaryColumn(columns);
     const selectable = props.selectionMode !== 'none';
     const multiple = props.selectionMode === 'multiple';
+    const pins = props.pins;
+
+    /*
+     * **Two width systems, and only one of them is in force at a time.**
+     *
+     * Unpinned, this is exactly what 0.2.0 did: `columnWidths` turns
+     * `visualSizeFactor` into percentages, or returns `null` where the host set
+     * no factors at all and the browser's own table layout is the better answer.
+     *
+     * Pinned, the plan owns every width — because a pinned column needs pixels
+     * for its sticky offset to mean anything, and the loose columns then have to
+     * divide what is left rather than the whole table. Mixing the two by hand at
+     * this level is how the layout drifts wider on every render.
+     */
+    const widths = pins.none ? columnWidths(columns) : pins.columns.map((pin) => pin.width);
+    const minWidth = pins.none ? tableMinWidth(columns.length, selectable) : pins.minWidth;
+    const selectPin = pins.selectPinned ? SELECT_PIN : undefined;
 
     const toggleRow = (id: string): void => {
         props.onToggleRow(id);
@@ -325,7 +384,7 @@ export function DataTableControl(props: IProps): React.ReactElement | null {
                 */}
                 <table
                     className="DataTable-table"
-                    style={{ minWidth: `${tableMinWidth(columns.length, selectable)}px` }}
+                    style={{ minWidth: `${minWidth}px` }}
                 >
                     <caption className="DataTable-caption">{dataset.getTitle()}</caption>
 
@@ -333,7 +392,14 @@ export function DataTableControl(props: IProps): React.ReactElement | null {
                         <colgroup>
                             {selectable && <col className="DataTable-selectCol" />}
                             {widths.map((width, index) => (
-                                <col key={columns[index].name} style={{ width }} />
+                                <col
+                                    key={columns[index].name}
+                                    // `null` is a real entry: the plan leaves a
+                                    // loose column unmeasured where the host set
+                                    // no factors, and React drops an undefined
+                                    // width rather than writing `width: null`.
+                                    style={{ width: width ?? undefined }}
+                                />
                             ))}
                         </colgroup>
                     )}
@@ -341,7 +407,7 @@ export function DataTableControl(props: IProps): React.ReactElement | null {
                     <thead>
                         <tr>
                             {selectable && (
-                                <th scope="col" className="DataTable-selectCell">
+                                <th scope="col" {...pinCell(selectPin, 'DataTable-selectCell')}>
                                     {multiple && (
                                         <input
                                             ref={headerRef}
@@ -355,7 +421,7 @@ export function DataTableControl(props: IProps): React.ReactElement | null {
                                 </th>
                             )}
 
-                            {columns.map((column) => {
+                            {columns.map((column, index) => {
                                 const sorted = sortFor(column);
                                 // The fixture format cannot express a
                                 // non-sortable column, so undefined means
@@ -368,6 +434,7 @@ export function DataTableControl(props: IProps): React.ReactElement | null {
                                         key={column.name}
                                         scope="col"
                                         aria-sort={sortable ? sorted : undefined}
+                                        {...pinCell(pins.columns[index])}
                                     >
                                         {sortable ? (
                                             <button
@@ -404,9 +471,9 @@ export function DataTableControl(props: IProps): React.ReactElement | null {
                         */}
                         {props.enableFiltering && (
                             <tr className="DataTable-filterRow">
-                                {selectable && <th className="DataTable-selectCell" />}
+                                {selectable && <th {...pinCell(selectPin, 'DataTable-selectCell')} />}
 
-                                {columns.map((column) => {
+                                {columns.map((column, index) => {
                                     const kind = filterKindFor(column);
 
                                     if (kind === 'none') {
@@ -421,10 +488,13 @@ export function DataTableControl(props: IProps): React.ReactElement | null {
                                         return (
                                             <th
                                                 key={column.name}
-                                                className="DataTable-filterNone"
                                                 title={getString('DataTable_Unfilterable').replace(
                                                     '{0}',
                                                     column.displayName,
+                                                )}
+                                                {...pinCell(
+                                                    pins.columns[index],
+                                                    'DataTable-filterNone',
                                                 )}
                                             >
                                                 <span aria-hidden="true">—</span>
@@ -439,7 +509,7 @@ export function DataTableControl(props: IProps): React.ReactElement | null {
                                     ).replace('{0}', column.displayName);
 
                                     return (
-                                        <th key={column.name}>
+                                        <th key={column.name} {...pinCell(pins.columns[index])}>
                                             <span className="DataTable-filterBox">
                                             <input
                                                 type="text"
@@ -554,8 +624,8 @@ export function DataTableControl(props: IProps): React.ReactElement | null {
                                 >
                                     {selectable && (
                                         <td
-                                            className="DataTable-selectCell"
                                             onClick={(event): void => event.stopPropagation()}
+                                            {...pinCell(selectPin, 'DataTable-selectCell')}
                                         >
                                             <input
                                                 type={multiple ? 'checkbox' : 'radio'}
@@ -571,8 +641,8 @@ export function DataTableControl(props: IProps): React.ReactElement | null {
                                         </td>
                                     )}
 
-                                    {columns.map((column) => (
-                                        <td key={column.name}>
+                                    {columns.map((column, index) => (
+                                        <td key={column.name} {...pinCell(pins.columns[index])}>
                                             {/*
                                                 The primary cell is a button so
                                                 open-record is reachable by

@@ -50,7 +50,7 @@ Three pieces of column metadata change what you see:
 | --- | --- |
 | `isPrimary` | That cell becomes the open-record button, and its value is the row's accessible name. Falls back to the first visible column. |
 | `disableSorting` | No sort control on that column, and no `aria-sort`. |
-| `visualSizeFactor` | Distributed as percentage widths. When every factor is 0 — which canvas reports — the browser lays the table out instead. |
+| `visualSizeFactor` | Distributed as percentage widths. When every factor is 0 — which canvas reports — the browser lays the table out instead. A **pinned** column reads the same number as a pixel width, because Dataverse stores it in `layoutxml` as one, and a sticky column cannot take a share of a width it is holding still against. |
 
 ## Outputs in practice
 

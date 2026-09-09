@@ -8,6 +8,7 @@ import {
     lastPage,
     nextDirection,
     pageSizeChoices,
+    pinPlan,
     SelectionMode,
     toCsv,
     toggleId,
@@ -138,6 +139,20 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
         const props: IProps = {
             dataset,
             columns,
+            /*
+             * Computed here rather than in the component because it is a
+             * decision about the host — `mode.allocatedWidth` is the measurement
+             * that decides whether pinning is affordable at all, and the
+             * component never sees `context`. Everything else about the plan is
+             * pure and lives in `resolve.ts`.
+             */
+            pins: pinPlan(
+                columns,
+                context.parameters.pinnedStart.raw,
+                context.parameters.pinnedEnd.raw,
+                context.mode.allocatedWidth,
+                mode !== 'none',
+            ),
             pageIds,
             selected: this.selected,
             selectionMode: mode,

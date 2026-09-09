@@ -154,6 +154,42 @@
               default-value="true" />
 
     <!--
+      Pinned columns: counts, not names, and no `default-value` on either.
+
+      **Counts, because the view designer is already the configuration UI here.**
+      That is the same argument that made this control declare no `property-set`
+      roles: the maker arranged the columns and `order` records it, so "the first
+      two" is a thing they have already said. A list of logical names would be
+      more expressive — it could pin a column out of the middle — and it fails
+      silently the day somebody removes that column from the view, which is a
+      configuration that quietly stops doing what it says.
+
+      **No default, for the same reason `pageSize` has none:** unset has to mean
+      "lay this table out exactly as 0.2.0 did", so a control nobody has
+      configured pins nothing and takes none of the layout changes that come with
+      it. A default of 1 here would pin the primary column on every existing
+      installation at upgrade.
+
+      Both are clamped in `components/resolve.ts` rather than here — a count
+      larger than the view has columns, or wide enough to leave nothing to
+      scroll, is a number the maker can legitimately type and the control has to
+      answer for. See `pinPlan`.
+    -->
+    <property name="pinnedStart"
+              display-name-key="PinnedStart_Name"
+              description-key="PinnedStart_Desc"
+              of-type="Whole.None"
+              usage="input"
+              required="false" />
+
+    <property name="pinnedEnd"
+              display-name-key="PinnedEnd_Name"
+              description-key="PinnedEnd_Desc"
+              of-type="Whole.None"
+              usage="input"
+              required="false" />
+
+    <!--
       Two outputs rather than one. "Which rows are ticked" and "which row was
       opened" are different questions, and a form reacts to them differently.
 

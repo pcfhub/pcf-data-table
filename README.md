@@ -57,6 +57,8 @@ utils or device — so installing the control raises no permission prompt.
 | `selectionMode` | Enum | input | `single` | `none`, `single` or `multiple` |
 | `enableSorting` | TwoOptions | input | `true` | Show sort controls on the columns the view allows sorting on |
 | `openOnRowClick` | TwoOptions | input | `true` | Open the record on row click, as well as from the primary column |
+| `pinnedStart` | Whole.None | input | *(unset)* | How many of the view's first columns stay put while the table scrolls sideways. Pins the select column with them |
+| `pinnedEnd` | Whole.None | input | *(unset)* | The same at the other end. One column is always left unpinned, and pinning drops itself entirely where it would leave nothing to scroll |
 | `selectedRecordIds` | Multiple | output | — | Selected row IDs, one per line |
 | `openedRecordId` | SingleLine.Text | output | — | The row most recently opened |
 

@@ -462,3 +462,139 @@ pass rather than fail" rule — looking filtered while filtering nothing.
 - **Whether Excel opens the export correctly.** The BOM and CRLF are what RFC
   4180 and Excel's UTF-8 handling call for, and no one has double-clicked the
   file.
+
+## 0.3.0
+
+Two features. Pinned columns are done and asserted; inline editing is blocked on
+a measurement, and the reason is worth more than the feature.
+
+### The typings do not admit that a dataset record can be written to
+
+`EntityRecord` in `@types/powerapps-component-framework@1.3.18`
+(`componentframework.d.ts:2675`) declares **four** methods: `getFormattedValue`,
+`getRecordId`, `getValue`, `getNamedReference`. `setValue`, `save`, `isDirty`
+and `getColumnInfo` are documented on Microsoft Learn and **none of them is
+there**, and neither is `DataSet.newRecord` or `DataSet.delete`.
+
+This is the exact inverse of the `fluentDesignLanguage` finding above, where the
+types turned out to be *ahead* of a comment claiming they lagged. The rule that
+covers both: **the typings are a claim about the type definitions, not about the
+host.** It is already how this control treats `paging.loadExactPage` and
+`dataset.sorting`; it now has to be how it treats the whole write surface.
+
+The stake is not academic. `pcf-kanban-board` writes with
+`webAPI.updateRecord`, which costs a `<uses-feature name="WebAPI">` — an
+install-time permission prompt in every environment — and does nothing at all in
+a canvas app. If `setValue`/`save` are really on the record, editing costs
+neither, and this control keeps the "no `<feature-usage>` at all" property its
+manifest closes with. That is the entire argument for building editing this way,
+and it rests on an API nothing in this catalogue has ever called.
+
+So editing was **not** written against a guess. `DataTable/probe.ts` — temporary,
+deleted before release — reports the live shape of a record on a real subgrid and
+parks the dataset on `window.__pcfDataTableProbe` so a write can be tried by
+hand. The rig cannot settle this: `dev/host.js` is a model of the platform
+written from its documentation, so it would report whatever we chose to write
+into it.
+
+### `pcf-scripts build` exits 0 when ESLint fails
+
+Found while mutation-testing the new assertions, and it invalidated the first
+result. `npm run build` prints `[pcf-1065] [Error] ESLint validation error`,
+**emits no bundle**, and returns a success code. So `npm run build && npm run
+smoke` runs the suite against the bundle from the last *successful* build, and
+every assertion passes because it is testing the previous code.
+
+The first mutation here — replacing the pinning clamp's condition with
+`if (false)` — tripped `no-constant-condition`, which is in `eslint:recommended`.
+The suite came back green and read exactly like "this assertion proves nothing".
+It proved plenty; it had simply never seen the mutation. Every mutation test
+below therefore compares an `md5sum` of `out/controls/DataTable/bundle.js` across
+the rebuild and refuses to report a result if it did not change.
+
+CI is not exposed, because `build-reusable.yml` runs `npm run lint` as its own
+step before the build. A local `build && smoke` chain has no such protection.
+Promoted to the skill.
+
+### Pinned columns
+
+`pinnedStart` and `pinnedEnd` are **counts, not names**, and carry no
+`default-value`. Counts because the view designer is already the configuration UI
+here — the same argument that made this control declare no `property-set` roles.
+A list of logical names is more expressive and fails silently the day somebody
+removes that column from the view. No default because unset has to mean "lay out
+exactly as 0.2.0 did", or every existing installation takes the new layout at
+upgrade.
+
+Four things about `position: sticky` in a table that were defects before they
+were designs:
+
+- **`border-collapse: collapse` kills sticky borders.** Collapsed borders belong
+  to the table, not the cells, so a pinned column loses its horizontal rules
+  while the table is scrolled and gets them back when it is not. Moved to
+  `separate` with `border-spacing: 0` — the spacing has to be stated, its initial
+  value is 2px. Safe here because only `border-bottom` is ever set on a cell, so
+  nothing doubles.
+- **A sticky offset has to be pixels and the `<colgroup>` is percentages.**
+  `inset-inline-start` resolves against the table, not against the columns to the
+  left of the cell. So a pinned column leaves the proportional pool and takes a
+  fixed px width, and the loose columns divide **what is left**:
+  `calc((100% - 240px) * share)`. Bare percentages ask for the pinned pixels
+  twice, and the table drifts wider on every render that changes the pinned set.
+  `visualSizeFactor` is read as px for a pinned column and as a ratio for the
+  rest, and both are right: Dataverse stores it in `layoutxml` as a pixel width.
+- **A sticky cell needs an opaque ground, and it has to track the row.** Hover
+  and selection are `tr` rules; the cell's own background paints over them, so
+  the pinned column stayed white down a highlighted row and the row appeared to
+  break in half at the seam. `tbody tr:hover td.is-pinned` and
+  `tr.is-selected td.is-pinned` restate them, in that order — `:hover` and a
+  class carry equal specificity, so source order decides a row that is both.
+- **Pinning switches itself off where it cannot be afforded.** A 320px subgrid
+  with a 200px column pinned beside the 40px select column leaves 80px of moving
+  table, which is narrower than the 100px budget one column gets. Clamped against
+  `mode.allocatedWidth` — the half of the pair a main grid actually reports, per
+  `quirks.heightUnmeasured`. `-1` and `0` mean "the host did not measure" and get
+  the pinning they asked for; reading them as "no room" would unpin the control
+  everywhere, `npm start` included.
+
+Two smaller decisions. The seam at the end of a run is a pseudo-element rather
+than a border, because under `border-spacing: 0` a border takes part in layout
+and would shift every offset after it. And the select column is pinned whenever
+anything at the start is — left loose it slides underneath the column pinned
+beside it.
+
+All of it lives in `pinPlan()` in `components/resolve.ts`, out of the render, so
+the clamping can be asserted without React.
+
+### What the mutation tests proved
+
+Five mutations, each rebuilt and hash-checked:
+
+| Mutation | Caught by |
+| --- | --- |
+| Clamp can never fire | *pinning switches itself off* |
+| Select column not pinned | five assertions, including the exact cell count |
+| Loose columns divide the whole table rather than the remainder | *pinned takes pixels, the rest divide what is left* |
+| No room clamp — every column pinnable | *at least one column is always left to scroll* |
+| No seam | *the seam is drawn once per pinned run* |
+
+The cell counts are exact rather than "more than none" on purpose: the failure
+worth catching is a pinned **header** over unpinned **cells**, which separates a
+column into a heading that stays and a body that scrolls away. That is one
+missing class and it looks like two different bugs.
+
+### Not verified in 0.3.0
+
+- **Nothing about pinning has been seen on a real form.** The offsets, the
+  clamp and the cell counts are asserted against `dev/host.js` and rendered
+  markup. Whether a sticky cell actually sticks is a browser behaviour that
+  neither the rig nor `react-dom/server` can observe.
+- **Right-to-left is reasoned, not rendered.** The assertion proves the control
+  writes `inset-inline-start` rather than `left`; it does not prove a
+  right-to-left form pins the correct edge. Logical inset properties on sticky
+  elements are the part to watch.
+- **The pinned-cell background over a hovered row is a pixel claim**, and
+  pixels are where the select-column ellipsis hid for three reviews. It has not
+  been through the rendered-preview rig yet.
+- **Whether `setValue` and `save` exist at all**, which is the whole of the
+  editing feature. The probe build has been handed over and not yet run.

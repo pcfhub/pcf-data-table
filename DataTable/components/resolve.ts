@@ -319,6 +319,193 @@ export function tableMinWidth(columnCount: number, selectable: boolean): number 
     return columnCount * MIN_COLUMN_WIDTH + (selectable ? SELECT_COLUMN_WIDTH : 0);
 }
 
+/** Where a column is pinned, if it is. */
+export type PinnedEdge = 'start' | 'end' | null;
+
+export interface PinnedColumn {
+    pinned: PinnedEdge;
+    /**
+     * The `<col>` width. **`px` for a pinned column and `%` for the rest**, and
+     * that mix is the feature rather than an inconsistency — see `pinPlan`.
+     * `null` means "say nothing and let the browser divide the remainder".
+     */
+    width: string | null;
+    /** How far in from the pinned edge the column sits, in px. */
+    offset: number;
+    /** The last column of a pinned run — the one that carries the seam. */
+    edge: boolean;
+}
+
+export interface PinPlan {
+    /** One entry per column, in the order the columns were handed in. */
+    columns: PinnedColumn[];
+    /**
+     * Whether the select column sticks too. **Not optional when anything is
+     * pinned at the start**: it is the first column, so leaving it to scroll
+     * would slide the checkboxes underneath the column pinned beside them.
+     */
+    selectPinned: boolean;
+    /** The table's minimum width, which is what makes the wrapper scroll. */
+    minWidth: number;
+    /** Nothing is pinned, and the caller should lay out exactly as 0.2.0 did. */
+    none: boolean;
+}
+
+/** The plan that means "lay out as though this feature did not exist". */
+function noPins(columns: Column[], selectable: boolean): PinPlan {
+    return {
+        columns: columns.map(() => ({ pinned: null, width: null, offset: 0, edge: false })),
+        selectPinned: false,
+        minWidth: tableMinWidth(columns.length, selectable),
+        none: true,
+    };
+}
+
+/**
+ * A pinned column's width in px.
+ *
+ * **`visualSizeFactor` is read as pixels here and as a ratio in
+ * `columnWidths`, and both are right.** Dataverse stores a view column's width
+ * in `layoutxml` as a pixel number, so the field really is a width; treating it
+ * as a ratio is what lets the unpinned columns divide whatever space the table
+ * ends up with. A pinned column cannot do that — see the offsets below — so it
+ * takes the number at face value.
+ *
+ * Canvas reports `0` for every factor, which is the same "there is no view
+ * designer here" that makes `columnWidths` return `null`. A pinned column still
+ * needs a number, so it falls back to the budget every column gets.
+ */
+function pinnedWidth(column: Column): number {
+    return column.visualSizeFactor > 0 ? column.visualSizeFactor : MIN_COLUMN_WIDTH;
+}
+
+/**
+ * Which columns stick to which edge, how wide they are, and how far in they sit.
+ *
+ * Three constraints shape this, and each one is a bug if it is skipped.
+ *
+ * **A sticky offset has to be pixels.** `inset-inline-start` on a sticky cell
+ * resolves against its containing block — the table — not against the columns
+ * to its left, so the percentage widths `columnWidths` produces cannot express
+ * "start where the previous pinned column ended". So a pinned column leaves the
+ * proportional pool and takes a fixed px width, and the unpinned columns divide
+ * the remaining factor between them.
+ *
+ * **At least one column has to be left unpinned.** Pinning everything is a
+ * table that cannot scroll, drawn with a scrollbar. `end` is trimmed before
+ * `start`, because the start columns are the ones that identify the row.
+ *
+ * **Pinning switches itself off when it would eat the view.** Two 200px columns
+ * pinned in a 320px phone subgrid leave 120px of table behind a 400px pinned
+ * region — worse than not pinning, and worse in a way that only shows up on a
+ * phone. `allocatedWidth` is the measurement to clamp against: a main grid
+ * hands over a measured width and leaves the height at -1 forever (see the
+ * `heightUnmeasured` quirk in `dev/host.js`), so width is the one of the pair
+ * that can be trusted. A host that reports no width at all gets what it asked
+ * for rather than a guess.
+ */
+export function pinPlan(
+    columns: Column[],
+    pinnedStart: number | null,
+    pinnedEnd: number | null,
+    allocatedWidth: number,
+    selectable: boolean,
+): PinPlan {
+    const wantedStart = Math.max(0, Math.trunc(pinnedStart ?? 0) || 0);
+    const wantedEnd = Math.max(0, Math.trunc(pinnedEnd ?? 0) || 0);
+
+    if (wantedStart + wantedEnd === 0 || columns.length === 0) {
+        return noPins(columns, selectable);
+    }
+
+    // Leave one column to scroll. Trim the end first — see above.
+    const room = Math.max(0, columns.length - 1);
+    const start = Math.min(wantedStart, room);
+    const end = Math.min(wantedEnd, Math.max(0, room - start));
+
+    if (start + end === 0) {
+        return noPins(columns, selectable);
+    }
+
+    const selectPinned = selectable && start > 0;
+    const widths = columns.map(pinnedWidth);
+
+    const pinnedTotal =
+        widths.slice(0, start).reduce((sum, width) => sum + width, 0) +
+        widths.slice(columns.length - end).reduce((sum, width) => sum + width, 0) +
+        (selectPinned ? SELECT_COLUMN_WIDTH : 0);
+
+    /*
+     * The clamp. `allocatedWidth` is 0 or -1 on a host that did not measure, and
+     * a control that treated that as "no room" would unpin itself everywhere
+     * rather than only where it matters.
+     */
+    if (allocatedWidth > 0 && pinnedTotal > allocatedWidth - MIN_COLUMN_WIDTH) {
+        return noPins(columns, selectable);
+    }
+
+    // What is left for the columns that still divide a proportion.
+    const looseFactor = columns
+        .slice(start, columns.length - end)
+        .reduce((sum, column) => sum + (column.visualSizeFactor || 0), 0);
+
+    let fromStart = selectPinned ? SELECT_COLUMN_WIDTH : 0;
+    let fromEnd = 0;
+    const laidOut: PinnedColumn[] = new Array(columns.length);
+
+    for (let index = 0; index < start; index += 1) {
+        laidOut[index] = {
+            pinned: 'start',
+            width: `${widths[index]}px`,
+            offset: fromStart,
+            edge: index === start - 1,
+        };
+        fromStart += widths[index];
+    }
+
+    // Backwards, because an end-pinned column's offset is the sum of the ones
+    // between it and the right-hand edge rather than of the ones before it.
+    for (let index = columns.length - 1; index >= columns.length - end; index -= 1) {
+        laidOut[index] = {
+            pinned: 'end',
+            width: `${widths[index]}px`,
+            offset: fromEnd,
+            edge: index === columns.length - end,
+        };
+        fromEnd += widths[index];
+    }
+
+    for (let index = start; index < columns.length - end; index += 1) {
+        /*
+         * `calc`, not a bare percentage, and this is the join between the two
+         * width systems. A percentage on a `<col>` is a share of the *table*,
+         * which already includes the pinned pixels — so three loose columns at
+         * 33% each beside 200px of pinned column ask for 200px more table than
+         * there is, and the whole layout drifts wider on every render that
+         * changes the pinned set. Subtracting the pinned total first makes the
+         * share a share of what is actually left.
+         */
+        const share = (columns[index].visualSizeFactor || 0) / looseFactor;
+
+        laidOut[index] = {
+            pinned: null,
+            width: looseFactor > 0 ? `calc((100% - ${pinnedTotal}px) * ${share})` : null,
+            offset: 0,
+            edge: false,
+        };
+    }
+
+    return {
+        columns: laidOut,
+        selectPinned,
+        minWidth:
+            pinnedTotal +
+            (columns.length - start - end) * MIN_COLUMN_WIDTH +
+            (selectable && !selectPinned ? SELECT_COLUMN_WIDTH : 0),
+        none: false,
+    };
+}
+
 /**
  * The last page there is, or `0` when that cannot be known.
  *

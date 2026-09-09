@@ -153,6 +153,14 @@ const INPUTS = {
      * from inside the control, and it is the default worth testing against.
      */
     pageSizeOptions: null,
+    /*
+     * Unset, for the same reason and with the same force: pinning nothing has
+     * to be the shape the control is tested in most, because it is the shape
+     * every existing installation upgrades into. Every assertion written before
+     * 0.3.0 runs against these.
+     */
+    pinnedStart: null,
+    pinnedEnd: null,
 };
 
 /**
@@ -728,6 +736,149 @@ check(
     'and drops the select column from that width when there is no select column',
     noSelectMin === '600',
     `min-width: ${noSelectMin || 'absent'}px without checkboxes`,
+);
+
+/* ----------------------------------------------------------------- pinning */
+
+/*
+ * **Pinned columns are a layout decision, so they are asserted on markup.**
+ *
+ * `position: sticky` itself is in the stylesheet and cannot be seen from here.
+ * What the control decides — which cells get the class, how far in each one
+ * sits, how wide it is, and whether pinning is affordable at all — is inline,
+ * for the same reason the minimum width above is: it is a running sum of column
+ * widths, and CSS cannot add up a `<colgroup>`.
+ *
+ * The counts are exact rather than "more than none", because the failure worth
+ * catching is a pinned *header* over unpinned *cells*: the column separates
+ * into a heading that stays and a body that scrolls away, which looks like two
+ * different bugs and is one missing class.
+ */
+const pinCount = (markup, edge) =>
+    (markup.match(new RegExp(`is-pinned-${edge}`, 'g')) || []).length;
+
+check(
+    'nothing is pinned unless the maker asked',
+    !narrowMarkup.includes('is-pinned'),
+    'no pinned cells at the manifest defaults',
+);
+
+const pinnedOne = bind({ inputs: { pinnedStart: 1 } });
+const pinnedOneMarkup = renderDeep(pinnedOne.driven.element);
+
+check(
+    'pinning the first column pins it in every row, not only in the header',
+    // 5 body rows plus the header and the filter row, for the select column
+    // and the pinned column alike: (5 + 2) × 2.
+    pinCount(pinnedOneMarkup, 'start') === 14,
+    `${pinCount(pinnedOneMarkup, 'start')} pinned cells`,
+);
+
+check(
+    'and pins the select column with it, so the checkboxes cannot slide underneath',
+    (pinnedOneMarkup.match(/inset-inline-start:\s*0px/g) || []).length === 7
+        && (pinnedOneMarkup.match(/inset-inline-start:\s*40px/g) || []).length === 7,
+    'select column at 0px, the column beside it at 40px',
+);
+
+check(
+    'the seam is drawn once per pinned run, on the column the others scroll past',
+    (pinnedOneMarkup.match(/is-pinnedEdge/g) || []).length === 7,
+    `${(pinnedOneMarkup.match(/is-pinnedEdge/g) || []).length} edge cells`,
+);
+
+/*
+ * The two width systems have to agree, and this is the assertion that says so.
+ * A pinned column is pixels because its neighbour's offset is a sum of them; a
+ * loose column is a share of *what is left*, which is why the calc subtracts
+ * the pinned total rather than dividing the whole table. Bare percentages here
+ * would ask for 240px more table than there is.
+ */
+check(
+    'a pinned column takes pixels and the rest divide what is left',
+    pinnedOneMarkup.includes('width:200px')
+        && pinnedOneMarkup.includes('calc((100% - 240px)'),
+    'pinned at its own width; loose columns share the remainder',
+);
+
+const pinnedMin = (pinnedOneMarkup.match(/min-width:\s*(\d+)px/) || [])[1];
+
+check(
+    'and the minimum width counts the pinned pixels rather than the budget',
+    // 200 pinned + 40 select + five loose columns at the 100px budget.
+    pinnedMin === '740',
+    `min-width: ${pinnedMin || 'absent'}px`,
+);
+
+const pinnedEnd = bind({ inputs: { pinnedEnd: 1 } });
+const pinnedEndMarkup = renderDeep(pinnedEnd.driven.element);
+
+check(
+    'pinning at the end sticks to the other edge, and leaves the select column alone',
+    pinCount(pinnedEndMarkup, 'end') === 7
+        && pinCount(pinnedEndMarkup, 'start') === 0
+        && pinnedEndMarkup.includes('inset-inline-end:0px'),
+    `${pinCount(pinnedEndMarkup, 'end')} end-pinned cells, no select column`,
+);
+
+/*
+ * **The clamp, and it is the assertion that matters most on a phone.**
+ *
+ * A 320px subgrid with a 200px column pinned beside a 40px select column leaves
+ * 80px of scrollable table — narrower than the 100px budget a single column
+ * gets. Pinning there is worse than not pinning: the reader is left with a
+ * sliver of moving content beside a wall of still one. `mode.allocatedWidth` is
+ * the measurement that can answer this, and it is the one a main grid actually
+ * reports — the height stays -1 forever.
+ */
+const pinnedNarrow = bind({ width: 320, inputs: { pinnedStart: 1 } });
+
+check(
+    'pinning switches itself off where it would leave nothing to scroll',
+    !renderDeep(pinnedNarrow.driven.element).includes('is-pinned'),
+    'unpinned in a 320px host',
+);
+
+/*
+ * And it must not overreach the other way. A host that reports no width at all
+ * — the default here, and what `npm start` does — has not said "no room"; a
+ * control that read -1 as a refusal would unpin itself everywhere.
+ */
+check(
+    'a host that never measured gets the pinning it asked for, not a guess',
+    pinnedOne.handle.context.mode.allocatedWidth === -1
+        && pinnedOneMarkup.includes('is-pinned'),
+    'allocatedWidth -1, still pinned',
+);
+
+/*
+ * Pinning every column is a table that cannot scroll, drawn with a scrollbar.
+ * The end of the run is trimmed before the start, because the start columns are
+ * the ones that identify the row you have scrolled away from.
+ */
+const pinnedAll = bind({ inputs: { pinnedStart: 6, pinnedEnd: 2 } });
+const pinnedAllMarkup = renderDeep(pinnedAll.driven.element);
+
+check(
+    'at least one column is always left to scroll',
+    // Five of the six data columns, plus the select column riding along.
+    pinCount(pinnedAllMarkup, 'start') === (5 + 1) * 7
+        && pinCount(pinnedAllMarkup, 'end') === 0,
+    `${pinCount(pinnedAllMarkup, 'start') / 7 - 1} of 6 data columns pinned, end trimmed first`,
+);
+
+/*
+ * Logical insets, not `left`. The offsets are measured from the start of the
+ * table, and in a right-to-left form the start is the right — so a physical
+ * `left` would pin the first column to the far side of the row it belongs to.
+ * Nothing below a browser can prove the sticking works; this proves the control
+ * is not writing the property that cannot.
+ */
+check(
+    'offsets are written as logical insets, so a right-to-left form pins the same columns',
+    !/style="[^"]*(?:^|;)\s*left:/.test(pinnedOneMarkup)
+        && pinnedOneMarkup.includes('inset-inline-start'),
+    'inset-inline-start, no physical left',
 );
 
 /* --------------------------------------------------------------- filtering */

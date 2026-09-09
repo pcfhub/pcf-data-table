@@ -1,11 +1,49 @@
 ---
 title: Migration
-description: Moving from 0.1.x to 0.2.0.
+description: Moving between released versions.
 order: 9
 appliesTo: ">=0.2.0"
 ---
 
 # Migration
+
+## 0.2.0 → 0.3.0
+
+0.3.0 adds pinned columns. **Nothing was renamed and nothing was removed**, and
+the two new properties are both unset by default — so an upgraded table renders
+exactly as it did before until you pin something.
+
+| Property | Default | What it does |
+| --- | --- | --- |
+| `pinnedStart` | *(unset)* | How many of the view's first columns stay put while the table scrolls sideways |
+| `pinnedEnd` | *(unset)* | The same at the other end |
+
+Both take a **count**, not a list of column names: the view designer already
+decides which columns come first, so `1` pins whichever column the view puts at
+the front. Move the column in the view and the pinning follows it, which is the
+reason for counts — a name would keep pointing at a column that had moved, or at
+one no longer in the view at all.
+
+Three behaviours to expect, none of which is an error:
+
+- Pinning at the start **pins the selection checkboxes too**. They are the first
+  column; left loose they would slide under the column pinned beside them.
+- **One column is always left unpinned.** Ask for more than the view has and the
+  count at the end is trimmed first.
+- **Pinning switches itself off on a narrow host** — a phone-width subgrid where
+  the pinned columns would leave less than one column's worth of table still
+  moving renders unpinned instead. The same configuration pins on a wide screen.
+
+### Nothing new is asked of the environment
+
+The control still declares no features, so re-importing the solution raises no
+new permission prompt. Pinning is layout and nothing else.
+
+:::callout{type=info}
+Inline editing is **not** in 0.3.0. The write path it wants would also cost no
+permission prompt, and it is waiting on a measurement rather than on the work —
+see [Limitations](limitations.md).
+:::
 
 ## 0.1.x → 0.2.0
 
