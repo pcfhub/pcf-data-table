@@ -1,6 +1,8 @@
 import * as React from 'react';
 import { IInputs, IOutputs } from './generated/ManifestTypes';
 import { DataTableControl, IProps } from './components/DataTableControl';
+// TEMPORARY — delete with `probe.ts` before 0.3.0 is released. See that file.
+import { probe } from './probe';
 import {
     ASCENDING,
     buildFilter,
@@ -124,6 +126,9 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
     public updateView(context: ComponentFramework.Context<IInputs>): React.ReactElement {
         const dataset = context.parameters.records;
         const mode = (context.parameters.selectionMode.raw ?? 'single') as SelectionMode;
+
+        // TEMPORARY — delete with `probe.ts` before 0.3.0 is released.
+        probe(context);
 
         this.applyPageSize(context, dataset);
 
