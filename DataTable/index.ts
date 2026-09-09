@@ -4,12 +4,8 @@ import { DataTableControl, IProps } from './components/DataTableControl';
 import {
     ASCENDING,
     buildFilter,
-    cellKey,
     clampPage,
-    coerceValue,
     editableColumnSet,
-    EditKind,
-    editKindFor,
     lastPage,
     nextDirection,
     pageSizeChoices,
@@ -166,53 +162,34 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
     /* --------------------------------------------------------------- editing */
 
     /**
-     * What the platform said about each cell, keyed `recordId|column`.
+     * The row most recently written, for `getOutputs`.
      *
-     * **Answered by the platform rather than inferred**, and that is the whole
-     * shape of the feature. Column-level editability is not on `Column` — the
-     * interface is name, displayName, dataType, alias, order, visualSizeFactor,
-     * isHidden, isPrimary, disableSorting and nothing else — so the design this
-     * replaced was going to offer an editor on every column of a writable type
-     * and find out the truth when the save was refused. `isEditable(column)`
-     * answers per column *and per record*: on the measured subgrid two columns
-     * came back `true` and `statuscode` came back `false` on the same row.
-     */
-    private editableCells = new Map<string, boolean>();
-
-    /**
-     * Cells already asked about, whatever the answer.
+     * **The only piece of editing state left in this class**, and the reason is
+     * worth stating because 0.3.0 shipped with the rest of it here and the
+     * feature did not work on a real form.
      *
-     * **This is what makes the resolution terminate.** Answering is a fetch, so
-     * it lands after the render that needed it and has to ask for another one —
-     * and a control that re-asked on every pass would notify, re-render, ask
-     * again, forever. The set is finite and only grows, so the loop closes.
-     */
-    private editableAsked = new Set<string>();
-
-    /** Answers still in flight. The last one home asks for the re-render. */
-    private editablePending = 0;
-
-    /** The cell with an editor open, if any. */
-    private editing: { id: string; column: string } | null = null;
-
-    /**
-     * Values this control has asserted but the dataset has not confirmed.
+     * Every other piece — which cell is open, what the platform said about each
+     * cell, the optimistic overrides, the in-flight writes, the last refusal —
+     * is *transient UI state*, and changing it has to repaint the table.
+     * `notifyOutputChanged()` does not repaint a React control: it tells the
+     * platform an **output** changed, and the platform answers by calling
+     * `getOutputs()`. A repaint happens when `updateView` runs and returns a new
+     * element, and that is the platform's decision, not this control's.
      *
-     * The optimistic override, per cell rather than per record. Retired when the
-     * refreshed record agrees — **not** when `save()` resolves: a resolved save
-     * means Dataverse accepted the write, not that the dataset has re-read it,
-     * and clearing on resolve puts the old value back on screen for one frame.
-     * `pcf-kanban-board` carries the same reconcile for a whole card.
+     * Observed 2026-09-09 on a real Accounts subgrid: the pencil rendered, a
+     * click called `onBeginEdit`, the class field was set, `notifyOutputChanged`
+     * fired — and nothing happened on screen, because nothing re-rendered.
+     *
+     * `dev/host.js` hid it. `settle()` re-drives the control explicitly, so a
+     * test that called `onBeginEdit` and then `settle()` was modelling a repaint
+     * the platform never performs. That is the fourth time this release the rig
+     * has been more generous than the platform.
+     *
+     * So all of it now lives in `DataTableControl` as React state, where a
+     * `setState` repaints without asking the platform for anything. What crosses
+     * back into this class is only what the platform actually needs: the write
+     * itself, and this id.
      */
-    private pendingValues = new Map<string, unknown>();
-
-    /** Cells with a write in flight, so the editor can say so. */
-    private savingCells = new Set<string>();
-
-    /** The most recent refusal, shown against the cell that caused it. */
-    private editFailure: { key: string; message: string } | null = null;
-
-    /** The row most recently written, for `getOutputs`. */
     private editedRecordId = '';
 
     /**
@@ -283,13 +260,6 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
             (context.parameters.enableEditing.raw ?? false) && !context.mode.isControlDisabled;
         const allowedColumns = editableColumnSet(context.parameters.editableColumns.raw);
 
-        if (editingOn) {
-            // Order matters: retire what the refresh confirmed before deciding
-            // what still needs asking about.
-            this.reconcilePending(dataset);
-            this.resolveEditability(dataset, columns, pageIds, allowedColumns);
-        }
-
         const props: IProps = {
             dataset,
             columns,
@@ -353,25 +323,39 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
 
             enableEditing: editingOn,
             allowedColumns,
-            editableCells: this.editableCells,
-            editing: this.editing,
-            pendingValues: this.pendingValues,
-            savingCells: this.savingCells,
-            editFailure: this.editFailure,
-            onBeginEdit: (id: string, column: string): void => {
-                this.editing = { id, column };
-                // The failure belonged to the last attempt. Reopening the cell
-                // is the user answering it, so it goes rather than sitting
-                // above an editor that has not been used yet.
-                this.editFailure = null;
-                this.notifyOutputChanged();
+            /*
+             * **The measured width, applied as a ceiling on the root.**
+             *
+             * Without it `overflow-x: auto` on the scroll wrapper is inert, and
+             * that is not a CSS problem with a CSS answer. A form section can
+             * hand a control a shrink-to-fit parent — `fit-content`,
+             * `inline-block`, a table cell — which takes its width *from* its
+             * content, so the control's own `width: 100%` resolves against a
+             * number the control itself produced. Nothing written inside the
+             * control breaks that circle; the way out is a number from outside
+             * it, which is what `trackContainerResize(true)` in `init` buys.
+             *
+             * 0.3.0 called that and used the answer only for the pinning clamp,
+             * so on a real subgrid the table drew wider than its box, was
+             * clipped by an ancestor, and showed no scrollbar at all — the
+             * documented symptom, observed 2026-09-09.
+             */
+            maxWidth: context.mode.allocatedWidth > 0 ? context.mode.allocatedWidth : null,
+            /**
+             * Ask the platform whether this cell may be written, or `null` when
+             * the host cannot write at all.
+             *
+             * Returning the promise rather than resolving it here is the whole
+             * point: the component owns the answer, so it can repaint when it
+             * lands. This class cannot.
+             */
+            canEdit: (id: string, column: string): Promise<boolean> | null => {
+                const record = editableRecord(dataset.records[id]);
+
+                return record ? Promise.resolve(record.isEditable(column)) : null;
             },
-            onCancelEdit: (): void => {
-                this.editing = null;
-                this.notifyOutputChanged();
-            },
-            onCommitEdit: (id: string, column: string, kind: EditKind, typed: string): void =>
-                this.commitEdit(context, id, column, kind, typed),
+            onCommitEdit: (id: string, column: string, value: unknown): Promise<void> =>
+                this.writeCell(dataset, id, column, value),
         };
 
         return React.createElement(DataTableControl, props);
@@ -395,200 +379,48 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
     }
 
     /**
-     * Ask the platform which of the cells on screen this user may write.
-     *
-     * **Three things about this are load-bearing.**
-     *
-     * `isEditable` is **async**, so this is a fetch rather than a read and
-     * cannot happen during render. Until an answer lands the cell renders
-     * read-only, because declining to offer an editor is always safe and
-     * offering one the platform then refuses is not.
-     *
-     * `editableAsked` is what makes it terminate. The last answer home calls
-     * `notifyOutputChanged()` to get the re-render that shows the editors, and
-     * that re-render runs `updateView` again — so a version that re-asked would
-     * notify forever. The set only grows, so the second pass asks nothing and
-     * the loop closes.
-     *
-     * The maker's `editableColumns` list is applied **before** asking, not
-     * after. It narrows what is offered; it cannot widen it. A column the
-     * platform reports as read-only stays read-only however it is listed.
-     */
-    private resolveEditability(
-        dataset: DataSet,
-        columns: ComponentFramework.PropertyHelper.DataSetApi.Column[],
-        pageIds: string[],
-        allowed: Set<string> | null,
-    ): void {
-        const candidates = columns.filter(
-            (column) =>
-                editKindFor(column) !== 'none' && (allowed === null || allowed.has(column.name)),
-        );
-
-        if (candidates.length === 0) {
-            return;
-        }
-
-        pageIds.forEach((id) => {
-            const record = editableRecord(dataset.records[id]);
-
-            if (!record) {
-                return;
-            }
-
-            candidates.forEach((column) => {
-                const key = cellKey(id, column.name);
-
-                if (this.editableAsked.has(key)) {
-                    return;
-                }
-
-                this.editableAsked.add(key);
-                this.editablePending += 1;
-
-                Promise.resolve(record.isEditable(column.name))
-                    // `=== true` rather than truthiness: this is the method
-                    // whose unawaited Promise is truthy, and a `.then` that
-                    // accepted anything truthy would repeat the same mistake
-                    // one layer down.
-                    .then((value) => this.editableCells.set(key, value === true))
-                    .catch(() => this.editableCells.set(key, false))
-                    .then(() => {
-                        this.editablePending -= 1;
-
-                        if (this.editablePending === 0) {
-                            this.notifyOutputChanged();
-                        }
-                    });
-            });
-        });
-    }
-
-    /**
-     * Retire optimistic values the dataset has caught up with.
-     *
-     * Two exits, and the second is the one that stops this map growing for the
-     * lifetime of the control: the refreshed record agrees, or the record has
-     * left the view — which is what a filtered view does the moment an edit
-     * stops matching the filter.
-     *
-     * Compared as strings because `getValue` returns whatever the column holds
-     * — a `Date`, a number, a boolean — and the value written came from an
-     * `<input>`. Equality of *rendered* value is the question being asked here.
-     */
-    private reconcilePending(dataset: DataSet): void {
-        this.pendingValues.forEach((value, key) => {
-            const separator = key.lastIndexOf('|');
-            const id = key.slice(0, separator);
-            const column = key.slice(separator + 1);
-            const record = dataset.records[id];
-
-            if (!record) {
-                this.pendingValues.delete(key);
-
-                return;
-            }
-
-            // Still in flight: the dataset cannot have caught up with a write
-            // that has not been made yet, and deleting here would flash the old
-            // value back under the user's cursor.
-            if (this.savingCells.has(key)) {
-                return;
-            }
-
-            if (String(record.getValue(column) ?? '') === String(value ?? '')) {
-                this.pendingValues.delete(key);
-            }
-        });
-    }
-
-    /**
-     * Write one cell.
+     * Write one cell, and report the row afterwards.
      *
      * `setValue` then `save`, both on the record — no `webAPI`, so no
-     * `<uses-feature>` and no install-time prompt, and it works on a host where
-     * WebAPI does not exist at all.
+     * `<uses-feature>` and no install-time permission prompt, and it works on a
+     * host where WebAPI does not exist at all.
      *
-     * The refusal path is the reason this control catches at all, so it is
-     * written first: a rejected write puts the old value back and names the
-     * failure against the cell. A silent rollback is worse than none — the user
-     * sees their edit disappear and has no idea whether it saved.
+     * **Everything about how this looks while it happens belongs to the
+     * component**, which is why this returns a promise and holds no state. The
+     * optimistic value, the "saving" note, the rollback and the message are all
+     * repaints, and this class cannot cause a repaint: `notifyOutputChanged()`
+     * tells the platform an *output* changed, and a React control repaints when
+     * `updateView` runs, which is the platform's decision. 0.3.0 kept that state
+     * here and the editor never opened on a real form.
+     *
+     * The rejection is passed on rather than swallowed. A rejected platform call
+     * is typed `unknown` and is not reliably an `Error` — the caveat
+     * `pcf-kanban-board` records — and `UciError: Invalid snapshot with id
+     * undefined` arrives here when the column name is wrong, naming neither the
+     * column nor the record. The component turns it into a sentence.
      */
-    private commitEdit(
-        context: ComponentFramework.Context<IInputs>,
+    private writeCell(
+        dataset: DataSet,
         id: string,
         column: string,
-        kind: EditKind,
-        typed: string,
-    ): void {
-        const dataset = context.parameters.records;
+        value: unknown,
+    ): Promise<void> {
         const record = editableRecord(dataset.records[id]);
-        const key = cellKey(id, column);
-
-        this.editing = null;
 
         if (!record) {
-            this.notifyOutputChanged();
-
-            return;
+            return Promise.reject(new Error('This host cannot write to a dataset record.'));
         }
 
-        const coerced = coerceValue(kind, typed);
-
-        /*
-         * A half-typed number writes nothing, on the same argument
-         * `numericCondition` makes for a half-typed filter: `NaN` is a wrong
-         * answer that looks like a finished one. It is reported rather than
-         * swallowed, because a cell that silently reverts reads as a broken
-         * control.
-         */
-        if (!coerced.ok) {
-            this.editFailure = {
-                key,
-                message: context.resources.getString('DataTable_NotANumber'),
-            };
-            this.notifyOutputChanged();
-
-            return;
-        }
-
-        this.editFailure = null;
-        this.pendingValues.set(key, coerced.value);
-        this.savingCells.add(key);
-        this.notifyOutputChanged();
-
-        record
-            .setValue(column, coerced.value)
+        return record
+            .setValue(column, value)
             .then(() => record.save())
             .then(() => {
-                this.savingCells.delete(key);
                 this.editedRecordId = id;
-                // The override stays until `reconcilePending` sees the dataset
-                // agree. A resolved save is Dataverse accepting the write, not
-                // the dataset having re-read it.
-                this.notifyOutputChanged();
-            })
-            .catch((error: unknown) => {
-                this.savingCells.delete(key);
-                this.pendingValues.delete(key);
-                this.editFailure = {
-                    key,
-                    /*
-                     * A rejected platform call is typed `unknown` and is not
-                     * reliably an `Error` — the same caveat `pcf-kanban-board`
-                     * records. `UciError: Invalid snapshot with id undefined`
-                     * arrives here when the column name is wrong, and it names
-                     * neither the column nor the record, so the control's own
-                     * sentence has to carry that.
-                     */
-                    message:
-                        (error as Error)?.message
-                        || context.resources.getString('DataTable_SaveFailedGeneric'),
-                };
+                // The one thing here that *is* an output, and the one thing
+                // `notifyOutputChanged` is actually for.
                 this.notifyOutputChanged();
             });
     }
-
     public destroy(): void {
         /*
          * The platform unmounts the React tree for a virtual control, but the

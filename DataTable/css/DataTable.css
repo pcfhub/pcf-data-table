@@ -572,15 +572,33 @@
  * no affordance at all. So: the text sits flat until the cell is touched, and a
  * dotted underline appears on hover and focus.
  */
+/*
+ * **It fills the cell, and that is a fix rather than styling.**
+ *
+ * As an inline button sized to its text, everything else in the cell was bare
+ * `<td>` — and a `<td>` is inside the row, which opens the record. So on a real
+ * form clicking a short value worked and clicking two millimetres to the right
+ * of it navigated away: the same cell doing two different things depending on
+ * where in it you clicked, which reads as the editor being broken. Worst on the
+ * empty cells, where the target was the width of the word "(empty)".
+ *
+ * `display: block` with `width: 100%` makes the whole cell the target, so the
+ * click that reaches the row is only the one outside every cell.
+ */
 .DataTable-editTrigger {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
     font: inherit;
     color: inherit;
     background: none;
     border: 0;
-    padding: 0;
-    max-width: 100%;
+    /* Vertical padding so a short value still gives a full-height target, and
+       none horizontally — the cell already has its own. */
+    padding: 2px 0;
     overflow: hidden;
     text-overflow: ellipsis;
+    white-space: nowrap;
     text-align: start;
     cursor: text;
 }

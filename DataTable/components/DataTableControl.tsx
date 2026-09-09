@@ -2,6 +2,7 @@ import * as React from 'react';
 import { FluentProvider, webLightTheme } from '@fluentui/react-components';
 import {
     cellKey,
+    coerceValue,
     columnWidths,
     DESCENDING,
     EditKind,
@@ -312,15 +313,273 @@ export interface IProps {
     enableEditing: boolean;
     /** The maker's allow-list, or `null` for "whatever the platform permits". */
     allowedColumns: Set<string> | null;
-    /** What the platform answered for each cell. Absent means "not yet asked". */
-    editableCells: Map<string, boolean>;
+    /**
+     * The width the host measured, as a pixel ceiling for the root.
+     *
+     * `null` where the host never measured. Without it `overflow-x: auto` on
+     * the scroll wrapper is inert against a shrink-to-fit parent, and the table
+     * is clipped with no scrollbar rather than scrolled.
+     */
+    maxWidth: number | null;
+    /** Ask whether a cell may be written. `null` where the host cannot write. */
+    canEdit: (id: string, column: string) => Promise<boolean> | null;
+    /** Write one cell. Rejects with whatever the platform refused it with. */
+    onCommitEdit: (id: string, column: string, value: unknown) => Promise<void>;
+}
+
+/**
+ * Everything about editing that is *state on screen* rather than data.
+ *
+ * **It lives here rather than in the control class, and 0.3.0 shipped it the
+ * other way round and did not work.** Changing which cell is open has to repaint
+ * the table, and a control class cannot cause a repaint: `notifyOutputChanged()`
+ * tells the platform an **output** changed, and the platform answers by calling
+ * `getOutputs()`. A React control repaints when `updateView` returns a new
+ * element, and that is the platform's decision.
+ *
+ * Observed on a real Accounts subgrid, 2026-09-09: the pencil rendered, the
+ * click ran, the class field was set, and nothing happened. `dev/host.js` had
+ * hidden it, because `settle()` re-drives the control explicitly — so a test
+ * that clicked and then settled was modelling a repaint the platform never
+ * performs.
+ *
+ * In React state, a `setState` repaints and the platform is not involved. The
+ * state survives the platform's own `updateView` passes because the element type
+ * is unchanged, so React reconciles rather than remounting.
+ */
+function useEditing(props: IProps): {
     editing: { id: string; column: string } | null;
-    pendingValues: Map<string, unknown>;
-    savingCells: Set<string>;
-    editFailure: { key: string; message: string } | null;
-    onBeginEdit: (id: string, column: string) => void;
-    onCancelEdit: () => void;
-    onCommitEdit: (id: string, column: string, kind: EditKind, typed: string) => void;
+    editableCells: Map<string, boolean>;
+    pending: Map<string, unknown>;
+    saving: Set<string>;
+    failure: { key: string; message: string } | null;
+    begin: (id: string, column: string) => void;
+    cancel: () => void;
+    commit: (id: string, column: string, kind: EditKind, typed: string) => void;
+} {
+    const [editing, setEditing] = React.useState<{ id: string; column: string } | null>(null);
+    const [editableCells, setEditableCells] = React.useState<Map<string, boolean>>(
+        () => new Map(),
+    );
+    const [pending, setPending] = React.useState<Map<string, unknown>>(() => new Map());
+    const [saving, setSaving] = React.useState<Set<string>>(() => new Set());
+    const [failure, setFailure] = React.useState<{ key: string; message: string } | null>(null);
+
+    /**
+     * Cells already asked about, whatever the answer.
+     *
+     * A ref rather than state: asking again is the thing to prevent, and
+     * re-rendering because the *set of asked cells* changed would be a render
+     * per answer. It only grows, which is what makes the effect terminate.
+     */
+    const asked = React.useRef<Set<string>>(new Set());
+
+    const { enableEditing, allowedColumns, canEdit, columns, pageIds, dataset, getString } = props;
+    const pageKey = pageIds.join('|');
+    const columnKey = columns.map((column) => column.name).join('|');
+
+    React.useEffect(() => {
+        if (!enableEditing) {
+            return undefined;
+        }
+
+        /*
+         * The maker's allow-list is applied **before** asking, not after. It
+         * narrows what is offered; it cannot widen it — a column the platform
+         * reports as read-only stays read-only however it is listed. Asking
+         * only about columns that could carry an editor also saves a call per
+         * cell on every choice and lookup column in the view.
+         */
+        const candidates = columns.filter(
+            (column) =>
+                editKindFor(column) !== 'none'
+                && (allowedColumns === null || allowedColumns.has(column.name)),
+        );
+
+        const answers: Promise<[string, boolean]>[] = [];
+
+        pageIds.forEach((id) => {
+            candidates.forEach((column) => {
+                const key = cellKey(id, column.name);
+
+                if (asked.current.has(key)) {
+                    return;
+                }
+
+                asked.current.add(key);
+
+                const ask = canEdit(id, column.name);
+
+                // `null` is a host that cannot write at all. Recorded as `false`
+                // rather than left absent, so it is asked once and not once per
+                // render.
+                answers.push(
+                    ask
+                        ? ask.then(
+                            // `=== true` rather than truthiness: `isEditable` is
+                            // the method whose unawaited Promise is truthy, and
+                            // accepting anything truthy here would repeat that
+                            // mistake one layer down.
+                            (value): [string, boolean] => [key, value === true],
+                            (): [string, boolean] => [key, false],
+                        )
+                        : Promise.resolve<[string, boolean]>([key, false]),
+                );
+            });
+        });
+
+        if (answers.length === 0) {
+            return undefined;
+        }
+
+        let live = true;
+
+        Promise.all(answers).then((entries) => {
+            if (!live) {
+                return;
+            }
+
+            setEditableCells((current) => {
+                const next = new Map(current);
+
+                entries.forEach(([key, value]) => next.set(key, value));
+
+                return next;
+            });
+        });
+
+        return (): void => {
+            live = false;
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [enableEditing, pageKey, columnKey, allowedColumns]);
+
+    /**
+     * Retire optimistic values the dataset has caught up with.
+     *
+     * No dependency array on purpose — it has to run against whatever the
+     * platform last handed down, and the `changed` guard is what stops it
+     * looping. Two exits: the refreshed record agrees, or the record has left
+     * the view, which is what a filtered view does the moment an edit stops
+     * matching the filter. Without the second the map grows for the lifetime of
+     * the control.
+     */
+    React.useEffect(() => {
+        if (pending.size === 0) {
+            return;
+        }
+
+        const next = new Map(pending);
+        let changed = false;
+
+        pending.forEach((value, key) => {
+            // Still in flight: the dataset cannot have caught up with a write
+            // that has not landed, and dropping the override here would flash
+            // the old value back under the user's cursor.
+            if (saving.has(key)) {
+                return;
+            }
+
+            const separator = key.lastIndexOf('|');
+            const record = dataset.records[key.slice(0, separator)];
+
+            if (!record) {
+                next.delete(key);
+                changed = true;
+
+                return;
+            }
+
+            // Compared as strings because `getValue` returns whatever the column
+            // holds — a Date, a number, a boolean — and what was written came
+            // from an `<input>`. Equality of *rendered* value is the question.
+            if (String(record.getValue(key.slice(separator + 1)) ?? '') === String(value ?? '')) {
+                next.delete(key);
+                changed = true;
+            }
+        });
+
+        if (changed) {
+            setPending(next);
+        }
+        // The guard above is what stops this looping: a pass that changes
+        // nothing sets nothing, so the next render finds the same map and
+        // stops. `dataset.records` is the thing being reconciled against.
+    }, [pending, saving, dataset.records]);
+
+    const drop = <T,>(collection: Set<string> | Map<string, T>, key: string): void => {
+        if (collection instanceof Set) {
+            setSaving((current) => {
+                const next = new Set(current);
+
+                next.delete(key);
+
+                return next;
+            });
+
+            return;
+        }
+
+        setPending((current) => {
+            const next = new Map(current);
+
+            next.delete(key);
+
+            return next;
+        });
+    };
+
+    return {
+        editing,
+        editableCells,
+        pending,
+        saving,
+        failure,
+        begin: (id, column): void => {
+            setEditing({ id, column });
+            // The failure belonged to the previous attempt. Reopening the cell
+            // is the user answering it, so it goes rather than sitting above an
+            // editor that has not been used yet.
+            setFailure(null);
+        },
+        cancel: (): void => setEditing(null),
+        commit: (id, column, kind, typed): void => {
+            const key = cellKey(id, column);
+            const coerced = coerceValue(kind, typed);
+
+            setEditing(null);
+
+            /*
+             * A half-typed number writes nothing, on the same argument
+             * `numericCondition` makes for a half-typed filter: `NaN` is a wrong
+             * answer that looks like a finished one. Reported rather than
+             * swallowed, because a cell that silently reverts reads as broken.
+             */
+            if (!coerced.ok) {
+                setFailure({ key, message: getString('DataTable_NotANumber') });
+
+                return;
+            }
+
+            setFailure(null);
+            setPending((current) => new Map(current).set(key, coerced.value));
+            setSaving((current) => new Set(current).add(key));
+
+            props.onCommitEdit(id, column, coerced.value).then(
+                () => drop(saving, key),
+                (error: unknown) => {
+                    drop(saving, key);
+                    drop(pending, key);
+                    setFailure({
+                        key,
+                        message:
+                            (error as Error)?.message
+                            || getString('DataTable_SaveFailedGeneric'),
+                    });
+                },
+            );
+        },
+    };
 }
 
 /**
@@ -397,6 +656,8 @@ export function DataTableControl(props: IProps): React.ReactElement | null {
     const [filters, setFilter] = useMirroredFilters(props.filters);
     const checkState = headerCheckState(selected, pageIds);
     const headerRef = useIndeterminate(checkState);
+    // Before every early return: hooks cannot be conditional.
+    const edit = useEditing(props);
 
     // Whether the reader has narrowed the view themselves. It decides whether
     // an empty result is "this view is empty" or "your filters matched nothing"
@@ -411,7 +672,22 @@ export function DataTableControl(props: IProps): React.ReactElement | null {
 
     const frame = (content: React.ReactElement): React.ReactElement => (
         <FluentProvider theme={props.theme ?? webLightTheme} dir={props.isRTL ? 'rtl' : 'ltr'}>
-            <div className="DataTable">{content}</div>
+            {/*
+              **The measured width, as a pixel ceiling.** Without it the scroll
+              wrapper's `overflow-x: auto` is inert: a form section can hand a
+              control a shrink-to-fit parent, which takes its width *from* its
+              content, so `width: 100%` here resolves against a number this
+              control produced. The table then draws wider than its box, an
+              ancestor clips it, and no scrollbar appears — observed on a real
+              subgrid, 2026-09-09. Nothing written in CSS breaks that circle;
+              the way out is a number from outside it.
+            */}
+            <div
+                className="DataTable"
+                style={props.maxWidth ? { maxWidth: `${props.maxWidth}px` } : undefined}
+            >
+                {content}
+            </div>
         </FluentProvider>
     );
 
@@ -799,17 +1075,17 @@ export function DataTableControl(props: IProps): React.ReactElement | null {
                                             && kind !== 'none'
                                             && (props.allowedColumns === null
                                                 || props.allowedColumns.has(column.name))
-                                            && props.editableCells.get(key) === true;
+                                            && edit.editableCells.get(key) === true;
 
                                         const isEditingCell =
-                                            props.editing?.id === id
-                                            && props.editing?.column === column.name;
+                                            edit.editing?.id === id
+                                            && edit.editing?.column === column.name;
 
-                                        const saving = props.savingCells.has(key);
-                                        const hasPending = props.pendingValues.has(key);
+                                        const saving = edit.saving.has(key);
+                                        const hasPending = edit.pending.has(key);
                                         const failure =
-                                            props.editFailure?.key === key
-                                                ? props.editFailure.message
+                                            edit.failure?.key === key
+                                                ? edit.failure.message
                                                 : null;
 
                                         /*
@@ -824,7 +1100,7 @@ export function DataTableControl(props: IProps): React.ReactElement | null {
                                           the refresh arriving.
                                         */
                                         const text = hasPending
-                                            ? editorValue(kind, props.pendingValues.get(key))
+                                            ? editorValue(kind, edit.pending.get(key))
                                             : record.getFormattedValue(column.name);
 
                                         const cellClass = [
@@ -857,14 +1133,9 @@ export function DataTableControl(props: IProps): React.ReactElement | null {
                                                             'DataTable_EditCell',
                                                         ).replace('{0}', column.displayName)}
                                                         onCommit={(typed): void =>
-                                                            props.onCommitEdit(
-                                                                id,
-                                                                column.name,
-                                                                kind,
-                                                                typed,
-                                                            )
+                                                            edit.commit(id, column.name, kind, typed)
                                                         }
-                                                        onCancel={props.onCancelEdit}
+                                                        onCancel={edit.cancel}
                                                     />
                                                 ) : (
                                                     <>
@@ -911,7 +1182,7 @@ export function DataTableControl(props: IProps): React.ReactElement | null {
                                                                 )}
                                                                 onClick={(event): void => {
                                                                     event.stopPropagation();
-                                                                    props.onBeginEdit(
+                                                                    edit.begin(
                                                                         id,
                                                                         column.name,
                                                                     );
@@ -960,7 +1231,7 @@ export function DataTableControl(props: IProps): React.ReactElement | null {
                                                                 )}
                                                                 onClick={(event): void => {
                                                                     event.stopPropagation();
-                                                                    props.onBeginEdit(
+                                                                    edit.begin(
                                                                         id,
                                                                         column.name,
                                                                     );

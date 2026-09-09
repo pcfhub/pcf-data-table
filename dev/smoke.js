@@ -783,6 +783,35 @@ check(
     view.calls().filter((call) => call.startsWith('trackContainerResize')).join(' ') || 'never asked',
 );
 
+/*
+ * **The measured width has to reach the root, or `overflow-x: auto` is inert.**
+ *
+ * A form section can hand a control a shrink-to-fit parent — `fit-content`,
+ * `inline-block`, a table cell — which takes its width *from* its content. The
+ * control's own `width: 100%` then resolves against a number the control
+ * produced, the table draws wider than its box, an ancestor clips it, and **no
+ * scrollbar appears at all**. Nothing written in CSS breaks that circle.
+ *
+ * 0.3.0 called `trackContainerResize(true)` and used `allocatedWidth` only for
+ * the pinning clamp, so on a real subgrid the table was clipped rather than
+ * scrolled and an end-pinned column could never be seen to pin — observed
+ * 2026-09-09. Asserting the inline style because that is where the number can
+ * go: it comes from the host, and CSS cannot read it.
+ */
+const measured = bind({ width: 900 });
+
+check(
+    'the measured width becomes a ceiling on the root, so the table can scroll inside it',
+    renderDeep(measured.driven.element).includes('max-width:900px'),
+    (renderDeep(measured.driven.element).match(/max-width:[^;"]*/) || ['absent'])[0],
+);
+
+check(
+    'and a host that never measured gets no ceiling rather than a guess',
+    !renderDeep(view.driven.element).includes('max-width'),
+    'no max-width at allocatedWidth -1',
+);
+
 check(
     'nothing is pinned unless the maker asked',
     !narrowMarkup.includes('is-pinned'),
@@ -1258,15 +1287,26 @@ check(
 /* ----------------------------------------------------------------- editing */
 
 /*
- * **These run after everything else, and they are the only async assertions in
- * the suite.**
+ * **What this rig can and cannot say about editing, stated once.**
  *
- * `isEditable` is a Promise on the platform — measured, not assumed — so
- * deciding whether a cell may be edited is a *fetch*, and no amount of
- * re-rendering synchronously will produce the answer. The control asks in
- * `updateView`, and the last answer home calls `notifyOutputChanged()` to get
- * the render that shows the editors. So a test has to let the microtask queue
- * drain and then drive the control again, which is exactly what `open()` does.
+ * Editing's interactive state — which cell is open, what the platform answered,
+ * the optimistic override, the rollback — lives in React state inside
+ * `DataTableControl`, because that is the only place a change can repaint the
+ * table. `notifyOutputChanged()` cannot: it tells the platform an *output*
+ * changed, and a React control repaints when `updateView` runs, which is the
+ * platform's decision. 0.3.0 kept that state in the control class and the
+ * editor never opened on a real form.
+ *
+ * The consequence for this file is unwelcome and worth being blunt about:
+ * `renderDeep` uses `react-dom/server`, which **runs no effects and dispatches
+ * no events**. So the rig cannot see an editor open, cannot see answers arrive,
+ * and cannot see a cell roll back. Asserting on the first server render would
+ * produce checks that pass because nothing ran — the failure mode this suite
+ * has already been burned by twice.
+ *
+ * So what is asserted here is the boundary the control class actually owns: the
+ * callbacks it hands down, and what they do to the platform. The component's
+ * behaviour on top of them is verified on a real form, and SPEC.md says so.
  */
 
 /** Let pending promises settle. Three passes covers `setValue` → `save` → notify. */
@@ -1276,165 +1316,90 @@ async function flush(passes = 3) {
     }
 }
 
-/** A control with editing on, driven until the editability answers have landed. */
-async function open(options) {
-    const handle = bind({
-        ...options,
-        inputs: { enableEditing: true, ...(options && options.inputs) },
-    });
-
-    await flush();
-    handle.settle();
-
-    return handle;
-}
-
 async function editingChecks() {
     /*
-     * The default has to cost nothing. Editing off means no editor and — the
-     * half worth asserting — **no fetch per cell** asking whether there could
-     * be one. A control nobody configured should not be talking to the platform
-     * about permissions.
+     * The default has to cost nothing: no editor, and no fetch per cell asking
+     * whether there could be one. A control nobody configured should not be
+     * talking to the platform about permissions.
      */
-    const offMarkup = renderDeep(view.driven.element);
-
     check(
         'editing off asks the platform nothing and offers no editor',
-        !offMarkup.includes('DataTable-editTrigger')
+        !renderDeep(view.driven.element).includes('DataTable-editTrigger')
             && !view.calls().some((call) => call.startsWith('record.')),
         'no triggers, no record calls',
     );
 
+    const on = bind({ inputs: { enableEditing: true } });
+    const rowId = on.props().pageIds[0];
+
     /*
-     * **The window before the answers land, and it is a real window.**
-     *
-     * `isEditable` is a fetch, so the first render after editing is switched on
-     * happens with nothing known about any cell. Rendering an editor there
-     * would mean offering one on every column of a writable type — precisely
-     * the behaviour asking the platform was meant to replace — and taking it
-     * away a frame later when the answers disagree.
-     *
-     * Absent has to mean read-only, not "assume yes". `bind` without the flush
-     * is exactly that first pass.
+     * **The platform's answer, not the column's type.** `accountnumber` is
+     * `SingleLine.Text`, so every type-based rule would offer an editor on it.
+     * On the measured subgrid `statuscode` came back `false` while two columns
+     * on the same row came back `true` — editability is per column *and* per
+     * record, and it is invisible on `Column`.
      */
-    const unanswered = bind({ inputs: { enableEditing: true } });
+    const editableAnswer = await on.props().canEdit(rowId, 'name');
+    const restricted = bind({
+        inputs: { enableEditing: true },
+        quirks: { readOnlyColumns: ['accountnumber'] },
+    });
+    const refusedAnswer = await restricted.props().canEdit(rowId, 'accountnumber');
 
     check(
-        'a cell the platform has not answered for yet renders read-only',
-        !renderDeep(unanswered.driven.element).includes('DataTable-editTrigger'),
-        'no editors before the answers land',
-    );
-
-    const on = await open({});
-    const onMarkup = renderDeep(on.driven.element);
-    const triggers = (onMarkup.match(/DataTable-editTrigger/g) || []).length;
-
-    check(
-        'editing on offers an editor once the platform has answered',
-        triggers > 0,
-        `${triggers} editable cells on the page`,
+        'the control asks the platform per cell, and passes the answer through',
+        editableAnswer === true && refusedAnswer === false,
+        `name=${editableAnswer}, accountnumber=${refusedAnswer} under readOnlyColumns`,
     );
 
     /*
-     * **The platform's answer outranks the column's type**, and this is the
-     * assertion that says so. `accountnumber` is `SingleLine.Text`, so every
-     * type-based rule would offer an editor on it; `isEditable` says no.
-     *
-     * This is not hypothetical. On the measured subgrid `statuscode` came back
-     * `false` while two columns on the same row came back `true` — column-level
-     * editability is per column *and* per record, and it is invisible on
-     * `Column`. A control that inferred it from `dataType` would offer an
-     * editor over exactly this cell and find out when the save was refused.
+     * A host without the write methods offers nothing to ask with. `null` rather
+     * than a promise resolving false, so the component can tell "cannot write"
+     * apart from "may not write this cell" — they are the same on screen and
+     * different in every other way.
      */
-    const restricted = await open({ quirks: { readOnlyColumns: ['accountnumber'] } });
-    const restrictedMarkup = renderDeep(restricted.driven.element);
+    const noWrite = bind({ inputs: { enableEditing: true }, quirks: { editableAbsent: true } });
 
     check(
-        'a column the platform calls read-only gets no editor, whatever its type',
-        (restrictedMarkup.match(/DataTable-editTrigger/g) || []).length < triggers,
-        `${(restrictedMarkup.match(/DataTable-editTrigger/g) || []).length} of ${triggers} still editable`,
-    );
-
-    /*
-     * A host without the write methods must render read-only cells rather than
-     * inputs that accept keystrokes and discard them. Neither method is in the
-     * typings, so this is the host the types actually describe.
-     */
-    const noWrite = await open({ quirks: { editableAbsent: true } });
-
-    check(
-        'a host with no write methods renders read-only cells, not dead inputs',
-        !renderDeep(noWrite.driven.element).includes('DataTable-editTrigger'),
-        'no editors offered',
+        'a host with no write methods offers no way to ask',
+        noWrite.props().canEdit(rowId, 'name') === null
+            && !renderDeep(noWrite.driven.element).includes('DataTable-editTrigger'),
+        'canEdit is null, no editors rendered',
     );
 
     /* ---- committing */
 
-    const editable = on
-        .props()
-        .columns.find((column) => on.props().editableCells.get(`${on.props().pageIds[0]}|${column.name}`) === true);
-    const rowId = on.props().pageIds[0];
-
-    on.props().onBeginEdit(rowId, editable.name);
-    on.settle();
-    on.props().onCommitEdit(rowId, editable.name, 'text', 'Rewritten');
+    await on.props().onCommitEdit(rowId, 'name', 'Rewritten');
     await flush();
-    on.settle();
 
     const writeCalls = on.calls().filter((call) => call.startsWith('record.'));
 
     check(
         'a commit sets the value then saves it, in that order',
-        writeCalls[0] === `record.setValue(${JSON.stringify(editable.name)})`
-            && writeCalls[1] === `record.save(${JSON.stringify(rowId)})`,
+        writeCalls[0] === 'record.setValue("name")' && writeCalls[1] === `record.save("${rowId}")`,
         writeCalls.slice(0, 2).join(' ') || 'nothing written',
     );
 
     /*
-     * `save()` makes the platform re-read, which re-enters `updateView` — the
-     * same shape of loop `setPageSize` has. The override is retired by the
-     * refreshed record agreeing, not by the promise resolving, and this is what
-     * says the reconcile terminates.
+     * **A resolved `save()` is Dataverse accepting the write, not the dataset
+     * having re-read it.** The rig keeps those apart — committed values wait for
+     * `reread()` — because a rig that applied them inside `save()` let a control
+     * that retired its optimistic override on resolve pass every assertion,
+     * while on a form the cell visibly jumps back and then forward.
      */
     check(
-        'and settles rather than looping',
-        !on.driven.looping,
-        `${on.driven.passes} passes`,
-    );
-
-    /*
-     * **The window between the save resolving and the dataset re-reading, and
-     * it is the reason the override exists at all.**
-     *
-     * A resolved `save()` means Dataverse accepted the write, not that the
-     * dataset has re-read — that is a separate fetch. In this window the record
-     * still reports the old value, and the only thing holding the new one on
-     * screen is the control's own override. Retire it on the promise and the
-     * cell visibly jumps back to the old value and then forward again when the
-     * refresh lands.
-     *
-     * This assertion did not exist until a mutation retiring the override on
-     * resolve passed the whole suite. It passed because the rig applied the
-     * value synchronously inside `save()`, so there was no window to get wrong.
-     */
-    check(
-        'the new value stays on screen while the dataset is still stale',
-        on.props().dataset.records[rowId].getValue(editable.name) !== 'Rewritten'
-            && on.props().pendingValues.get(`${rowId}|${editable.name}`) === 'Rewritten'
-            && renderDeep(on.driven.element).includes('Rewritten'),
-        `record=${JSON.stringify(on.props().dataset.records[rowId].getValue(editable.name))}`
-            + ` override=${JSON.stringify(on.props().pendingValues.get(`${rowId}|${editable.name}`))}`
-            + ` inMarkup=${renderDeep(on.driven.element).includes('Rewritten')}`,
+        'the record is still stale until the host re-reads',
+        on.props().dataset.records[rowId].getValue('name') !== 'Rewritten',
+        JSON.stringify(on.props().dataset.records[rowId].getValue('name')),
     );
 
     on.handle.reread();
     on.settle();
 
     check(
-        'and the override retires once the refreshed record agrees',
-        on.props().dataset.records[rowId].getValue(editable.name) === 'Rewritten'
-            && on.props().pendingValues.size === 0,
-        `${on.props().pendingValues.size} overrides left`,
+        'and carries the written value once it does',
+        on.props().dataset.records[rowId].getValue('name') === 'Rewritten',
+        JSON.stringify(on.props().dataset.records[rowId].getValue('name')),
     );
 
     check(
@@ -1444,54 +1409,32 @@ async function editingChecks() {
     );
 
     /*
-     * **The refusal path is the reason this control catches at all**, and it is
-     * the one the demo harness can never show. A rejected write puts the old
-     * value back and names the failure against the cell — a silent rollback
-     * reads as the control losing the edit.
+     * The refusal has to reach the component, or there is nothing to roll back
+     * from. Passed on rather than swallowed: a rejected platform call is typed
+     * `unknown` and is not reliably an `Error`, and `UciError: Invalid snapshot
+     * with id undefined` — what a wrong column name produces — names neither the
+     * column nor the record.
      */
-    const refused = await open({ quirks: { saveRejects: true } });
+    const refused = bind({ inputs: { enableEditing: true }, quirks: { saveRejects: true } });
     const refusedId = refused.props().pageIds[0];
-    const refusedColumn = refused
-        .props()
-        .columns.find(
-            (column) =>
-                refused.props().editableCells.get(`${refusedId}|${column.name}`) === true,
-        );
-    const before = refused.props().dataset.records[refusedId].getValue(refusedColumn.name);
+    const before = refused.props().dataset.records[refusedId].getValue('name');
+    let rejection = null;
 
-    refused.props().onBeginEdit(refusedId, refusedColumn.name);
-    refused.settle();
-    refused.props().onCommitEdit(refusedId, refusedColumn.name, 'text', 'Doomed');
-    await flush();
-    refused.settle();
+    await refused.props().onCommitEdit(refusedId, 'name', 'Doomed').catch((error) => {
+        rejection = error;
+    });
 
     check(
-        'a refused write rolls back and says so, rather than silently reverting',
-        refused.props().dataset.records[refusedId].getValue(refusedColumn.name) === before
-            && refused.props().pendingValues.size === 0
-            && renderDeep(refused.driven.element).includes('DataTable-cellError'),
-        'value restored, failure named against the cell',
+        'a refused write rejects rather than resolving quietly',
+        rejection !== null
+            && refused.props().dataset.records[refusedId].getValue('name') === before,
+        rejection ? String(rejection.message) : 'resolved — nothing to roll back from',
     );
 
-    /*
-     * A half-typed number writes nothing, on the same argument
-     * `numericCondition` makes for a half-typed filter: `NaN` is a wrong answer
-     * that looks like a finished one. Reported rather than swallowed, because a
-     * cell that silently reverts reads as broken.
-     */
-    const numeric = await open({});
-    const numericId = numeric.props().pageIds[0];
-    const callsBefore = numeric.calls().filter((call) => call.startsWith('record.setValue')).length;
-
-    numeric.props().onCommitEdit(numericId, 'revenue', 'number', 'abc');
-    await flush();
-    numeric.settle();
-
     check(
-        'an unparseable number writes nothing and says why',
-        numeric.calls().filter((call) => call.startsWith('record.setValue')).length === callsBefore
-            && renderDeep(numeric.driven.element).includes('DataTable-cellError'),
-        'no write attempted',
+        'and reports no edited row, because nothing was edited',
+        refused.outputs().editedRecordId === '',
+        JSON.stringify(refused.outputs().editedRecordId),
     );
 }
 
@@ -1499,6 +1442,7 @@ editingChecks().then(report, (error) => {
     check('the editing assertions ran at all', false, String((error && error.stack) || error));
     report();
 });
+
 
 function report() {
     const failed = results.filter((result) => !result.ok);

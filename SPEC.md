@@ -729,3 +729,109 @@ after mutating.**
 - ~~**Whether `setValue` and `save` exist at all**~~ — **answered.** They do,
   they write, and the value survived a reload. See *Inline editing, and what the
   probe answered* above; the open questions that replaced it are listed there.
+
+## 0.3.1
+
+0.3.0 was put on a real Accounts subgrid and three things were wrong. Two of
+them were one cause.
+
+### `notifyOutputChanged()` does not repaint a React control
+
+**The pencil rendered, the click ran, the class field was set, and nothing
+happened on screen.**
+
+`notifyOutputChanged()` tells the platform that an **output** changed, and the
+platform answers by calling `getOutputs()`. A React control repaints when
+`updateView` runs and returns a new element — and that is the platform's
+decision, not the control's. There is no "please re-render" call.
+
+0.3.0 kept every piece of editing state in the control class — which cell is
+open, what the platform answered about each cell, the optimistic overrides, the
+in-flight writes, the last refusal — and called `notifyOutputChanged()` after
+each change expecting a repaint. On a form, none came.
+
+All of it now lives in `DataTableControl` as React state, where a `setState`
+repaints and the platform is not involved. The state survives the platform's own
+`updateView` passes because the element type does not change, so React
+reconciles rather than remounting. What crosses back into the class is only what
+the platform genuinely needs: the write itself, and the edited row id — which is
+an output, and the one thing `notifyOutputChanged` is actually for.
+
+**This is general to every React (virtual) control**, not to this one, and it is
+now in the skill. The rule: if changing it has to repaint, it is component
+state; if the platform has to hear about it, it is an output.
+
+### The rig hid it, for the fourth time this release
+
+`dev/host.js` has `settle()`, which re-drives the control explicitly. So a test
+that called `onBeginEdit` and then `settle()` was modelling a repaint the
+platform never performs, and every editing assertion passed against a control
+that could not open an editor on a form.
+
+That is the fourth time in 0.3.x that the rig was more generous than the
+platform and certified a bug: `allocatedWidth` answered unasked, `save()`
+applying synchronously, `settle()` standing in for a repaint — and the
+`resizeUntracked` gap before them. The line is worth repeating rather than
+paraphrasing: **a rig more generous than the platform does not fail safe; it
+certifies the failure.**
+
+### What the rig can no longer say about editing, stated plainly
+
+`renderDeep` uses `react-dom/server`, which **runs no effects and dispatches no
+events**. Now that editing's interactive state is React state driven by effects
+and clicks, the rig cannot see an editor open, cannot see editability answers
+arrive, and cannot see a cell roll back.
+
+Rather than leave assertions that pass because nothing ran — the failure this
+suite has been burned by twice — the editing checks were rewritten against the
+boundary the control class actually owns: `canEdit` returns the platform's
+promise or `null` where the host cannot write; `onCommitEdit` calls `setValue`
+then `save` in that order, reports the edited row, and rejects rather than
+resolving quietly when the platform refuses. Everything above that line is
+verified on a real form and nowhere else. It is listed under *Not verified*
+below, honestly rather than as a formality.
+
+### Reading `allocatedWidth` is not the same as applying it
+
+0.3.0 added `trackContainerResize(true)` and used the answer **only** for the
+pinning clamp. The number never reached the layout, so `overflow-x: auto` on the
+scroll wrapper stayed inert: the table drew wider than its box, an ancestor
+clipped it, and no scrollbar appeared. An end-pinned column could therefore
+never be seen to pin, because nothing ever scrolled past it.
+
+That is the documented symptom, and the skill already carried the fix — *apply
+it as a pixel `max-width` on the control's root*. Half the fix was implemented
+and the half that mattered was not. The root now carries
+`max-width: <allocatedWidth>px` when the host measured, and nothing when it did
+not.
+
+Worth noting for whoever reads the number: `allocatedWidth` came back **2454**
+on that subgrid, which is far wider than the subgrid appears. It is applied as a
+ceiling rather than as a width, so an over-wide value costs nothing — but do not
+read it as "the box this control is in".
+
+### A cell that did two different things depending on where you clicked
+
+`.DataTable-editTrigger` was an inline button sized to its text, so the rest of
+the cell was bare `<td>` — and a `<td>` is inside the row, which opens the
+record. Clicking a short value edited; clicking two millimetres to its right
+navigated away. Worst on empty cells, where the target was the width of the word
+"(empty)".
+
+It is now `display: block; width: 100%`, so the whole cell is the target and the
+only click that reaches the row is one outside every cell.
+
+### Not verified in 0.3.1
+
+- **The three fixes have not themselves been seen on a real form.** They were
+  each written against a specific observed failure, and each has an assertion
+  where one is possible, but the loop is not closed until the build is back on
+  that subgrid.
+- **Interactive editing is not covered by the rig at all**, for the reason
+  above. Opening an editor, an editability answer revealing a cell, an
+  optimistic value holding while the dataset is stale, and a rollback naming its
+  refusal are all real-form-only.
+- **Whether `allocatedWidth` is the right ceiling.** 2454 on a subgrid that
+  renders far narrower suggests it may be the form's width rather than the
+  control's. Applied as a ceiling it is harmless, but a control that needed the
+  number to be *accurate* would be wrong here.
