@@ -2,13 +2,15 @@
     "schemaVersion": 1,
     "slug": "pcf-data-table",
     "name": "Data Table",
-    "tagline": "A sortable, pageable table over any Dataverse view, with row selection.",
+    "tagline": "A sortable, filterable table over any Dataverse view, with inline editing and pinned columns.",
     "category": "data",
     "tags": [
         "react",
         "dataset",
         "table",
         "grid",
+        "editing",
+        "pinned-columns",
         "paging"
     ],
     "control": {
@@ -30,6 +32,8 @@
         "logo": "media/logo.png",
         "screenshots": [
             "media/screenshot.png",
+            "media/screenshot-pinned.png",
+            "media/screenshot-editing.png",
             "media/screenshot-narrow.png"
         ]
     },

@@ -1,6 +1,6 @@
 # Data Table
 
-A sortable, pageable table over any Dataverse view, with row selection.
+A sortable, filterable table over any Dataverse view, with inline editing and pinned columns.
 
 ## What it does
 
@@ -907,3 +907,41 @@ Pinned columns and the horizontal scroll were confirmed on the same form at
   a resolved `setValue` — but that `setValue` was awaited rather than called,
   and awaiting `undefined` is not the same as staging a change. The earlier
   reading is void; nothing gates on it.
+
+### The preview rig is in the repository now, and so is a gap it exposed
+
+`dev/preview.html` renders the built bundle in a real browser, and
+`dev/serve.js` serves the repository so it can fetch `demo/records.json`. Every
+screenshot in `media/` is captured from it with headless Chrome at a device
+scale factor of 2.
+
+**It had to be a browser page rather than `react-dom/server`.** `smoke.js`
+renders with `renderToStaticMarkup`, which runs no effects and dispatches no
+events — and since 0.3.1 the editing state is React state driven by an effect
+(asking the platform which cells are writable) and a click. A server-rendered
+picture of this control can only ever show the state before any of that has run,
+which is the read-only fallback. Here effects run, and `?open=1` clicks a cell so
+a headless capture can photograph an open editor.
+
+Two rig changes came with it, both about the pictures being honest:
+
+- **`host.js` now carries every string the control asks for.** `getString` falls
+  back to the key, so the missing two-thirds rendered as `DataTable_Export` —
+  invisible to an assertion that counts elements, and glaring in a screenshot.
+- **`getFormattedValue` can format.** It was `String(value)`, so a Currency
+  rendered as `2450000` and a DateOnly as `2026-08-14` — a control that does not
+  exist, since a real platform formats both before the control sees them. Opt-in
+  via `format: true`, used by the preview page only: the CSV assertions read
+  exact cell contents, where `-1500` says more about quoting and formula
+  defusing than `-$1,500.00` does.
+
+**The gap: this repository never adopted the template's `dev/harness.html` or
+its `dev/serve.js`.** The template ships an interactive host stand-in with
+switches for field-level security, a missing theme and right-to-left, and its
+`serve.js` exits when that page is absent — so it cannot be copied in on its
+own. What is here is the narrower capture server, and `dev/serve.js` says so at
+the top. Adopting the template's harness is worth doing and was not this change.
+`dev/preview.html` has been copied up to `_template/dev/` so the next control
+gets the capture page without rebuilding it — SPEC has described it as "~90
+lines, not in the repo" through two releases, and it has now been written three
+times.

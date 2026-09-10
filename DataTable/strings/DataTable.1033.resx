@@ -73,7 +73,7 @@
     <value>Data Table</value>
   </data>
   <data name="DataTable_Desc" xml:space="preserve">
-    <value>A sortable, pageable table over any Dataverse view, with row selection.</value>
+    <value>A sortable, filterable table over any Dataverse view, with inline editing and pinned columns.</value>
   </data>
 
   <data name="Records_DataSet_Name" xml:space="preserve">

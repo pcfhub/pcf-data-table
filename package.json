@@ -1,7 +1,7 @@
 {
   "name": "pcf-data-table",
   "version": "0.3.3",
-  "description": "A sortable, pageable table over any Dataverse view, with row selection.",
+  "description": "A sortable, filterable table over any Dataverse view, with inline editing and pinned columns.",
   "license": "MIT",
   "private": true,
   "scripts": {
@@ -13,7 +13,8 @@
     "start": "pcf-scripts start",
     "refreshTypes": "pcf-scripts refreshTypes",
     "smoke": "node dev/smoke.js",
-    "lint": "eslint DataTable --ext .ts,.tsx"
+    "lint": "eslint DataTable --ext .ts,.tsx",
+    "preview": "node dev/serve.js"
   },
   "devDependencies": {
     "@fluentui/react-components": "9.46.2",

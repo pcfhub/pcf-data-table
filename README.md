@@ -1,7 +1,7 @@
 # Data Table
 
-A sortable, filterable, pageable table over any Dataverse view, with row
-selection and CSV export.
+A sortable, filterable table over any Dataverse view, with inline editing and
+pinned columns.
 
 [![Build](https://github.com/pcfhub/pcf-data-table/actions/workflows/build.yml/badge.svg)](https://github.com/pcfhub/pcf-data-table/actions/workflows/build.yml)
 [![Release](https://github.com/pcfhub/pcf-data-table/actions/workflows/release.yml/badge.svg)](https://github.com/pcfhub/pcf-data-table/actions/workflows/release.yml)
@@ -104,8 +104,8 @@ TagList's interactions genuinely work against its fixture, because a chip that i
 in the fixture can be clicked and read back. This one asks the harness to do
 something it only pretends to do.
 
-One preset, against a 24-row account fixture. Its `pageSize` is 25 — above the
-row count — deliberately: the harness serves every row regardless of page size
+Three presets, against a 24-row account fixture. Their `pageSize` is 25 — above
+the row count — deliberately: the harness serves every row regardless of page size
 and the control correctly does not slice client-side, so a smaller page size
 would render 24 rows under a pager reading "1–10 of 24", which reads as a bug in
 the control rather than as a gap in the harness.
@@ -124,6 +124,8 @@ npm start          # the PCF test harness
 npm run build
 npm run lint
 npm run check      # what CI runs first: placeholders, pcfhub.json, control shape
+npm run smoke      # assertions against the built bundle, with an exit code
+npm run preview    # serves dev/preview.html — the control in a real browser
 ```
 
 Run `npm run refreshTypes` after every manifest edit — until you do,

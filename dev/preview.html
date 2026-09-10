@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<!--
+  The control, rendered in a real browser, for looking at.
+
+      npm run build
+      then open this file, or point headless Chrome at it to capture a picture
+
+  ---
+
+  **Why this exists alongside `smoke.js`.** That file loads the same bundle in
+  Node and asserts what the control *decided*. This one renders it, and the two
+  answer different questions. A stray ellipsis beside every checkbox was
+  invisible to every assertion for three reviews and obvious in one screenshot;
+  it was the user agent's `text-overflow`, drawn on a cell nobody had looked at
+  in pixels.
+
+  **And why it is a browser page rather than `react-dom/server`.** The suite
+  renders with `renderToStaticMarkup`, which runs no effects and dispatches no
+  events. Since 0.3.1 the editing state lives in React state driven by an effect
+  — asking the platform which cells this user may write — and a click. Neither
+  happens under the server renderer, so a server-rendered picture of this
+  control can only ever show the state before any of it has run. Here, effects
+  run and `?edit` can click a cell.
+
+  The Fluent components are stubbed: `FluentProvider` becomes a `<div>` and the
+  theme is empty, so every `var(--colorX, fallback)` in the stylesheet resolves
+  to its literal fallback. That is the light theme, and it is the honest limit of
+  this page — it shows layout and the fallbacks, and nothing about the real
+  Fluent palette a form would supply.
+
+  Query parameters, all optional:
+
+    ?pinStart=1&pinEnd=1   pin that many columns at each end
+    ?edit=1                turn editing on
+    ?open=1                and open the first editable cell's editor
+    ?filter=in             type a filter into the first text column
+    ?select=none|single|multiple
+    ?page=25               page size
+-->
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <title>Data Table — preview</title>
+    <link rel="stylesheet" href="../out/controls/DataTable/css/DataTable.css" />
+    <style>
+        /*
+          Nothing here styles the control. It stands in for the host page, so
+          the picture has the padding and ground a form would give it — and so
+          the screenshot has a margin rather than bleeding to the edge.
+        */
+        body { margin: 0; padding: 16px; background: #ffffff; font-family: 'Segoe UI', system-ui, sans-serif; }
+        #root { max-width: 100%; }
+    </style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="../node_modules/react/umd/react.development.js"></script>
+<script src="../node_modules/react-dom/umd/react-dom.development.js"></script>
+<script src="fixture.js"></script>
+<script src="host.js"></script>
+
+<script>
+    /*
+      The platform globals, under the names the bundle asks for.
+
+      `pcf-scripts` maps a `<platform-library>` version onto the build it
+      supports, so Fluent 9.46.2 arrives as `FluentUIReactv940`. If a version
+      bump ever changes those names this page fails loudly on the next line
+      rather than rendering an empty box — which is what `smoke.js` avoids by
+      reading the names out of the bundle, and what is not worth the machinery
+      here.
+    */
+    window.Reactv16 = window.React;
+    window.FluentUIReactv940 = {
+        FluentProvider: function (props) {
+            return React.createElement('div', { dir: props.dir }, props.children);
+        },
+        webLightTheme: {},
+    };
+
+    var registration = window.__pcfHost.captureRegistration(window);
+</script>
+
+<script src="../out/controls/DataTable/bundle.js"></script>
+
+<script>
+    (async function () {
+        'use strict';
+
+        var host = window.__pcfHost;
+        var fixture = window.__pcfFixture;
+        var params = new URLSearchParams(window.location.search);
+        var root = document.getElementById('root');
+
+        if (typeof registration.ctor !== 'function') {
+            root.textContent = 'The bundle registered no control. Run npm run build.';
+
+            return;
+        }
+
+        /*
+          **Which fixture, and it matters for a picture.**
+
+          `dev/fixture.js` exists to break things: nulls, an overlong name, raw
+          numbers. Its `getFormattedValue` is `String(value)`, so revenue renders
+          as `4200000` — a control that does not exist, since a real platform
+          formats it. `demo/records.json` is the hub's demo fixture and carries
+          values already formatted the way a form shows them, which is what a
+          published screenshot should be of.
+
+          Default stays the edge-case one, because the common use of this page is
+          looking at the states that break.
+        */
+        if (params.get('fixture') === 'demo') {
+            var response = await fetch('../demo/records.json');
+
+            fixture = await response.json();
+        }
+
+        var number = function (name) {
+            var raw = params.get(name);
+
+            return raw === null || raw === '' ? null : Number(raw);
+        };
+
+        var handle = host.createHost(fixture, {
+            // A real width, because the pinning clamp reads it and a control
+            // that never subscribed reads -1. The page is what sizes the
+            // picture; this is what the control is told.
+            width: window.innerWidth - 32,
+            // Values as a platform would render them; see makeDisplay in host.js.
+            format: true,
+            height: 600,
+            inputs: {
+                selectionMode: params.get('select') || 'multiple',
+                enableSorting: true,
+                enableFiltering: true,
+                enableExport: true,
+                openOnRowClick: true,
+                pageSize: number('page'),
+                pageSizeOptions: params.get('sizes'),
+                pinnedStart: number('pinStart'),
+                pinnedEnd: number('pinEnd'),
+                enableEditing: params.get('edit') === '1',
+                editableColumns: params.get('editable'),
+            },
+        });
+
+        var instance = new registration.ctor();
+
+        /*
+          Paint through `drive`, not through a single `updateView`.
+
+          A dataset control's mutators do not take effect until the next fetch,
+          so `applyPageSize` calls `refresh()` and the first pass renders
+          against data that is already stale. `drive` runs until the host owes
+          nothing, which is what a platform does across several `updateView`
+          calls, and hands back the last element.
+        */
+        var painting = false;
+
+        function paint() {
+            // `notifyOutputChanged` fires during a write, and a re-entrant
+            // paint would recurse through the same render.
+            if (painting) {
+                return;
+            }
+
+            painting = true;
+
+            try {
+                ReactDOM.render(host.drive(instance, handle, 10).element, root);
+            } finally {
+                painting = false;
+            }
+        }
+
+        instance.init(handle.context, paint, {}, root);
+        paint();
+
+        /*
+          Everything below is for a *captured* picture rather than for a person
+          looking at the page: headless Chrome cannot click, so the states worth
+          photographing have to arrange themselves.
+
+          The delay is for the editability answers. `isEditable` is a promise on
+          the platform and a promise here, so the editors do not exist on the
+          first paint — a screenshot taken synchronously would show the
+          read-only fallback and look like the feature was missing.
+        */
+        window.setTimeout(function () {
+            var filter = params.get('filter');
+
+            if (filter) {
+                var box = document.querySelector('.DataTable-filter');
+
+                if (box) {
+                    var setter = Object.getOwnPropertyDescriptor(
+                        window.HTMLInputElement.prototype,
+                        'value',
+                    ).set;
+
+                    // React tracks the previous value on the node, so assigning
+                    // `.value` directly is swallowed as "no change". Going
+                    // through the prototype setter is what makes the synthetic
+                    // event carry the new value.
+                    setter.call(box, filter);
+                    box.dispatchEvent(new Event('input', { bubbles: true }));
+                }
+            }
+
+            /*
+              A pinned column only reads as pinned once something has scrolled
+              past it. Nothing in a headless capture can scroll, so the page
+              does it — and this is the only way to photograph the feature at
+              all.
+            */
+            var scroll = Number(params.get('scroll'));
+
+            if (scroll > 0) {
+                var pane = document.querySelector('.DataTable-scroll');
+
+                if (pane) {
+                    pane.scrollLeft = scroll;
+                }
+            }
+
+            if (params.get('open') === '1') {
+                var trigger = document.querySelector('.DataTable-editTrigger');
+
+                if (trigger) {
+                    trigger.click();
+                }
+            }
+
+            document.title = 'ready';
+        }, 400);
+    })();
+</script>
+</body>
+</html>

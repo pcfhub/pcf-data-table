@@ -106,18 +106,49 @@
         Null: 12,
     };
 
+    /*
+     * Every string the control asks for, with the value the .resx actually
+     * carries.
+     *
+     * **Kept complete rather than partial on purpose.** `getString` falls back
+     * to the key, so a missing entry renders as `DataTable_Export` — which is
+     * invisible in an assertion that only counts elements, and glaring in a
+     * screenshot taken from `dev/preview.html`. A rig that renders the control
+     * for a picture has to render the words too.
+     *
+     * Regenerate by parsing `strings/<Control>.1033.resx` for every key the
+     * source passes to `getString`; smoke.js overrides this with marked keys
+     * where it wants to prove a string came from the .resx at all.
+     */
     var STRINGS = {
-        DataTable_Name: 'Data Table',
-        DataTable_Empty: 'No records.',
-        DataTable_Error: 'The records could not be loaded.',
-        DataTable_Loading: 'Loading…',
-        DataTable_NoColumns: 'No columns have been chosen for this control.',
-        DataTable_Next: 'Next',
-        DataTable_Previous: 'Previous',
-        DataTable_OpenRecord: 'Open {0}',
-        DataTable_SortBy: 'Sort by {0}',
-        DataTable_PageStatus: 'Page {0}',
-        DataTable_RangeStatus: '{0}–{1} of {2}',
+        DataTable_ClearFilter: "Clear the filter on {0}",
+        DataTable_ClearFilters: "Clear filters",
+        DataTable_Empty: "No records.",
+        DataTable_Error: "This view could not be loaded.",
+        DataTable_Export: "Export CSV",
+        DataTable_ExportHint: "Save the rows loaded so far as a CSV file. Pages you have not opened are not included.",
+        DataTable_FilterColumn: "Filter by {0}",
+        DataTable_FilterNumberHint: "Filter by {0}. Type a number, or a comparison such as >1000.",
+        DataTable_FilterNumberPlaceholder: "e.g. >1000",
+        DataTable_FilterPlaceholder: "Filter",
+        DataTable_GoToPage: "Go to page",
+        DataTable_Loading: "Loading records…",
+        DataTable_Next: "Next page",
+        DataTable_NoColumns: "No columns are selected for this table.",
+        DataTable_NoMatches: "No records match these filters.",
+        DataTable_NotANumber: "That is not a number, so nothing was saved.",
+        DataTable_OfPages: "of {0}",
+        DataTable_PageStatus: "Page {0}",
+        DataTable_Previous: "Previous page",
+        DataTable_RangeStatus: "{0}–{1} of {2}",
+        DataTable_RowsPerPage: "Rows per page",
+        DataTable_SaveFailedGeneric: "The platform refused the change.",
+        DataTable_SaveTimedOut: "The platform did not confirm this change. It may not have been saved — reload the form to see the stored value.",
+        DataTable_Saving: "Saving…",
+        DataTable_SelectAll: "Select all rows on this page",
+        DataTable_SelectRow: "Select {0}",
+        DataTable_SortBy: "Sort by {0}",
+        DataTable_Unfilterable: "{0} cannot be filtered here. Dates, choices and lookups are filtered by the view.",
     };
 
     var HOSTS = {
@@ -172,6 +203,12 @@
          * Passing them rather than editing this file is what keeps a repo's
          * copy of the rig close enough to the template's to update by copying.
          */
+        /**
+         * Format values the way a platform would, in `getFormattedValue` only.
+         * Off for assertions, on for `dev/preview.html`. See `makeDisplay`.
+         */
+        format: false,
+
         inputs: {},
 
         quirks: {
@@ -313,6 +350,59 @@
         return value === null || value === undefined ? '' : String(value);
     }
 
+    /*
+     * What `getFormattedValue` hands back, which on the platform is *not*
+     * `String(value)`.
+     *
+     * Separate from `formatted()` above, which stays raw and is what filtering
+     * and sorting compare on — the server filters the stored value, not the
+     * rendered one, and the CSV assertions read exact cell contents where
+     * `-1500` says more about quoting and formula defusing than `-$1,500.00`.
+     *
+     * **`format: true` is for pictures.** `dev/preview.html` renders the control
+     * to be looked at, and a table of `2450000` and `2026-08-14` is a control
+     * that does not exist: a real platform formats a Currency and a DateOnly
+     * before the control ever sees them, so a screenshot of raw values
+     * misrepresents the thing being photographed.
+     */
+    function makeDisplay(columns, format) {
+        var types = {};
+
+        (columns || []).forEach(function (column) {
+            types[column.name] = column.dataType || '';
+        });
+
+        return function (value, name) {
+            if (value === null || value === undefined) {
+                return '';
+            }
+
+            var type = types[name] || '';
+
+            if (!format || typeof value !== 'number' && type.indexOf('DateAndTime') !== 0) {
+                return String(value);
+            }
+
+            if (type === 'Currency') {
+                return value.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
+            }
+
+            if (type === 'Decimal' || type === 'FP' || type === 'Whole.None') {
+                return value.toLocaleString('en-US');
+            }
+
+            if (type.indexOf('DateAndTime') === 0) {
+                var date = new Date(String(value));
+
+                return isNaN(date.getTime())
+                    ? String(value)
+                    : date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+            }
+
+            return String(value);
+        };
+    }
+
     /**
      * Build the dataset and the context around it.
      *
@@ -328,6 +418,8 @@
 
         var allRecords = o.records || fixture.records;
         var columns = o.columns || fixture.columns;
+        // Raw unless asked for; see makeDisplay. Only getFormattedValue uses it.
+        var display = makeDisplay(columns, o.format);
 
         var state = {
             /** The page the platform believes it is on. */
@@ -560,7 +652,7 @@
                     return row.values[name];
                 },
                 getFormattedValue: function (name) {
-                    return formatted(row.values[name]);
+                    return display(row.values[name], name);
                 },
                 getNamedReference: function () {
                     return { id: row.id, name: formatted(row.values.name), etn: fixture.targetEntityType };
