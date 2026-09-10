@@ -17,7 +17,8 @@
             "dataType": "SingleLine.Text",
             "alias": "accountnumber",
             "order": 1,
-            "visualSizeFactor": 110
+            "visualSizeFactor": 110,
+            "isReadOnly": true
         },
         {
             "name": "primarycontactname",
