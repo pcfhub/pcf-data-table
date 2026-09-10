@@ -835,3 +835,71 @@ only click that reaches the row is one outside every cell.
   renders far narrower suggests it may be the form's width rather than the
   control's. Applied as a ceiling it is harmless, but a control that needed the
   number to be *accurate* would be wrong here.
+
+## 0.3.3
+
+**`EntityRecord.setValue()` does not return a promise. It returns `undefined`.**
+
+Microsoft's reference page types it `Promise`. The samples that actually work
+call it synchronously — several `setValue`s in a row, then one
+`await record.save()`, then `dataset.refresh()`. 0.3.0 read the documentation,
+typed it as a promise, and wrote:
+
+```ts
+record.setValue(column, value).then(() => record.save())
+```
+
+which against a real record is `.then` on `undefined`: a **`TypeError` thrown
+synchronously**, outside every `.catch` in the chain and — once 0.3.2 added one
+— outside the timeout wrapper too, because it threw before the wrapper was
+reached. The cell had already been marked saving. Nothing caught it. It read
+"Saving…" for ever, with no rollback, no message, and no write.
+
+Three releases shipped that. It was found by reading a working sample, not by
+any measurement this repository made.
+
+### The rig returned a promise, which is why nothing caught it
+
+`dev/host.js` had `record.setValue` return `Promise.resolve()`. So the control's
+chain behaved perfectly here, and every editing assertion passed against code
+that could not work on a form. `setValue` now returns `undefined`, and the old
+shape fails the suite with the identical error the form produced —
+`Cannot read properties of undefined (reading 'then')` — confirmed by mutation.
+
+**Fifth time in 0.3.x, and the most expensive.** The others: `allocatedWidth`
+answered unasked, `save()` applying synchronously, `settle()` standing in for a
+repaint, `resizeUntracked` absent. The pattern is not carelessness in any one
+of them — it is that a rig is written from the same understanding as the control,
+so it encodes the same mistakes and then certifies them. **Where the platform
+and the documentation disagree, the rig has to follow the platform**, and the
+rig is the only place that disagreement can be written down as something a test
+can fail against.
+
+### `refresh()` is part of the write
+
+`save()` commits; nothing re-reads until something asks. The working samples call
+`dataset.refresh()` straight after saving, and 0.3.0–0.3.2 did not. Without it
+the optimistic override is the only thing holding the new value on screen, so
+the cell shows the edit until the next platform-driven fetch and then appears to
+lose it — which is what "after refresh the values are the previous values"
+described.
+
+### What is asserted now
+
+- `setValue` returning `undefined` does not break the commit.
+- `refresh` is called after `save`.
+- Both mutation-tested; the first reproduces the shipped failure exactly.
+
+### Not verified in 0.3.3
+
+- **The fix has not been seen on a real form.** It is written against a rig that
+  now reproduces the exact failure, which is better ground than 0.3.0 through
+  0.3.2 stood on, and it is still not the form.
+- **Whether `save()` resolves at all on a subgrid.** Every previous measurement
+  reached it through the broken chain, so nothing here has yet watched a
+  `save()` come back. The fifteen-second bound added in 0.3.2 is what will say
+  so, and `+15003ms` in the failure log is the tell.
+- **Whether `isDirty()` means anything.** It answered `false` immediately after
+  a resolved `setValue` — but that `setValue` was awaited rather than called,
+  and awaiting `undefined` is not the same as staging a change. The earlier
+  reading is void; nothing gates on it.

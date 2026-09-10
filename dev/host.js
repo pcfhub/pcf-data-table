@@ -594,11 +594,33 @@
              */
             row.staged = row.staged || {};
 
+            /*
+             * **Returns `undefined`, because the platform does.**
+             *
+             * This rig used to return `Promise.resolve()`, and that single line
+             * is what let `pcf-data-table` 0.3.0 through 0.3.2 ship a write that
+             * could never work. The control chained
+             * `record.setValue(...).then(() => record.save())`, which against a
+             * real record is `.then` on `undefined` — a `TypeError` thrown
+             * synchronously, outside every `.catch`, leaving the cell reading
+             * "Saving…" for ever. Against this rig it was a well-behaved
+             * promise chain and every assertion passed.
+             *
+             * Microsoft's reference page types it `Promise`, which is where the
+             * mistake came from; the samples that actually work call it
+             * synchronously and await only `save()`. When the documentation and
+             * the platform disagree, the platform wins — and this file is where
+             * that has to be written down, because it is the only thing here
+             * that a test can fail against.
+             *
+             * Fifth time this release the rig was more generous than the
+             * platform, and the most expensive of the five.
+             */
             record.setValue = function (name, value) {
                 log('record.setValue', name);
                 row.staged[name] = value;
 
-                return Promise.resolve();
+                return undefined;
             };
 
             record.save = function () {

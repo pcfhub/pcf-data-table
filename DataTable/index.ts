@@ -39,7 +39,22 @@ import {
  * control still declares no features.
  */
 interface EditableRecord {
-    setValue(columnName: string, value: unknown): Promise<unknown>;
+    /**
+     * **Not a promise, and 0.3.0–0.3.2 assumed it was.**
+     *
+     * It returns `undefined`. Microsoft's own reference page types it
+     * `Promise`, and the working samples in the wild call it synchronously —
+     * several `setValue`s in a row, then one `await record.save()`. Typing it
+     * as a promise here produced `record.setValue(...).then(...)`, which is
+     * `.then` on `undefined`: a `TypeError` thrown **synchronously**, before
+     * any `.catch` in the chain and before the timeout wrapper existed to see
+     * it. The cell had already been marked saving, nothing caught the throw,
+     * and it read "Saving…" forever with no rollback and no message.
+     *
+     * Typed `unknown` rather than `void` so that a host which *does* return a
+     * promise is not a type error — `Promise.resolve()` upstream handles both.
+     */
+    setValue(columnName: string, value: unknown): unknown;
     save(): Promise<unknown>;
     /**
      * **Async, and that is the trap.** So are `isSecured`, `isReadable` and
@@ -417,49 +432,56 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
             return Promise.reject(new Error('This host cannot write to a dataset record.'));
         }
 
-        /*
-         * **TEMPORARY diagnostics — remove once the write is understood.**
-         *
-         * 0.3.1 hung on "Saving…" against a real subgrid and the values reverted
-         * on reload, and the console measurement that preceded it had already
-         * said why without being read properly: `setValue` resolved, `isDirty()`
-         * came back **false**, and `save resolved` never printed at all. So the
-         * suspicion is that `setValue` resolves without staging anything and
-         * `save()` never settles.
-         *
-         * That is a guess. These lines make it a measurement: they timestamp
-         * each step and report `isDirty()` between them, so the next report says
-         * which of the two calls is the one that does not come back.
-         */
+        // Timing, for the failure log below. A write that hangs is reported by
+        // the component's fifteen-second bound, and "+15003ms" is the tell that
+        // separates a refusal from a call that never came back.
         const started = Date.now();
         const since = (): string => `+${Date.now() - started}ms`;
 
-        console.info('[DataTable write] setValue', column, value, since());
-
-        return record
-            .setValue(column, value)
+        /*
+         * **`Promise.resolve().then(...)` rather than chaining off `setValue`.**
+         *
+         * `setValue` returns `undefined`, so `record.setValue(...).then(...)`
+         * is `.then` on nothing: a `TypeError` thrown synchronously, outside
+         * every `.catch` in the chain. Starting from a resolved promise turns a
+         * synchronous throw *inside* the callback into a rejection, which is
+         * what the caller is equipped to handle.
+         *
+         * The shape follows the samples that work: set the values, then one
+         * `save()`, then `refresh()`. Only `save` is awaitable.
+         */
+        return Promise.resolve()
             .then(() => {
-                console.info('[DataTable write] setValue resolved', since());
-
-                return Promise.resolve(record.isDirty ? record.isDirty() : 'no isDirty').then(
-                    (dirty) => console.info('[DataTable write] isDirty', dirty, since()),
-                    (error) => console.info('[DataTable write] isDirty threw', error, since()),
-                );
+                record.setValue(column, value);
             })
+            .then(() => record.save())
             .then(() => {
-                console.info('[DataTable write] save', since());
+                /*
+                 * **`refresh()` is part of the write, not a courtesy.**
+                 *
+                 * `save()` commits; nothing re-reads until something asks. The
+                 * working samples call it immediately after saving, and without
+                 * it the optimistic override is the only thing holding the new
+                 * value on screen — so the cell would show the edit until the
+                 * next platform-driven fetch and then appear to lose it.
+                 *
+                 * Safe to call here: this runs from a user gesture, not from
+                 * `updateView`, so the `updateView` it triggers does not
+                 * re-enter anything.
+                 */
+                dataset.refresh();
 
-                return record.save();
-            })
-            .then(() => {
-                console.info('[DataTable write] save resolved', since());
                 this.editedRecordId = id;
                 // The one thing here that *is* an output, and the one thing
                 // `notifyOutputChanged` is actually for.
                 this.notifyOutputChanged();
             })
             .catch((error: unknown) => {
-                console.info('[DataTable write] rejected', error, since());
+                // Failure only. A write that never comes back now rejects on
+                // the component's fifteen-second bound, so this line catches
+                // the hang as well as the refusal — and the platform's own
+                // message names neither the column nor the record.
+                console.warn('[DataTable] write failed', column, since(), error);
 
                 throw error;
             });

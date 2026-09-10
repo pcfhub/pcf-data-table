@@ -1381,6 +1381,42 @@ async function editingChecks() {
     );
 
     /*
+     * **`setValue` returns `undefined`, and this is the assertion that says a
+     * control must not chain off it.**
+     *
+     * `record.setValue(...).then(() => record.save())` is `.then` on nothing: a
+     * `TypeError` thrown *synchronously*, outside every `.catch` in the chain.
+     * On a real subgrid that left the cell reading "Saving…" for ever, with no
+     * rollback and no message, through three releases — because this rig
+     * returned a promise from `setValue` and the whole chain behaved.
+     *
+     * Microsoft's reference page types it `Promise`, which is where the mistake
+     * came from. The rig now returns what the platform returns, so the old
+     * shape cannot compile a passing suite.
+     */
+    check(
+        'the commit survives setValue returning nothing at all',
+        typeof on.props().dataset.records[rowId].setValue('name', 'probe') === 'undefined'
+            && writeCalls.includes(`record.save("${rowId}")`),
+        'setValue returns undefined and save still ran',
+    );
+
+    /*
+     * `refresh()` is part of the write rather than a courtesy: `save()` commits
+     * and nothing re-reads until something asks. Without it the optimistic
+     * override is the only thing holding the new value on screen, so the cell
+     * shows the edit until the next platform-driven fetch and then appears to
+     * lose it.
+     */
+    const afterSave = on.calls().slice(on.calls().indexOf(`record.save("${rowId}")`));
+
+    check(
+        'and asks the platform to re-read once the save lands',
+        afterSave.includes('refresh'),
+        afterSave.slice(0, 3).join(' ') || 'nothing after the save',
+    );
+
+    /*
      * **A resolved `save()` is Dataverse accepting the write, not the dataset
      * having re-read it.** The rig keeps those apart — committed values wait for
      * `reread()` — because a rig that applied them inside `save()` let a control
