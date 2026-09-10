@@ -890,15 +890,19 @@ described.
 - `refresh` is called after `save`.
 - Both mutation-tested; the first reproduces the shipped failure exactly.
 
-### Not verified in 0.3.3
+### Verified on a real form
 
-- **The fix has not been seen on a real form.** It is written against a rig that
-  now reproduces the exact failure, which is better ground than 0.3.0 through
-  0.3.2 stood on, and it is still not the form.
-- **Whether `save()` resolves at all on a subgrid.** Every previous measurement
-  reached it through the broken chain, so nothing here has yet watched a
-  `save()` come back. The fifteen-second bound added in 0.3.2 is what will say
-  so, and `+15003ms` in the failure log is the tell.
+**Editing works end to end**, observed on the Accounts subgrid on 2026-09-09:
+the cell saved, "Saving…" cleared, and the value survived a browser reload. So
+`save()` does resolve on a subgrid — the question left open an hour earlier — and
+the whole write path is confirmed: `setValue` synchronously, `await save()`,
+`dataset.refresh()`, with **no `<uses-feature>` and no install-time permission
+prompt**, which was the entire argument for building it this way.
+
+Pinned columns and the horizontal scroll were confirmed on the same form at
+0.3.1.
+
+### Not verified in 0.3.3
 - **Whether `isDirty()` means anything.** It answered `false` immediately after
   a resolved `setValue` — but that `setValue` was awaited rather than called,
   and awaiting `undefined` is not the same as staging a change. The earlier
