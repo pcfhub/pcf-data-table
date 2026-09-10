@@ -121,6 +121,17 @@
             fixture = await response.json();
         }
 
+        /*
+          A column the fixture marks `isReadOnly` must answer `isEditable`
+          false here too, or this rig is more permissive than both the hub's
+          demo harness and a real form — and a screenshot taken from it would
+          show an editor over a cell the platform refuses. Derived from the
+          fixture rather than hard-coded, so one JSON file drives both hosts.
+        */
+        var readOnly = (fixture.columns || [])
+            .filter(function (column) { return column.isReadOnly; })
+            .map(function (column) { return column.name; });
+
         var number = function (name) {
             var raw = params.get(name);
 
@@ -151,6 +162,7 @@
                 enableEditing: params.get('edit') === '1',
                 editableColumns: params.get('editable'),
             },
+            quirks: readOnly.length ? { readOnlyColumns: readOnly } : undefined,
         });
 
         var instance = new registration.ctor();

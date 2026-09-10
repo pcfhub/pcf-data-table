@@ -53,13 +53,13 @@
             "Export CSV is on in the second preset and does produce a real file, because building it needs nothing but the records already on the page. It is the one new feature here that is not a mock. What it cannot show is the limitation that matters on a real view: it exports the rows the control has loaded, and this fixture is a single page, so here that happens to be all of them.",
             "Inline editing works here, and the write is real — against the fixture. The demo harness now carries the write half of a dataset record (setValue, save, isEditable), so an edit commits and the table shows it, but nothing leaves the browser: reload the page and the fixture is back as authored. Account number is marked read-only in the fixture on purpose, so you can see the half that matters — the control asks the platform whether each cell is writable, per column and per record, and renders a refused one as plain text rather than offering an editor it would then have to take back.",
             "A refused write still cannot be demonstrated. The harness’s save() always succeeds, so the rollback never runs — on a real form a write the user has no privilege for is rejected, the cell returns to its old value, and the reason is named underneath it. That path is the reason this control catches at all, and the demo is the one place you cannot see it.",
-            "Pinned columns are the one thing on this page that is not simulated at all — pinning is layout, so it needs no server and no dataset call, and what the Pinned columns preset shows is exactly what a form shows. The catch is that a pinned column is only visible once there is something to scroll, and this fixture has six columns against a table that starts scrolling at about 740px. Narrow the browser window until the table scrolls sideways and the first and last columns stay put. A real view with fifteen columns scrolls without being asked."
+            "Pinned columns are the one thing on this page that is not simulated at all — pinning is layout, so it needs no server and no dataset call, and what the Pinned columns preset shows is exactly what a form shows. A pinned column is only visible once there is something to scroll, so the fixture carries eight columns: pinned, the table asks for 940px, which is wider than this page gives it at any size. Switch to the Pinned columns preset and drag the scrollbar under the rows — Account name stays at the left edge, Modified on at the right, and everything between them passes behind. The one thing to try deliberately is the phone preview: below about 440px the pinned pair would leave nothing to scroll between them, so the control unpins itself rather than trap you, and that clamp is real behaviour rather than a demo shortcut."
         ],
         "presets": [
             {
                 "slug": "default",
                 "name": "Default",
-                "description": "A 24-row view with sortable columns, a per-column filter row and multi-row selection.",
+                "description": "An eight-column, 24-row view with sortable columns, a per-column filter row and multi-row selection.",
                 "props": {
                     "pageSize": 25,
                     "selectionMode": "multiple",
@@ -72,7 +72,7 @@
             {
                 "slug": "pinned-columns",
                 "name": "Pinned columns",
-                "description": "The account name held at the start and the modified date at the end while the columns between them scroll. Narrow the browser until the table scrolls sideways to see it.",
+                "description": "Account name held at the start and Modified on at the end while the six between them scroll behind. Drag the scrollbar under the rows, then try the phone preview: the control unpins itself when the pair would leave nothing to scroll.",
                 "props": {
                     "pageSize": 25,
                     "pinnedStart": 1,

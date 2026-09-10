@@ -8,11 +8,11 @@ order: 1
 
 A sortable, filterable table over any Dataverse view, with inline editing and pinned columns.
 
-::image{src=media/screenshot.png alt="Data Table over an Accounts view: a checkbox column, six columns with a filter row beneath the headings, five rows of formatted currency and dates, and a pager reading 1 to 5 of 24 with a Go to page box, a rows-per-page picker and an Export CSV button" zoom}
+::image{src=media/screenshot.png alt="Data Table over an Accounts view: a checkbox column, eight columns with a filter row beneath the headings, five rows of formatted currency and dates, and a pager reading 1 to 5 of 24 with a Go to page box" zoom}
 
-::image{src=media/screenshot-pinned.png alt="The same table scrolled sideways: Account name held at the left with a hairline seam and Account number sliding underneath it, Modified on held at the right with its own seam, and the columns between them moved" zoom}
+::image{src=media/screenshot-pinned.png alt="The same table scrolled sideways in a narrow container: Account name held at the left with a hairline seam and the scrolled columns passing underneath it, Modified on held at the right with its own seam, and Annual revenue, City and Owner moved between them" zoom}
 
-::image{src=media/screenshot-editing.png alt="Inline editing: a pencil beside each account name, and the Account number cell of the first row open as a text input with its value selected" zoom}
+::image{src=media/screenshot-editing.png alt="Inline editing: a pencil beside each account name, the Primary contact cell of the first row open as a text input with its value selected, and Account number left as plain text because the fixture marks it read-only" zoom}
 
 Drop it on a subgrid and it renders the view the maker already chose — the same
 columns, in the same order, at the same widths — as a semantic HTML table with a
