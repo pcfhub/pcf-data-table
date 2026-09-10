@@ -81,10 +81,37 @@ function CellEditor(props: {
         }
     }, []);
 
+    /**
+     * Leaving the editor.
+     *
+     * **An untouched editor closes without writing**, and that is a fix rather
+     * than an optimisation. Committing an unchanged value calls `setValue` with
+     * what the record already holds, which stages nothing — and `save()` with
+     * nothing staged throws `UciError: Invalid snapshot with id undefined`. So
+     * opening a cell, changing your mind and clicking away produced a red error
+     * under a cell nobody had edited, observed on a real subgrid 2026-09-09.
+     *
+     * That error string is the same one a wrong column name produces, which is
+     * worth knowing: it means "there is no pending change to save", and a bad
+     * column name is only one way to have none.
+     *
+     * Compared as the strings the editor holds rather than as coerced values.
+     * `props.initial` is what `editorValue` put in the box, so the comparison is
+     * exactly "did the user alter what they were shown" — no type coercion, no
+     * `20` versus `20.00` argument, and nothing to get wrong per column type.
+     */
     const finish = (): void => {
-        if (!cancelled.current) {
-            props.onCommit(value);
+        if (cancelled.current) {
+            return;
         }
+
+        if (value === props.initial) {
+            props.onCancel();
+
+            return;
+        }
+
+        props.onCommit(value);
     };
 
     const onKeyDown = (event: React.KeyboardEvent): void => {
@@ -98,7 +125,10 @@ function CellEditor(props: {
 
         if (event.key === 'Enter') {
             event.preventDefault();
-            props.onCommit(value);
+            // Through `finish` rather than straight to `onCommit`: Enter on an
+            // untouched cell is the same "nothing changed" as clicking away, and
+            // committing it throws the same `Invalid snapshot` error.
+            finish();
         }
     };
 

@@ -403,6 +403,21 @@
      * so the width that matters is the box it was handed, not the screen.
      */
     margin-inline-start: auto;
+    /*
+     * **Without this the group cannot wrap, and it is clipped instead.**
+     *
+     * `flex-wrap: wrap` above only engages against a constrained width, and a
+     * flex item's width comes from its content — so on a narrow host the group
+     * sized itself to "Go to page [1] of 8  Export CSV", overflowed the row and
+     * was cut off by the host. Observed at 368px, 2026-09-09: the jump box's
+     * label ran off the right edge and Export was a sliver.
+     *
+     * `max-width: 100%` is what turns the content-sized item into a constrained
+     * one, so the wrap that was already asked for actually happens. The `auto`
+     * margin still right-aligns it whenever it does fit on the line, which is
+     * the behaviour at every width that is not a phone.
+     */
+    max-width: 100%;
 }
 
 /*

@@ -33,7 +33,10 @@
     ?pinStart=1&pinEnd=1   pin that many columns at each end
     ?edit=1                turn editing on
     ?open=1                and open the first editable cell's editor
+    ?blur=1                then leave it untouched — the no-op commit case
+    ?type=Text             or type this into it and leave — the committing case
     ?filter=in             type a filter into the first text column
+    ?export=1              show the Export CSV button (manifest default is off)
     ?select=none|single|multiple
     ?page=25               page size
 -->
@@ -136,7 +139,10 @@
                 selectionMode: params.get('select') || 'multiple',
                 enableSorting: true,
                 enableFiltering: true,
-                enableExport: true,
+                // Manifest default is off. `?export=1` turns it on, so a narrow
+                // capture shows what an unconfigured control actually looks
+                // like rather than one with every switch flipped.
+                enableExport: params.get('export') === '1',
                 openOnRowClick: true,
                 pageSize: number('page'),
                 pageSizeOptions: params.get('sizes'),
@@ -232,6 +238,65 @@
                 if (trigger) {
                     trigger.click();
                 }
+            }
+
+            /*
+              Open a cell and leave it without touching it — the gesture that
+              produced a red error under a cell nobody had edited. Committing an
+              unchanged value stages nothing, and `save()` with nothing staged
+              throws `Invalid snapshot with id undefined`.
+
+              A second timeout because the editor mounts and focuses in an
+              effect, which has not run when this one does.
+            */
+            /*
+              Type into the open editor and leave it — the committing case, and
+              the other half of what `?blur` proves. Without this pair, a fix
+              that stopped an untouched editor writing could equally be a fix
+              that stopped every editor writing.
+
+              Through the prototype setter because React tracks the previous
+              value on the node and swallows a direct `.value =` as "no change".
+            */
+            var typed = params.get('type');
+
+            if (typed !== null) {
+                window.setTimeout(function () {
+                    var editor = document.querySelector('.DataTable-editor');
+
+                    if (editor) {
+                        Object.getOwnPropertyDescriptor(
+                            window.HTMLInputElement.prototype,
+                            'value',
+                        ).set.call(editor, typed);
+                        editor.dispatchEvent(new Event('input', { bubbles: true }));
+
+                        /*
+                          Blur in a *later* task, not this one.
+
+                          The blur handler closes over the `value` of the render
+                          it was created in, and React has not re-rendered yet
+                          when the input event returns — so blurring here reads
+                          the value from before the keystroke, decides nothing
+                          changed, and cancels. A person typing cannot hit that:
+                          their keystroke and their click are separate tasks.
+                          This is the repro being wrong, not the control.
+                        */
+                        window.setTimeout(function () {
+                            editor.blur();
+                        }, 50);
+                    }
+                }, 100);
+            }
+
+            if (params.get('blur') === '1') {
+                window.setTimeout(function () {
+                    var editor = document.querySelector('.DataTable-editor');
+
+                    if (editor) {
+                        editor.blur();
+                    }
+                }, 100);
             }
 
             document.title = 'ready';

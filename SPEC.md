@@ -945,3 +945,71 @@ the top. Adopting the template's harness is worth doing and was not this change.
 gets the capture page without rebuilding it — SPEC has described it as "~90
 lines, not in the repo" through two releases, and it has now been written three
 times.
+
+## 0.3.4
+
+Two fixes, both found by looking at the control rather than at the code.
+
+### An untouched editor wrote, and the write failed
+
+Open a cell, change nothing, click away: a red *"Score could not be saved.
+Invalid snapshot with id undefined"* under a cell nobody had edited. Observed on
+a real subgrid, 2026-09-09.
+
+The blur handler committed unconditionally. Committing an unchanged value calls
+`setValue` with what the record already holds, which stages nothing — and
+`save()` with nothing staged throws. **That error string does not mean "wrong
+column name"; it means "there is no pending change to save",** and a wrong column
+name is only one way to have none. The 0.3.3 note that reads it as the former is
+narrower than the truth.
+
+An untouched editor now closes without writing, on both blur and Enter. Compared
+as the strings the editor holds — `props.initial` is what `editorValue` put in
+the box — so the test is exactly "did the user alter what they were shown", with
+no coercion and no `20` versus `20.00` argument.
+
+**Measured in a browser rather than reasoned**, because the suite cannot see it:
+opening and leaving an untouched editor closes it with no error and no write;
+typing and leaving commits and shows the new value. Both driven through
+`dev/preview.html`.
+
+Two things went wrong while measuring, and both are worth more than the fix:
+
+- **`chrome --headless --dump-dom` returned zero bytes**, and PowerShell's
+  `-match` against `$null` answers `False` without complaint. So the first
+  "verified" run read nothing and reported the absence of an error as proof
+  there was none. It is the `img.src` bug in `dev/dom.js` all over again: *a
+  check that silently reads the wrong thing reports its own blindness as proof.*
+- **`element.blur()` does nothing when the document itself is not focused**, so
+  the gesture never fired. Dispatching the `blur` event directly is what
+  reaches React's handler in a background pane.
+
+### The pager's tools could not wrap, so they were clipped
+
+`.DataTable-pagerTools` is pushed right by `margin-inline-start: auto` and had no
+width constraint, so `flex-wrap: wrap` — which only engages against a constrained
+width — never did. On a narrow host the group sized itself to its content,
+overflowed the row and was cut off. `max-width: 100%` turns the content-sized
+item into a constrained one. Verified across 320, 368, 400, 520 and 900px.
+
+**Still open below about 400px**: the pager row itself can exceed the control's
+width, so the jump box clips at the far right even with the tools group
+constrained. The `max-width` fix is necessary and not sufficient, and this is
+recorded rather than hidden — `media/screenshot-narrow.png` is captured at 480px,
+which is honest about being the width where the layout is clean.
+
+### What the screenshots are, and one way they lied
+
+All four in `media/` are captured from `dev/preview.html` with headless Chrome at
+a device scale factor of 2.
+
+The first attempt passed `--hide-scrollbars`, which hides the horizontal
+scrollbar inside `.DataTable-scroll` — **the single thing the narrow screenshot
+exists to show.** The picture was of a table clipped at the right edge with no
+indication it could scroll, which is what a broken control looks like. The narrow
+and pinned captures now run without it; the two wide ones keep it, having nothing
+to scroll.
+
+`enableExport` defaults to **off**, and the preview page was forcing it on. A
+narrow capture now shows what an unconfigured control looks like rather than one
+with every switch flipped.
