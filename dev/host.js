@@ -392,11 +392,29 @@
             }
 
             if (type.indexOf('DateAndTime') === 0) {
-                var date = new Date(String(value));
+                /*
+                 * **Parsed from its parts, not by `new Date(string)`.**
+                 *
+                 * `new Date('2026-08-14')` is UTC midnight by specification,
+                 * and `toLocaleDateString` then renders it in the local zone —
+                 * so west of Greenwich every date came out a day early. This
+                 * rig produced the published screenshots, so it put the wrong
+                 * day in the media for as long as it was here: a fixture
+                 * reading 2026-08-14 photographed as 13 Aug 2026.
+                 *
+                 * Same lesson as `coerceValue` and `editorValue` in the
+                 * control itself, now in the third place that needed it. A
+                 * date-only value is a day on a calendar, with no time to
+                 * convert and no zone to convert it from.
+                 */
+                var parts = String(value).split('-').map(Number);
+                var date = parts.length === 3 && parts.every(Number.isFinite)
+                    ? new Date(parts[0], parts[1] - 1, parts[2])
+                    : new Date(String(value));
 
                 return isNaN(date.getTime())
                     ? String(value)
-                    : date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+                    : date.toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' });
             }
 
             return String(value);

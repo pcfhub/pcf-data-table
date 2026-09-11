@@ -1480,6 +1480,48 @@ editingChecks().then(report, (error) => {
 });
 
 
+/* -------------------------------------------------------------- formatting */
+
+/*
+ * **A check on the rig rather than on the control, and it has earned its
+ * place.**
+ *
+ * `makeDisplay` parsed a date-only string with `new Date(string)`, which is
+ * UTC midnight by specification, and then rendered it in the local zone. West
+ * of Greenwich every date came out a day early — and because this rig is what
+ * captures media/, it put the wrong day in four published screenshots: a
+ * fixture reading 2026-01-14 photographed as 13 Jan 2026.
+ *
+ * Nothing else here would have caught it. Every other assertion reads props,
+ * and the control's props were right the whole time; only the rig's rendering
+ * of them was wrong. So this asserts on the text a screenshot would contain.
+ *
+ * Zone-dependent, and worth saying rather than leaving to be discovered: put
+ * the UTC parse back and this fails here, on a machine at UTC-6, with
+ * "Jan 13, 2026". On a runner that is itself UTC nothing shifts and it passes
+ * either way — so it guards the workstation that captures the media, which is
+ * where the bug actually happened, and not the build.
+ */
+const formattedDate = host
+    .createHost(fixture, { format: true, inputs: INPUTS })
+    .context.parameters.records.records.a01.getFormattedValue('modifiedon');
+
+check(
+    'a date-only cell shows the day the fixture holds, not the day before',
+    formattedDate === 'Jan 14, 2026',
+    `${formattedDate} for a fixture value of 2026-01-14`,
+);
+
+const formattedMoney = host
+    .createHost(fixture, { format: true, inputs: INPUTS })
+    .context.parameters.records.records.a01.getFormattedValue('revenue');
+
+check(
+    'and a currency cell shows what a grid would print',
+    formattedMoney === '$4,200,000.00',
+    formattedMoney,
+);
+
 function report() {
     const failed = results.filter((result) => !result.ok);
 
