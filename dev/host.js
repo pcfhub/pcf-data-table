@@ -88,12 +88,18 @@
      * The `ConditionOperator` values this stand-in honours, out of the ~90 the
      * platform defines.
      *
-     * These eight are the ones a control can use on **both** hosts. The rest of
-     * the enum is where the hosts disagree, and the disagreement is not
+     * The first eight are the ones a control can use on **both** hosts. The
+     * rest of the enum is where the hosts disagree, and the disagreement is not
      * symmetric: `NotLike` (7) and `NotNull` (13) are canvas-only, while
      * `Yesterday` (14), `Today` (15) and `Tomorrow` (16) are model-driven-only.
-     * A control that reaches past this object is choosing a host, and should
-     * say so in `docs/limitations.md`.
+     * A control that reaches past that set is choosing a host, and should say
+     * so in `docs/limitations.md`.
+     *
+     * `On`, `OnOrBefore` and `OnOrAfter` are here because `pcf-data-table`
+     * 0.4.0 sends them, and were measured on a model-driven subgrid
+     * 2026-09-11 with `value: 'yyyy-MM-dd'`: all three narrow, and the day is
+     * compared in the *user's* zone rather than UTC. `holds()` below models
+     * exactly that and nothing about canvas, which has not been asked.
      */
     var OPERATOR = {
         Equal: 0,
@@ -104,6 +110,9 @@
         LessEqual: 5,
         Like: 6,
         Null: 12,
+        On: 25,
+        OnOrBefore: 26,
+        OnOrAfter: 27,
     };
 
     /*
@@ -123,32 +132,48 @@
     var STRINGS = {
         DataTable_ClearFilter: "Clear the filter on {0}",
         DataTable_ClearFilters: "Clear filters",
+        DataTable_CreateFailed: "The quick create form could not be opened.",
+        DataTable_DateFrom: "From",
+        DataTable_DateOn: "On",
+        DataTable_DateOpHint: "Change how {0} is compared: on, from or until the chosen day",
+        DataTable_DateUntil: "Until",
+        DataTable_EditCell: "Edit {0}",
+        DataTable_EditEmpty: "(empty)",
         DataTable_Empty: "No records.",
         DataTable_Error: "This view could not be loaded.",
         DataTable_Export: "Export CSV",
         DataTable_ExportHint: "Save the rows loaded so far as a CSV file. Pages you have not opened are not included.",
+        DataTable_FilterAny: "Any",
         DataTable_FilterColumn: "Filter by {0}",
+        DataTable_FilterDateHint: "Filter by {0}. Pick a day; the button beside it chooses on, from or until that day.",
         DataTable_FilterNumberHint: "Filter by {0}. Type a number, or a comparison such as >1000.",
         DataTable_FilterNumberPlaceholder: "e.g. >1000",
         DataTable_FilterPlaceholder: "Filter",
         DataTable_GoToPage: "Go to page",
         DataTable_Loading: "Loading records…",
+        DataTable_New: "New",
+        DataTable_NewHint: "Add a row using the quick create form.",
         DataTable_Next: "Next page",
+        DataTable_No: "No",
         DataTable_NoColumns: "No columns are selected for this table.",
         DataTable_NoMatches: "No records match these filters.",
+        DataTable_NoValue: "(none)",
         DataTable_NotANumber: "That is not a number, so nothing was saved.",
         DataTable_OfPages: "of {0}",
+        DataTable_OpenRecord: "Open {0}",
         DataTable_PageStatus: "Page {0}",
         DataTable_Previous: "Previous page",
         DataTable_RangeStatus: "{0}–{1} of {2}",
         DataTable_RowsPerPage: "Rows per page",
+        DataTable_SaveFailed: "{0} could not be saved. {1}",
         DataTable_SaveFailedGeneric: "The platform refused the change.",
         DataTable_SaveTimedOut: "The platform did not confirm this change. It may not have been saved — reload the form to see the stored value.",
         DataTable_Saving: "Saving…",
         DataTable_SelectAll: "Select all rows on this page",
         DataTable_SelectRow: "Select {0}",
         DataTable_SortBy: "Sort by {0}",
-        DataTable_Unfilterable: "{0} cannot be filtered here. Dates, choices and lookups are filtered by the view.",
+        DataTable_Unfilterable: "{0} cannot be filtered here. Lookups are filtered by the view; a choice needs table metadata this host does not provide.",
+        DataTable_Yes: "Yes",
     };
 
     var HOSTS = {
@@ -210,6 +235,25 @@
         format: false,
 
         inputs: {},
+
+        /**
+         * `mode.contextInfo` — the record the subgrid sits on, or `null` for
+         * a main grid, which has none. Measured on a form subgrid 2026-09-11
+         * as `{ entityTypeName, entityId, entityRecordName }`; a control
+         * passes it to `openForm` as `createFromEntity` so a quick-created
+         * row lands in the subgrid it was asked for from.
+         */
+        contextInfo: null,
+
+        /**
+         * What `navigation.openForm` resolves with. The measured shapes: a
+         * saved quick create form resolves `{ savedEntityReference: [{ id:
+         * "{436E09A8-…}", entityType, name }] }` — braced, upper-case — and a
+         * **dismissed one resolves `{ savedEntityReference: null }`**, not `[]`
+         * and not a rejection. The default is the dismissal, because that is
+         * the branch a control forgets.
+         */
+        openFormReturns: { savedEntityReference: null },
 
         quirks: {
             /**
@@ -296,6 +340,31 @@
             navigationAbsent: false,
 
             /**
+             * Whether `context.navigation.openForm` exists. Same shape as
+             * `openFileAbsent` and for the same reason: `navigation` is there
+             * on every host and `openForm` is not — canvas has no forms to
+             * open, and the hub's demo harness supplies neither.
+             */
+            openFormAbsent: false,
+
+            /**
+             * Whether `context.utils` exists at all.
+             *
+             * It does not on canvas, whatever the manifest declares, and a
+             * model-driven host may leave it out when the feature is declared
+             * `required="false"`. Forced on under `host: 'canvas'` below, so a
+             * control cannot be told it is on canvas and handed a metadata
+             * call that canvas does not have.
+             */
+            utilsAbsent: false,
+
+            /** `utils.getEntityMetadata` rejects — a table the user cannot read, a network fault. */
+            metadataRejects: false,
+
+            /** Whether `context.formatting` exists. The hub's demo harness omits it. */
+            formattingAbsent: false,
+
+            /**
              * `allocatedWidth` stays -1 until the control calls
              * `trackContainerResize(true)`.
              *
@@ -365,7 +434,7 @@
      * before the control ever sees them, so a screenshot of raw values
      * misrepresents the thing being photographed.
      */
-    function makeDisplay(columns, format) {
+    function makeDisplay(columns, format, metadata) {
         var types = {};
 
         (columns || []).forEach(function (column) {
@@ -378,6 +447,27 @@
             }
 
             var type = types[name] || '';
+
+            /*
+             * **Formatted whether or not `format` is on**, because for these
+             * two there is no raw rendering: the platform never shows a
+             * choice as its integer or a lookup as its object, and
+             * `String({ id: … })` is `[object Object]` in a cell. A choice
+             * value the option list does not know renders as its number,
+             * which is what a real grid does for an orphaned value.
+             */
+            if (type === 'OptionSet') {
+                var entry = ((metadata || {})[name] || {}).options || [];
+                var match = entry.filter(function (option) {
+                    return String(option.value) === String(value);
+                })[0];
+
+                return match ? match.label : String(value);
+            }
+
+            if (type.indexOf('Lookup') === 0) {
+                return typeof value === 'object' ? formatted(value.name) : String(value);
+            }
 
             if (!format || typeof value !== 'number' && type.indexOf('DateAndTime') !== 0) {
                 return String(value);
@@ -407,14 +497,18 @@
                  * date-only value is a day on a calendar, with no time to
                  * convert and no zone to convert it from.
                  */
-                var parts = String(value).split('-').map(Number);
-                var date = parts.length === 3 && parts.every(Number.isFinite)
-                    ? new Date(parts[0], parts[1] - 1, parts[2])
-                    : new Date(String(value));
+                var text = String(value);
+                var day = /^(\d{4})-(\d{2})-(\d{2})(T00:00:00(\.000)?Z)?$/.exec(text);
+                var date = day
+                    ? new Date(Number(day[1]), Number(day[2]) - 1, Number(day[3]))
+                    : new Date(text);
 
                 return isNaN(date.getTime())
                     ? String(value)
-                    : date.toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' });
+                    : type === 'DateAndTime.DateAndTime'
+                        // An instant shows its time, in the zone the page runs in.
+                        ? date.toLocaleString('en-US', { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' })
+                        : date.toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' });
             }
 
             return String(value);
@@ -437,7 +531,21 @@
         var allRecords = o.records || fixture.records;
         var columns = o.columns || fixture.columns;
         // Raw unless asked for; see makeDisplay. Only getFormattedValue uses it.
-        var display = makeDisplay(columns, o.format);
+        var display = makeDisplay(columns, o.format, fixture.metadata);
+        var types = {};
+
+        columns.forEach(function (column) {
+            types[column.name] = column.dataType || '';
+        });
+
+        /*
+         * `utils` is a model-driven surface. Forced absent under `host:
+         * 'canvas'` however the quirk is set, so a control cannot be told it
+         * is on canvas and then handed a metadata call canvas does not have.
+         */
+        var utilsPresent = !quirks.utilsAbsent && o.host !== 'canvas';
+        /* `openForm` is model-driven only, on the same rule as `openFile`. */
+        var openFormPresent = !quirks.openFormAbsent && o.host !== 'canvas';
 
         var state = {
             /** The page the platform believes it is on. */
@@ -515,6 +623,12 @@
             var right = formatted(condition.value).toLowerCase();
 
             switch (condition.conditionOperator) {
+                /*
+                 * As strings, which is what lets `Equal` on a Choice column
+                 * take `'3'` and `3` alike — the server did, measured
+                 * 2026-09-11 — and what makes it fail against a fixture that
+                 * still holds `'Active'` where the platform holds `1`.
+                 */
                 case OPERATOR.Equal:
                     return left === right;
                 case OPERATOR.NotEqual:
@@ -531,6 +645,18 @@
                     return actual === null || actual === undefined || actual === '';
                 case OPERATOR.Like:
                     return likePattern(right).test(left);
+                /*
+                 * Whole days, compared as `yyyy-MM-dd` in the *local* zone —
+                 * which is the platform's behaviour with the user's zone
+                 * standing in for the machine's. An empty cell matches
+                 * nothing under any of the three, as it does on the server.
+                 */
+                case OPERATOR.On:
+                    return dayOf(actual) !== null && dayOf(actual) === dayOf(condition.value);
+                case OPERATOR.OnOrBefore:
+                    return dayOf(actual) !== null && dayOf(actual) <= dayOf(condition.value);
+                case OPERATOR.OnOrAfter:
+                    return dayOf(actual) !== null && dayOf(actual) >= dayOf(condition.value);
                 default:
                     /*
                      * Unhonoured operators pass rather than fail, so an
@@ -538,9 +664,51 @@
                      * "no filtering happened" instead of "everything vanished".
                      * The second is indistinguishable from a control that
                      * filtered its own rows away.
+                     *
+                     * **That default is also how a filter that filtered
+                     * nothing got certified.** Before `On`, `OnOrBefore` and
+                     * `OnOrAfter` were modelled above, a control sending them
+                     * passed every row through here and read as "working" to
+                     * any assertion that counted rows. An operator a control
+                     * sends has to be in the switch, or the rig is more
+                     * generous than the platform — the failure mode the whole
+                     * file exists to prevent.
                      */
                     return true;
             }
+        }
+
+        /**
+         * A value's calendar day as `yyyy-MM-dd`, or `null` for no value.
+         *
+         * A date-only string is already a day and is taken as one — parsing
+         * it through `Date` would make it UTC midnight and shift it west of
+         * Greenwich, the bug `makeDisplay` below already paid for. Anything
+         * else is a timestamp, and its day is the local one.
+         */
+        function dayOf(value) {
+            if (value === null || value === undefined || value === '') {
+                return null;
+            }
+
+            var text = String(value);
+
+            // A bare day, or a day at UTC midnight — which is how a DateOnly
+            // column hands its day over. Either is the day as written.
+            if (/^\d{4}-\d{2}-\d{2}(T00:00:00(\.000)?Z)?$/.test(text)) {
+                return text.slice(0, 10);
+            }
+
+            var date = value instanceof Date ? value : new Date(text);
+
+            if (isNaN(date.getTime())) {
+                return null;
+            }
+
+            var month = String(date.getMonth() + 1);
+            var day = String(date.getDate());
+
+            return date.getFullYear() + '-' + (month.length < 2 ? '0' + month : month) + '-' + (day.length < 2 ? '0' + day : day);
         }
 
         function escapeForRegExp(part) {
@@ -661,13 +829,77 @@
             });
         }
 
+        /**
+         * One attribute's metadata node, in the shape measured 2026-09-11.
+         *
+         * A real node carries the option list twice — `attributeDescriptor
+         * .OptionSet` as an array of `{ Label, Value, IsHidden }`, and
+         * `OptionSet` as a **map keyed by value** of `{ text, value }`, with
+         * no `Options` array anywhere and no `GlobalOptionSet`. The fixture
+         * asks for one shape per column so that a control reading only one
+         * of the two is caught by the column that carries the other. Labels
+         * are plain strings on both; the `UserLocalizedLabel` shape the Web
+         * API returns was not seen and is not served.
+         *
+         * A lookup carries `Targets` at the top of the node for a
+         * `Lookup.Simple` and only under `attributeDescriptor` for a
+         * `Lookup.Customer`; the fixture's one lookup is simple.
+         */
+        function attributeNode(name) {
+            var entry = (fixture.metadata || {})[name];
+
+            if (!entry) {
+                return undefined;
+            }
+
+            var node = {
+                LogicalName: name,
+                AttributeTypeName: types[name] || '',
+                attributeDescriptor: { LogicalName: name },
+            };
+
+            if (entry.targets) {
+                node.Targets = entry.targets.slice();
+                node.attributeDescriptor.Targets = entry.targets.slice();
+            }
+
+            if (entry.options && entry.shape === 'descriptor') {
+                node.attributeDescriptor.OptionSet = entry.options.map(function (option) {
+                    return { Label: option.label, Value: option.value, IsHidden: false };
+                });
+            }
+
+            if (entry.options && entry.shape === 'map') {
+                node.OptionSet = {};
+                entry.options.forEach(function (option) {
+                    node.OptionSet[option.value] = { text: option.label, value: option.value };
+                });
+            }
+
+            return node;
+        }
+
         function recordFor(row) {
             var record = {
                 getRecordId: function () {
                     return row.id;
                 },
+                /*
+                 * **A choice reads back as a string.** `getValue` on an
+                 * `OptionSet` column returned `"3"` on the measured subgrid,
+                 * not `3`, while `setValue` wants the integer — so a control
+                 * that compares what it wrote with what it reads has to
+                 * coerce, and a rig that handed back the fixture's number
+                 * would let one that does not pass.
+                 */
                 getValue: function (name) {
-                    return row.values[name];
+                    var value = row.values[name];
+
+                    if (value !== null && value !== undefined && typeof value === 'number' && (types[name] || '') === 'OptionSet') {
+                        return String(value);
+                    }
+
+                    return value;
                 },
                 getFormattedValue: function (name) {
                     return display(row.values[name], name);
@@ -1060,6 +1292,22 @@
                     ? undefined
                     : Object.assign(
                         { openUrl: function (url) { log('navigation.openUrl', url); } },
+                        !openFormPresent
+                            ? {}
+                            : {
+                                /**
+                                 * Logged in full, because the options *are*
+                                 * the behaviour: whether `useQuickCreateForm`
+                                 * was set, whether `createFromEntity` named
+                                 * the parent. Resolves `o.openFormReturns` —
+                                 * the dismissal by default, see DEFAULTS.
+                                 */
+                                openForm: function (formOptions) {
+                                    log('navigation.openForm', formOptions);
+
+                                    return Promise.resolve(o.openFormReturns);
+                                },
+                            },
                         quirks.openFileAbsent
                             ? {}
                             : {
@@ -1086,10 +1334,68 @@
                             },
                     ),
 
+                /**
+                 * `context.utils`, absent on canvas and under `utilsAbsent`.
+                 *
+                 * **`getEntityMetadata` resolves with a class instance, not a
+                 * plain object**, and this reproduces that rather than
+                 * flattening it: the own enumerable properties are private
+                 * fields and the public members are getters on the prototype,
+                 * so code that walks `Object.keys` sees `_entityDescriptor`
+                 * and nothing else, while reading `metadata.Attributes` by
+                 * name works. A flat object here would let that code pass
+                 * locally and fail on a form.
+                 *
+                 * `Attributes.get(column)` returns the node in the shape
+                 * `fixture.metadata` asks for — `descriptor` or `map`, see
+                 * `dev/fixture.js` — and `undefined` for a column the fixture
+                 * says nothing about, which is what a real node does for a
+                 * column that is not a choice or a lookup.
+                 */
+                utils: utilsPresent
+                    ? {
+                        getEntityMetadata: function (entityName, attributes) {
+                            log('utils.getEntityMetadata', { entity: entityName, attributes: attributes });
+
+                            if (quirks.metadataRejects) {
+                                return Promise.reject(new Error('Metadata for ' + entityName + ' could not be read.'));
+                            }
+
+                            function Metadata() {
+                                this._entityDescriptor = { EntityLogicalName: entityName };
+                                this._attributes = attributes || [];
+                            }
+
+                            Object.defineProperty(Metadata.prototype, 'Attributes', {
+                                get: function () {
+                                    return {
+                                        get: function (name) {
+                                            return attributeNode(name);
+                                        },
+                                    };
+                                },
+                            });
+
+                            return Promise.resolve(new Metadata());
+                        },
+                    }
+                    : undefined,
+
                 mode: {
                     isVisible: o.visible,
                     isControlDisabled: false,
                     label: fixture.title,
+                    /*
+                     * The parent record of a form subgrid, `undefined` on a
+                     * main grid. Untyped on the platform; see DEFAULTS.
+                     */
+                    contextInfo: o.contextInfo
+                        ? {
+                            entityTypeName: o.contextInfo.entityTypeName,
+                            entityId: o.contextInfo.entityId,
+                            entityRecordName: o.contextInfo.entityRecordName,
+                        }
+                        : undefined,
                     // Recorded rather than delivered — "did the control ask for
                     // resize notifications" is a decision worth asserting; the
                     // resize itself comes from the `width` option.
@@ -1115,6 +1421,26 @@
                     // says — a main grid answers the width and never this.
                     allocatedHeight: quirks.heightUnmeasured ? -1 : o.height,
                 },
+
+                /**
+                 * `context.formatting`, the two methods a table needs. Renders
+                 * en-US, which stands in for the *user's* locale and zone — on
+                 * the platform `formatDateShort` follows the Dataverse user
+                 * rather than the browser. Absent under `formattingAbsent`,
+                 * which is the hub's demo harness.
+                 */
+                formatting: quirks.formattingAbsent
+                    ? undefined
+                    : {
+                        formatDateShort: function (value, includeTime) {
+                            return includeTime
+                                ? value.toLocaleString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })
+                                : value.toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' });
+                        },
+                        formatDateLong: function (value) {
+                            return value.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+                        },
+                    },
 
                 resources: {
                     getString:
@@ -1183,6 +1509,19 @@
                 });
 
                 state.renderOwed = true;
+            },
+            /**
+             * What the server holds for one cell, untouched by `getValue`'s
+             * shaping. `getValue` on a choice hands back a string, as the
+             * platform does, so it cannot say whether the control *wrote* the
+             * integer `setValue` wants — this can.
+             */
+            stored: function (id, name) {
+                var row = allRecords.filter(function (candidate) {
+                    return candidate.id === id;
+                })[0];
+
+                return row ? row.values[name] : undefined;
             },
         };
     }

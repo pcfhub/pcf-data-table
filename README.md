@@ -1,7 +1,7 @@
 # Data Table
 
-A sortable, filterable table over any Dataverse view, with inline editing and
-pinned columns.
+A sortable, filterable table over any Dataverse view, with inline editing,
+pinned columns and a New button.
 
 [![Build](https://github.com/pcfhub/pcf-data-table/actions/workflows/build.yml/badge.svg)](https://github.com/pcfhub/pcf-data-table/actions/workflows/build.yml)
 [![Release](https://github.com/pcfhub/pcf-data-table/actions/workflows/release.yml/badge.svg)](https://github.com/pcfhub/pcf-data-table/actions/workflows/release.yml)
@@ -40,19 +40,29 @@ than on `ds.paging.pageSize`, because the platform's own value does not equal
 the requested one until the refresh lands. Without it, the control spins. See
 [SPEC.md](SPEC.md).
 
-There is no `<feature-usage>` at all. `openDatasetItem()` is a method on the
-dataset rather than on `context.navigation`, and nothing here touches Web API,
-utils or device — so installing the control raises no permission prompt.
+One `<feature-usage>`, declared in 0.4.0 after three releases of none:
+`Utility`, for `getEntityMetadata`. It buys the option list a choice column's
+editor and filter box are built from, which the platform hands a dataset
+control no other way. Nothing here touches Web API or device, and
+`openDatasetItem()` and `navigation.openForm()` sit on surfaces no feature
+gates — so the prompt at import is one item long, and declining it costs only
+the choice cells.
 
-**That survives inline editing, which is the whole reason editing is built the
-way it is.** The write goes through `record.setValue()` and `record.save()` on
-the dataset record itself — measured working on a real subgrid, 2026-09-09,
-committed and survived a reload. Neither method is in
+**Editing still asks nothing of the environment, which is the whole reason it
+is built the way it is.** The write goes through `record.setValue()` and
+`record.save()` on the dataset record itself — measured working on a real
+subgrid, 2026-09-09, committed and survived a reload; measured again 2026-09-11
+for a choice column, integer in and integer read back. Neither method is in
 `@types/powerapps-component-framework@1.3.18`, where `EntityRecord` declares
 four methods and none of them writes, so both are feature-detected at runtime
 before an editor is offered. The obvious alternative, `webAPI.updateRecord`,
 needs `<uses-feature name="WebAPI" />` — an install-time prompt in every
 environment — and does nothing at all in a canvas app.
+
+What that write path does *not* do is a lookup. 0.4.0 was specified to edit
+lookup cells through the platform's own dialog, and the probe took it back:
+the dialog works, `setValue` on a lookup column stages nothing, and every
+`save()` is refused. The cell stays read-only and SPEC.md has the measurement.
 
 The same undocumented surface answers `isEditable(column)` per column *and* per
 record, which is what lets the control render a cell the user cannot write as

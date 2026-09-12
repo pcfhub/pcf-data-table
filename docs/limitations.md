@@ -8,19 +8,25 @@ order: 7
 
 ## What filtering covers
 
-- **Only text and numeric columns get a filter box.** Text columns match with a
-  SQL `LIKE`; numeric ones take a bare number or a comparison such as `>1000`.
-- **Dates have no filter box.** Expressing "on or after this day" needs the
-  `On`, `OnOrAfter` and `OnOrBefore` condition operators, and those are not
-  documented as supported on both canvas and model-driven apps. A `GreaterThan`
-  against a date column compares the wrong thing, so the box is withheld rather
-  than made to look like it works.
-- **Choices, two-options and lookups have no filter box either**, for a
-  different and firmer reason: the server filters those on an integer or a GUID,
-  and the dataset does not hand the control the option list to offer. Reading it
-  means entity metadata, which is model-driven only and would add an
-  install-time permission prompt to every environment — a poor trade for one
-  filter box. Filter those in the view instead.
+- **Text, numeric, date and — in a model-driven app — choice columns get a
+  filter box.** Text columns match with a SQL `LIKE`; numeric ones take a bare
+  number or a comparison such as `>1000`; a date column gets a date picker with
+  an **On / From / Until** toggle beside it — shown as **=, ≥, ≤** where the
+  column is too narrow for the word; a choice column gets a dropdown of
+  its options with **Any** at the top.
+- **The date box compares whole days, in your time zone.** "On 1 March" is the
+  calendar day where you sit, so a record stamped 04:30 UTC on 2 March matches
+  On 1 March for a user five hours west of Greenwich — which is what the
+  platform's own filter pane does. Measured on a model-driven subgrid; not yet
+  opened in a canvas app.
+- **The choice box needs entity metadata, so it is model-driven only.** The
+  option list comes from `getEntityMetadata`, which is why 0.4.0 declares the
+  `Utility` feature. On a host without it — canvas, or an environment that
+  declined the feature — the column shows the dash it showed in 0.3.x.
+- **Lookups, two-options and multi-select choices have no filter box.** A
+  lookup filters on a GUID, and turning a typed name into one is a query this
+  control does not make; a multi-select holds a list that `Equal` says nothing
+  true about. Filter those in the view instead.
 - **Two filled boxes mean *both*.** Each column narrows the result further; the
   filter row is not a search across columns.
 - **A jump past the last page lands on the last page**, and on a host that does
@@ -45,12 +51,33 @@ order: 7
 - **No column resizing or reordering by the user.** The widths and order are the
   view's, and changing them is a view-designer job.
 - **No grouping and no aggregate row.**
-- **Inline editing covers text, number, yes/no and date columns only.** Choice
-  and lookup columns are refused rather than deferred: the value the platform
-  stores for them is an integer or a GUID, and a dataset column carries neither.
-  Building a faithful picker needs entity metadata, which is model-driven only
-  and would add an install-time permission prompt to a control that currently
-  raises none.
+- **Inline editing covers text, number, yes/no, date and — in a model-driven
+  app — choice columns.** The choice editor is a dropdown of the column's
+  options, read from entity metadata; state and status columns look like
+  choices and stay read-only because the platform reports them so.
+- **A date-and-time cell is edited with a date-and-time input, in your
+  browser's time zone.** The platform shows the saved value in your Dataverse
+  user time zone; where the two differ, the time you typed and the time the
+  cell then shows differ by that offset. A date-only cell takes a day and
+  stores it as that day.
+- **While a save is in flight the cell shows the value through the platform's
+  formatter**, so it reads like its neighbours; once the view has re-read, the
+  platform's own text replaces it.
+- **Lookup cells are read-only, and the reason was measured rather than
+  assumed.** The platform's own lookup dialog opens and hands back a reference;
+  `record.setValue()` on a lookup column then stages nothing, and every save
+  is refused with *Invalid snapshot* — five value shapes tried, the stored
+  value untouched each time. Until there is a write path that does not need the
+  Web API, a lookup is edited on the form. Multi-select choices and
+  owner/customer lookups stay read-only for the same reason.
+- **Adding a row opens the quick create form, not a blank row in the table.**
+  The form is where the business rules and required fields live; an inline row
+  would have to bypass both. The table needs *Allow quick create* on and a
+  quick create form, and the button is model-driven only.
+- **0.4.0 asks for one permission at import: Utility.** It buys the option
+  lists the choice editor and choice filter are built from. No Web API: writes
+  still go through the dataset record, and the New button uses a navigation
+  call no feature gates.
 - **Editing writes one cell at a time.** There is no row-level Save/Cancel and
   no batching: leaving a cell commits it. A column that is part of a rule
   spanning several columns is better edited on the form.
@@ -116,6 +143,9 @@ order: 7
 
 - Opening a record does nothing — there is no form to open. Use the
   `openedRecordId` output. See [Canvas apps](canvas.md).
+- Choice cells and choice filters are read-only, and there is no New button:
+  canvas has neither entity metadata nor a quick create form to open. The date
+  box appears — it needs no metadata — and has not been verified there.
 - Column widths are the browser's, because canvas reports no
   `visualSizeFactor`.
 - Columns come from the Fields flyout on `Items`. Pick none and the control says

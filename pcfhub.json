@@ -2,7 +2,7 @@
     "schemaVersion": 1,
     "slug": "pcf-data-table",
     "name": "Data Table",
-    "tagline": "A sortable, filterable table over any Dataverse view, with inline editing and pinned columns.",
+    "tagline": "A sortable, filterable table over any Dataverse view, with inline editing, pinned columns and a New button.",
     "category": "data",
     "tags": [
         "react",
@@ -11,7 +11,10 @@
         "grid",
         "editing",
         "pinned-columns",
-        "paging"
+        "paging",
+        "quick-create",
+        "choice",
+        "date-filter"
     ],
     "control": {
         "namespace": "PCFHub",
@@ -34,6 +37,7 @@
             "media/screenshot.png",
             "media/screenshot-pinned.png",
             "media/screenshot-editing.png",
+            "media/screenshot-filters.png",
             "media/screenshot-narrow.png"
         ]
     },
@@ -53,6 +57,7 @@
             "Export CSV is on in the second preset and does produce a real file, because building it needs nothing but the records already on the page. It is the one new feature here that is not a mock. What it cannot show is the limitation that matters on a real view: it exports the rows the control has loaded, and this fixture is a single page, so here that happens to be all of them.",
             "Inline editing works here, and the write is real — against the fixture. The demo harness now carries the write half of a dataset record (setValue, save, isEditable), so an edit commits and the table shows it, but nothing leaves the browser: reload the page and the fixture is back as authored. Account number is marked read-only in the fixture on purpose, so you can see the half that matters — the control asks the platform whether each cell is writable, per column and per record, and renders a refused one as plain text rather than offering an editor it would then have to take back.",
             "A refused write still cannot be demonstrated. The harness’s save() always succeeds, so the rollback never runs — on a real form a write the user has no privilege for is rejected, the cell returns to its old value, and the reason is named underneath it. That path is the reason this control catches at all, and the demo is the one place you cannot see it.",
+            "The hub harness has no utils and no navigation.openForm, so three 0.4.0 features are absent here rather than mocked: choice cells stay read-only, choice columns keep the dash in the filter row, and there is no New button whatever Allow adding rows is set to. The date filter box does render, and narrows nothing for the reason every other filter narrows nothing. Status in this fixture is a label string, where a real view hands over an integer — the dev rig in this repository carries the platform's shapes; the hub's fixture format cannot.",
             "Pinned columns are the one thing on this page that is not simulated at all — pinning is layout, so it needs no server and no dataset call, and what the Pinned columns preset shows is exactly what a form shows. A pinned column is only visible once there is something to scroll, so the fixture carries eight columns: pinned, the table asks for 940px, which is wider than this page gives it at any size. Switch to the Pinned columns preset and drag the scrollbar under the rows — Account name stays at the left edge, Modified on at the right, and everything between them passes behind. The one thing to try deliberately is the phone preview: below about 440px the pinned pair would leave nothing to scroll between them, so the control unpins itself rather than trap you, and that clamp is real behaviour rather than a demo shortcut."
         ],
         "presets": [
@@ -99,7 +104,7 @@
             {
                 "slug": "filter-and-export",
                 "name": "Filtering and export",
-                "description": "The filter row with a rows-per-page picker and CSV export, showing which column types get a box and which do not.",
+                "description": "The filter row with a rows-per-page picker and CSV export, showing which column types get a box — text, number, and since 0.4.0 a date picker with an On / From / Until chip — and which do not.",
                 "props": {
                     "pageSize": 25,
                     "pageSizeOptions": "10,25,50",

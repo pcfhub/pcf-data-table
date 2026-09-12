@@ -7,6 +7,59 @@ appliesTo: ">=0.2.0"
 
 # Migration
 
+## 0.3.x → 0.4.1
+
+0.4.0 adds a choice editor, a New button, and date and choice filter boxes.
+**Nothing was renamed and nothing was removed.** One new input is off by
+default; the filter row changes on upgrade for date columns, and for choice
+columns on a model-driven app.
+
+| Property | Default | What it does |
+| --- | --- | --- |
+| `enableCreate` | **off** | A **New** button that opens the table's quick create form |
+| `createdRecordId` | *(output)* | The row most recently added through it |
+
+### The import asks for a permission this time
+
+:::callout{type=warning}
+**0.4.0 declares the `Utility` feature**, the first feature this control has
+ever declared, so re-importing the solution raises a permission prompt where
+0.1.0 through 0.3.4 raised none. It buys `getEntityMetadata`, which is where
+the option list for a choice column's editor and filter box comes from — the
+platform does not hand a dataset control that list any other way.
+
+It is declared `required="false"`: an environment that declines it still
+loads the control, and choice cells and choice filters simply stay as they were
+in 0.3.x. Nothing else is asked for. Writes still go through the dataset
+record, and the New button uses a navigation call no feature gates.
+:::
+
+### What changes on upgrade without touching anything
+
+- **Date columns get a filter box** — a date picker with an **On / From /
+  Until** chip beside it — wherever `enableFiltering` is on, which it is by
+  default. Turn filtering off if you would rather keep the row as it was.
+- **Choice columns get a dropdown filter** on a model-driven app, with **Any**
+  at the top. On canvas they keep the dash.
+- **Choice cells get an editor** wherever `enableEditing` was already on and
+  the platform reports the cell editable. State and status columns do not: the
+  platform says no, and the control asks.
+
+### Turning the New button on
+
+Set **Allow adding rows** to Yes. The table needs *Allow quick create* enabled
+and a quick create form, or the platform has nothing to open. The button sits
+beside the pager rather than above the table, because a model-driven subgrid
+already has a command bar up there — see [Model-driven apps](model-driven.md).
+
+### What did not change, and why
+
+Lookup cells are still read-only. 0.4.0 was specified to edit them through the
+platform's own lookup dialog and the measurement removed the feature rather
+than the specification: the dialog works, and `record.setValue()` on a lookup
+column stages nothing on the host it was tried on. [Limitations](limitations.md)
+has the detail.
+
 ## 0.2.0 → 0.3.0
 
 0.3.0 adds pinned columns and inline editing. **Nothing was renamed and nothing

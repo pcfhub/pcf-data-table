@@ -33,6 +33,12 @@
     ?pinStart=1&pinEnd=1   pin that many columns at each end
     ?edit=1                turn editing on
     ?open=1                and open the first editable cell's editor
+    ?open=industrycode     or the first editable cell in that column — the choice editor
+    ?pick=3                and pick that option value in an open choice editor, then leave
+    ?create=1              show the New button (manifest default is off)
+    ?date=2026-03-01       type a day into the date box
+    ?dateOp=from           after setting the toggle to on, from or until
+    ?choiceFilter=industrycode:3   pick that option in a choice filter box
     ?blur=1                then leave it untouched — the no-op commit case
     ?type=Text             or type this into it and leave — the committing case
     ?filter=in             type a filter into the first text column
@@ -161,9 +167,35 @@
                 pinnedEnd: number('pinEnd'),
                 enableEditing: params.get('edit') === '1',
                 editableColumns: params.get('editable'),
+                enableCreate: params.get('create') === '1',
             },
+            // A form subgrid's parent, so New seeds the relationship the way
+            // the measured form did. The rig only logs it.
+            contextInfo: { entityTypeName: 'account', entityId: '85f67958-7637-f111-88b5-7ced8d3b545a', entityRecordName: 'Preview parent' },
             quirks: readOnly.length ? { readOnlyColumns: readOnly } : undefined,
         });
+
+        /**
+          Leave an editor the way a click elsewhere would.
+
+          `blur()` alone fires nothing when the document itself is not
+          focused — a preview pane behind another window, a headless capture
+          on some drivers — and an editor that never hears a blur never
+          commits. The synthetic event covers that case; where the real one
+          fired first, the editor is already unmounted and the second is
+          dispatched on a detached node nothing listens to.
+        */
+        function leave(editor) {
+            editor.blur();
+            editor.dispatchEvent(new Event('blur'));
+        }
+
+        /** A column's heading, from its logical name — the DOM knows only the heading. */
+        function headingFor(name) {
+            var column = (fixture.columns || []).filter(function (c) { return c.name === name; })[0];
+
+            return column ? column.displayName : name;
+        }
 
         var instance = new registration.ctor();
 
@@ -188,6 +220,15 @@
             painting = true;
 
             try {
+                // A platform refresh re-reads; the rig keeps the fetch and the
+                // re-read apart for `smoke.js`, so the page joins them here —
+                // inside `paint`, because `notifyOutputChanged` after a write
+                // paints (and settles the owed render) before the poll below
+                // could see it.
+                if (handle.renderOwed()) {
+                    handle.reread();
+                }
+
                 ReactDOM.render(host.drive(instance, handle, 10).element, root);
             } finally {
                 painting = false;
@@ -196,6 +237,20 @@
 
         instance.init(handle.context, paint, {}, root);
         paint();
+
+        /*
+          The platform re-runs `updateView` after every `refresh()` the
+          control asks for; the rig only records that one is owed. Without
+          this a filter typed by `?filter` or `?date` showed in the box and
+          narrowed nothing in the picture, which photographed a control that
+          does not exist. Polling rather than hooking `refresh`, so the rig
+          stays exactly as `smoke.js` sees it.
+        */
+        window.setInterval(function () {
+            if (handle.renderOwed()) {
+                paint();
+            }
+        }, 50);
 
         /*
           Everything below is for a *captured* picture rather than for a person
@@ -244,11 +299,91 @@
                 }
             }
 
-            if (params.get('open') === '1') {
-                var trigger = document.querySelector('.DataTable-editTrigger');
+            var open = params.get('open');
+
+            if (open) {
+                /*
+                  `?open=1` is the first editable cell; `?open=<column>` is the
+                  first editable cell under that heading — which is how the
+                  choice editor gets photographed, since the first editable
+                  column is text.
+                */
+                var trigger = open === '1'
+                    ? document.querySelector('.DataTable-editTrigger')
+                    : (function () {
+                        var heads = Array.prototype.slice.call(document.querySelectorAll('thead tr:first-child th'));
+                        var index = heads.findIndex(function (th) { return th.textContent.indexOf(headingFor(open)) === 0; });
+                        var row = document.querySelector('tbody tr');
+
+                        return index >= 0 && row ? row.children[index].querySelector('.DataTable-editTrigger') : null;
+                    })();
 
                 if (trigger) {
                     trigger.click();
+                }
+            }
+
+            /*
+              Pick an option in the open choice editor and leave, the way a
+              person would — the committing case for a `<select>`, where
+              `?type` is the committing case for an `<input>`.
+            */
+            var pick = params.get('pick');
+
+            if (pick !== null) {
+                window.setTimeout(function () {
+                    var editor = document.querySelector('select.DataTable-editor');
+
+                    if (editor) {
+                        Object.getOwnPropertyDescriptor(
+                            window.HTMLSelectElement.prototype,
+                            'value',
+                        ).set.call(editor, pick);
+                        editor.dispatchEvent(new Event('change', { bubbles: true }));
+                        window.setTimeout(function () { leave(editor); }, 50);
+                    }
+                }, 100);
+            }
+
+            /*
+              The date box and its toggle. The toggle is clicked until its
+              label reads the operator asked for; the day goes in through the
+              prototype setter, as `?filter` does.
+            */
+            var dateOp = params.get('dateOp');
+            var day = params.get('date');
+            var dateBox = document.querySelector('.DataTable-filter[type="date"]');
+            var toggle = document.querySelector('.DataTable-filterOp');
+
+            if (dateOp && toggle) {
+                var wanted = { on: 'On', from: 'From', until: 'Until' }[dateOp];
+
+                var word = function () { return toggle.querySelector('.DataTable-filterOpWord').textContent; };
+
+                for (var turn = 0; turn < 3 && word() !== wanted; turn += 1) {
+                    toggle.click();
+                }
+            }
+
+            if (day && dateBox) {
+                Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set.call(dateBox, day);
+                dateBox.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+
+            /*
+              A choice filter: `column:value`. The `<select>` mounts once the
+              options arrive, which is inside the same delay as the editors.
+            */
+            var choiceFilter = params.get('choiceFilter');
+
+            if (choiceFilter) {
+                var parts = choiceFilter.split(':');
+                var selects = Array.prototype.slice.call(document.querySelectorAll('.DataTable-filterSelect'));
+                var box = selects.filter(function (s) { return s.getAttribute('aria-label').indexOf(headingFor(parts[0])) >= 0; })[0];
+
+                if (box) {
+                    Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value').set.call(box, parts[1]);
+                    box.dispatchEvent(new Event('change', { bubbles: true }));
                 }
             }
 
@@ -295,7 +430,7 @@
                           This is the repro being wrong, not the control.
                         */
                         window.setTimeout(function () {
-                            editor.blur();
+                            leave(editor);
                         }, 50);
                     }
                 }, 100);
@@ -306,7 +441,7 @@
                     var editor = document.querySelector('.DataTable-editor');
 
                     if (editor) {
-                        editor.blur();
+                        leave(editor);
                     }
                 }, 100);
             }

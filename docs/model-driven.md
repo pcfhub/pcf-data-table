@@ -15,13 +15,26 @@ This is the host the control was built for.
    configuration — its columns, their order and their widths are what the
    control renders.
 3. **Components → Add component → Data Table**, and enable it for Web.
-4. Set the four input properties. Leave **Page size** alone and the table pages
-   the way the host already does — the *Rows per page* you set on a main grid,
-   or the row count on the subgrid — and only overrides it if you fill it in.
-   The other three default to single selection, sorting on, and row click opens
-   the record.
-5. Save and publish.
+4. Set the input properties you need. Leave **Page size** alone and the table
+   pages the way the host already does — the *Rows per page* you set on a main
+   grid, or the row count on the subgrid — and only overrides it if you fill it
+   in. Selection, sorting and row-click-opens-record default on; **Inline
+   editing**, **Allow adding rows** and **Export** default off.
+5. Save and publish. If this is the first import of 0.4.0 or later, the
+   solution import asks for the **Utility** feature — see below.
 ::
+
+## The one permission it asks for
+
+From 0.4.0 the control declares the `Utility` feature, so importing the
+solution raises a permission prompt. It buys entity metadata — the option list
+a choice column's editor and filter box are built from — and nothing else.
+There is no Web API in this control: an edited cell is saved through the
+dataset record, and the New button opens a form through a navigation call that
+no feature gates.
+
+Declining it is safe. The control loads, and choice cells and choice filters
+behave as they did in 0.3.x — read-only, and a dash in the filter row.
 
 ## The view is the configuration
 
@@ -82,3 +95,31 @@ can only honestly mean the rows you can see.
 Clicking a column header writes into `dataset.sorting` and re-queries, so the
 sort applies across the whole result set and paging resets to page 1. A column
 the view marks non-sortable gets no sort control.
+
+## Editing choice cells
+
+With **Inline editing** on, a choice column's cells open as a dropdown of the
+column's options, with an empty entry to clear. The value saved is the option's
+integer, through the dataset record, exactly as a text cell is saved. Two
+columns that look like choices stay read-only: **Status** (`statecode`) and
+**Status reason** (`statuscode`). The platform reports them as not editable
+and the control asks before offering anything, so nothing needs configuring.
+
+Lookup cells stay read-only on every host — [Limitations](limitations.md)
+explains the measurement behind that.
+
+## Adding rows
+
+With **Allow adding rows** on, a **New** button appears beside the pager. It
+opens the table's **quick create form**, seeded with the record the subgrid
+sits on so the new row lands in this subgrid, and the control re-reads the view
+when the form is saved. Dismissing the form does nothing.
+
+Two prerequisites on the table, both set in the table's properties rather than
+here:
+
+- **Allow quick create** must be on.
+- The table needs a **quick create form**.
+
+The `createdRecordId` output carries the new row's ID for a form script or a
+business rule to react to.

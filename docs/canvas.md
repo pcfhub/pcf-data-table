@@ -15,6 +15,22 @@ order: 3
    properties pane.
 ::
 
+## What is absent here
+
+Canvas has no entity metadata and no quick create form, so three things a
+model-driven app gets are not offered:
+
+- **Choice cells stay read-only** and **choice columns get no filter box** —
+  the option list comes from `getEntityMetadata`, which canvas does not have,
+  whatever the manifest declares.
+- **There is no New button**, whatever `enableCreate` is set to:
+  `navigation.openForm` is not on this host.
+
+The **date filter box** does appear, because it needs no metadata. It has been
+measured on a model-driven subgrid and not yet in a canvas app; if your data
+source refuses the `On`, `OnOrAfter` or `OnOrBefore` operators, the box
+narrows nothing and the fallback is a `Filter()` on `Items`.
+
 ## No command bar, view selector or quick find
 
 The control asks for all three through `cds-data-set-options`, but that is a

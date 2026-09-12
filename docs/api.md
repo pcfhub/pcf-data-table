@@ -62,6 +62,13 @@ contains no newline, so the split is unambiguous. In a canvas app,
 on a host where opening does nothing. That is what makes it the canvas
 substitute for row navigation.
 
-Both outputs emit an empty string rather than nothing when they are cleared —
-returning `undefined` from `getOutputs()` means "no change", which would make a
-cleared selection impossible for a form to observe.
+`editedRecordId` is the row most recently saved by an inline edit, and
+`createdRecordId` the row most recently added through the New button. They are
+separate outputs on purpose: "which row was edited" and "which row was created"
+are different questions, and a form reacts to them differently. Both are
+unbraced, lower-case GUIDs like the other two — the platform hands the created
+one back braced and upper-case, and the control normalises it.
+
+All four outputs emit an empty string rather than nothing when they are cleared
+— returning `undefined` from `getOutputs()` means "no change", which would
+make a cleared selection impossible for a form to observe.

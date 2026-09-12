@@ -1013,3 +1013,450 @@ to scroll.
 `enableExport` defaults to **off**, and the preview page was forcing it on. A
 narrow capture now shows what an unconfigured control looks like rather than one
 with every switch flipped.
+
+## 0.4.0
+
+Five additions, chosen by looking outward for once. An audit of what the
+community actually asks an editable grid for — the starred repositories, the
+gallery, the forum threads — came back with three things, and all three were
+sitting in `docs/limitations.md` as refusals: editing a Choice or a Lookup,
+adding a row, filtering a date. This release takes each refusal apart and keeps
+the part of the argument that was right. Four of the five shipped; the fifth
+was measured out, and the section that says so is below.
+
+### What it adds
+
+- **Choice cells edit in place.** A native `<select>` of the column's options,
+  read from entity metadata, with an empty entry to clear.
+- **A New button** that opens the table's quick create form and reports the row
+  it made through a fourth output, `createdRecordId`.
+- **A date box on date columns**, with a toggle beside it that reads On, From or
+  Until.
+- **A choice box on Choice columns**, from the same metadata the editor uses.
+
+### What it was going to add
+
+- **Lookup cells editing through the platform's own lookup dialog.** Specified,
+  probed, and cut: the dialog works exactly as hoped, and `record.setValue()` on
+  a Lookup column stages nothing on this host — see 6 under *What must be
+  measured first*. The design below is kept as written, because the next
+  release with a write path for lookups would build it unchanged.
+
+### The Utility trade, and why it is now taken
+
+0.2.0 and 0.3.0 declined `utils.getEntityMetadata()` on the same arithmetic each
+time: one install-time prompt in exchange for one filter box, on a control that
+had earned none. The arithmetic has changed rather than the principle. The same
+prompt now buys a Choice editor and two filter boxes — it was specified to buy a
+Lookup editor and the lookup dialog as well, and the probe took those back
+(6 below), which leaves the trade thinner than planned and still positive:
+Choice is the column the outward audit found users most want to edit, and the
+prompt is paid once.
+
+So the manifest declares its first feature:
+
+```xml
+<uses-feature name="Utility" required="false" />
+```
+
+`required="false"` because a host without the surface should leave it absent
+rather than refuse to load the control. Canvas never had `utils` whatever the
+manifest said, so nothing is lost there — `pcf-kanban-board` found that
+declining Utility bought canvas exactly nothing, and this control has been
+paying the price of that finding without collecting on it.
+
+**No WebAPI.** The write path is still `record.setValue()` then `record.save()`;
+`navigation.openForm` sits on a bag no feature gates; `lookupObjects` sits on the
+one already paid for. A second prompt would buy nothing this release needs.
+
+**The 0.2.0 refusal of harvesting options from loaded rows stands.** Metadata is
+the honest source of an option list and is the only one used here. A dropdown
+built from the page in hand still cannot tell a short list from a complete one.
+
+### Design decisions
+
+**Quick create over an inline blank row.** `DataSet.newRecord` is measured
+absent on model-driven (0.3.0 above), so an inline row can only reach the server
+through `webAPI.createRecord` — a second feature, a payload that bypasses every
+business rule and required-field check the form would apply, and a row that
+cannot fill a Choice or a Lookup until the pickers exist. `openForm` with
+`useQuickCreateForm: true` is the platform's own create surface, honours all of
+that, and `createFromEntity` seeds the parent relationship from
+`mode.contextInfo` so the row lands in the subgrid it was asked for from.
+
+**The native dialog over a type-ahead.** `pcf-lookup-search` is the type-ahead
+and it costs `retrieveMultipleRecords`, a metadata call for the name column, and
+a portalled Fluent listbox — inside a table cell, on a control that has never
+mounted a Fluent input. `utils.lookupObjects` costs one feature already
+declared, and a cancelled dialog resolves empty, which is a no-op rather than a
+branch.
+
+**An operator toggle beside the date box, not two boxes and not a typed
+prefix.** `<input type="date">` cannot carry `>=` the way the number box does;
+two boxes double the height of the filter row, which the 320px measurements
+already fight; and On / From / Until is the vocabulary of the platform's own
+filter pane. The toggle's label is component state, because an operator change
+with an empty box triggers no refresh and nothing else would repaint it.
+
+**The choice filter sends `Equal` on the integer, as a string.**
+`ConditionExpression.value` is typed `string | string[]`; the numeric filter
+already sends a number through a cast and the server has not objected. The probe
+below settles whether it cares.
+
+**Metadata is resolved inside the component**, on the `canEdit` precedent:
+`notifyOutputChanged()` does not repaint a React control (0.3.1), so the class
+hands down a thunk and caches the promise, and the component owns the answer.
+One difference, stated so nobody reads it as drift: `loadOptions` and
+`pickLookup` are **function-or-null** where `canEdit` is **per-call null**. The
+fact behind `canEdit` is about a *record* — this one may lack the methods — and
+has to be asked per row. The fact behind the new two is about the *host*,
+decided once in `updateView`, and the component needs it before it renders a
+trigger or asks `isEditable` for a cell that can never get an editor.
+
+**A lookup edit has no `<input>`.** Trigger → dialog → commit. The existing
+`commit` splits into the coercion it already does and a `write` the dialog path
+can call with a reference instead of a string.
+
+**Everything degrades to 0.3.4.** Where `utils` is absent the Choice cells stay
+read-only and the Choice column stays unfilterable; where `openForm`
+is absent there is no New button. The date box needs no metadata, so it appears
+wherever `filtering` exists. Detection is per method, not per bag — the
+`pcf-row-commands` rule.
+
+**The boolean editor's Yes and No were hardcoded**, the only two user-visible
+strings in the control that were. They move to the `.resx` while the editor is
+open.
+
+### What must be measured first
+
+Every design decision above rests on at least one claim nothing in this
+repository has watched a platform make. The probe build asks these, in this
+order, and the answers are written back here as *Measured* before a line of the
+feature exists. A question answered the wrong way removes the feature that
+depends on it rather than being worked around.
+
+1. **Import.** With `Utility` declared `required="false"`, what does the import
+   prompt say, verbatim? On the `cll_account` subgrid afterwards, is
+   `context.utils` an object with `getEntityMetadata` and `lookupObjects` as
+   functions?
+
+   *Measured 2026-09-11.* `context.utils` is an object; `getEntityMetadata`
+   and `lookupObjects` are functions, and so is `navigation.openForm`. The
+   prompt text was not captured — the probe build went in as an upgrade of a
+   solution already installed, and the import surfaced nothing worth quoting.
+   Recorded under *Not verified* rather than invented.
+2. **Column type strings.** For every column in the view, the exact
+   `Column.dataType` — in particular for the Choice column, a multi-select
+   Choice, and the Lookup (`Lookup.Simple`? `Lookup.Customer`? `Lookup.Owner`?).
+
+   *Measured.* `SingleLine.Text`; `OptionSet` for `cll_industry`,
+   `cll_priority`, `statecode` **and** `statuscode` — state and status are not
+   distinguishable from a choice by `dataType`, which is why `isEditable` and
+   not the type string decides whether a cell gets an editor;
+   `MultiSelectPicklist` for `cll_tags`; `Lookup.Simple` for
+   `cll_primarycontact`; `Lookup.Customer` for `cll_customer`;
+   `DateAndTime.DateOnly` for `cll_startdate`; `DateAndTime.DateAndTime` for
+   `cll_lastcontacted`. No `Lookup.Owner` in the view.
+3. **Choice metadata.** `getEntityMetadata('cll_account', [choiceColumn])` →
+   does `metadata.Attributes.get(choiceColumn)` return a node? Are the options
+   at `OptionSet.Options`, `GlobalOptionSet.Options`, or both? Is each `Label` a
+   string or `{ UserLocalizedLabel: { Label } }`? Is `Value` a number? Is
+   `Color` present?
+
+   *Measured, and the kanban-derived assumption was wrong.* The node comes
+   back, but **`node.OptionSet` is a map keyed by value**, not an object with
+   an `Options` array: `{ 1: { text: 'Retail', value: 1 }, …, 4: { text:
+   'Technology', value: 4 } }`. `OptionSet.Options` and `GlobalOptionSet` are
+   both `undefined`. The array lives one level down, at
+   `node.attributeDescriptor.OptionSet`, as `[{ Label, Value, TransitionData,
+   IsHidden }]` — state options add `DefaultStatus` and `InvariantName`,
+   status options add `State`. `Label` is a plain string on both routes; no
+   `UserLocalizedLabel` anywhere; `Value` is a number; **`Color` is absent** on
+   both. `AttributeType` is numeric (11 picklist, 17 multi-select, 6 lookup,
+   1 customer, 2 datetime, 12 state, 13 status) beside an `AttributeTypeName`
+   string. Datetime nodes carry `Behavior` (2 DateOnly, 1 UserLocal) and
+   `Format` (`'date'` / `'dateandtime'`). `parseOptions` reads the descriptor
+   array first — it is the one that carries the maker's order and `IsHidden`
+   — and the map when that is absent, sorted by value.
+4. **Lookup targets.** On the lookup attribute's node, is `Targets` a populated
+   array of logical names? If not, which key carries them? If none does, the
+   lookup editor cannot ship and this section says so.
+
+   *Measured.* `cll_primarycontact` → `Targets: ['contact']` at the top of the
+   node, and again at `attributeDescriptor.Targets`. `cll_customer` → the
+   top-level `Targets` is **`undefined`** and only
+   `attributeDescriptor.Targets: ['account', 'contact']` carries them. So a
+   reader has to try the top-level key and fall through to the descriptor,
+   and a `Lookup.Customer` dialog would offer both tables. Recorded, not
+   coded: 0.4.0 ships nothing that needs a target (6).
+5. **Lookup read shape.** What does `record.getValue(lookupColumn)` return: an
+   `EntityReference` `{ id: { guid }, etn, name }`, a `LookupValue`
+   `{ id, entityType, name }`, an array of either, or a string?
+
+   *Measured.* An `EntityReference`: `{ etn: 'contact', id: { guid:
+   'a1e84297-…' }, name: 'Patrick Sands (sample)' }`, GUID unbraced and
+   lower-case; the Customer column is the same shape with `etn: 'account'`.
+   Not an array, not a string. For the record: a choice reads back as the
+   **string** `"3"` (formatted `"Services"`), a multi-select as `"1"`, a
+   DateOnly as `"2026-08-31T00:00:00.000Z"`, a DateAndTime as
+   `"2026-09-01T04:30:00.000Z"` (formatted `8/31/2026 11:30 PM` in the user's
+   UTC-5), `statecode` as `"0"`. `sameValue('choice')` therefore compares
+   numbers after coercion, never the raw strings.
+6. **Lookup write shape.** Which of `{ id, name, entityType }`,
+   `[{ id, name, entityType }]` and `{ id: { guid }, etn, name }` does
+   `record.setValue(lookupColumn, x); await record.save()` persist across a
+   reload? Does `setValue(lookupColumn, null)` clear it?
+
+   *Measured: none of them.* On record `4748f046…` every shape — the plain
+   `LookupValue`, the same in an array, the `EntityReference` the column reads
+   back as, the braced upper-case shape the dialog resolves with, and `null` —
+   was accepted by `setValue` (returns `undefined`, no throw) and then
+   **refused by `save()` with `UciError: Invalid snapshot with id
+   undefined`**, the message this host uses for "nothing is staged". One call
+   in the first run resolved — the plain shape, the first `setValue` on a
+   fresh record — and a Web API read-back of `_cll_primarycontact_value` before
+   the second run showed `null`, so it saved nothing. **`record.setValue` on a
+   Lookup column stages nothing on this host.** The plan's rule applies: the
+   lookup *editor* is cut from 0.4.0. What stays is the record above — the
+   dialog shapes (8), where the targets live (4) and the read shape (5),
+   which are what a later release with a write path would need — and
+   `docs/limitations.md` keeps saying lookups are read-only, now with the
+   reason measured rather than assumed.
+7. **Choice write.** Does `setValue(choiceColumn, <integer>); await save()`
+   persist? Does `null` clear it? Does `isEditable(choiceColumn)` answer `true`,
+   and do `isEditable('statecode')` and `isEditable('statuscode')` answer
+   `false`?
+
+   *Measured.* `setValue('cll_industry', 4); await save()` → the Web API reads
+   `cll_industry: 4`; `setValue('cll_industry', null); await save()` → reads
+   `null`. Both survived a hard reload. `isEditable` answers `true` for
+   `cll_industry`, `cll_priority`, `cll_tags`, `cll_primarycontact`,
+   `cll_customer`, `cll_startdate` and `cll_lastcontacted`, and `false` for
+   `statecode` and `statuscode` — so the gate the 0.3.x editor already applies
+   keeps state and status read-only without a type check. Note the asymmetry
+   with 6: `isEditable('cll_primarycontact')` is `true` and the write still
+   stages nothing, so `isEditable` is a necessary condition, not proof of a
+   write path.
+8. **Lookup dialog.** `utils.lookupObjects({ entityTypes: [target],
+   allowMultiSelect: false })` — does it open? On a pick, what is the resolved
+   shape? On cancel, does it resolve `[]`, resolve `undefined`, or reject?
+
+   *Measured.* Opens. A pick resolves `[{ id:
+   "{8FE84297-9486-EC11-93B0-000D3A5C8441}", entityType: "contact", name:
+   "Susanna Stubberod (sample)" }]` — an array of `LookupValue`, GUID **braced
+   and upper-case**, the opposite of what `getValue` returns (5). Cancel
+   resolves `[]`, not `undefined`, and does not reject. Kept for the record
+   although 0.4.0 has no caller.
+9. **Date operators.** `setFilter({ filterOperator: 0, conditions: [{
+   attributeName: dateColumn, conditionOperator: 25, value: 'yyyy-MM-dd' }] })`
+   then `refresh()` — do the rows narrow with `dataset.error` false? The same
+   for 26 and 27, and the same on a `DateAndTime.DateAndTime` column. Is the
+   day compared in the user's zone or in UTC — a record stamped near midnight
+   decides.
+
+   *Measured, with one gap.* All three operators are accepted with
+   `value: 'yyyy-MM-dd'` and `dataset.error` stays `false`. On the DateOnly
+   column, `OnOrBefore` (26) and `OnOrAfter` (27) both narrowed to the rows
+   the fixture predicted. On the DateAndTime column, `On` (25) for
+   `2026-08-31` returned the record stamped `2026-09-01T04:30:00Z` — 11:30 PM
+   on the 31st in the user's UTC-5 — so **the day is compared in the user's
+   zone, not UTC**, and the rig models it that way. 27 and 26 on the same
+   column agreed. **`On` (25) on the DateOnly column is unresolved:** the
+   first run read during the loading blip and the third issued its `refresh()`
+   inside the ~12 s window of the previous `clear()`'s refresh, and the count
+   never moved. It goes to the live walkthrough at release, run alone; the
+   day-in-user-zone answer from the DateAndTime column is what the
+   implementation rests on meanwhile.
+
+   Two things about `refresh()` itself, learnt by getting them wrong: it
+   takes **3–14 s** on this subgrid, and a `refresh()` issued while one is in
+   flight appears to be **dropped rather than queued**. So the control never
+   chains them — one `setFilter` → one `refresh()`, debounced, exactly as the
+   0.2.0 filter already does — and the loading state briefly reports **0
+   rows**, so nothing reads `sortedRecordIds.length` as an answer while
+   `dataset.loading` is true.
+10. **Choice filter value type.** `Equal` on the Choice column with
+    `value: '3'` — accepted? With `3`? Either?
+
+    *Measured.* Either. `3` as a number returned the one row holding it; `'3'`
+    as a string returned the same row after the fixture had moved on. The
+    control sends the string, which is what `ConditionExpression.value` is
+    typed as.
+11. **Quick create.** `navigation.openForm({ entityName: 'cll_account',
+    useQuickCreateForm: true, createFromEntity })` — does the quick create form
+    open? On Save, does the promise resolve with `savedEntityReference[0].id`?
+    On cancel, does it resolve, and with what, or reject? After
+    `dataset.refresh()`, is the new row in the subgrid?
+
+    *Measured.* The quick create form opens. Save resolves `{
+    savedEntityReference: [{ id: "{436E09A8-…}", entityType: "cll_account",
+    name: "5" }] }` — braced upper-case GUID again, so `createdRecordId` is
+    normalised to the unbraced lower-case form every other output uses. After
+    `refresh()` the row was in the subgrid (4 → 5). **Cancel resolves `{
+    savedEntityReference: null }`** — not `[]`, not a rejection — so the
+    reader is `result?.savedEntityReference?.[0]?.id ?? null`, and a cancel
+    triggers no refresh.
+12. **Context info.** Is `context.mode.contextInfo` present on the subgrid,
+    with `entityTypeName` and `entityId` naming the parent Account? Does passing
+    it as `createFromEntity` set the relationship so the row lands in this
+    subgrid?
+
+    *Measured.* Present: `{ entityTypeName: 'account', entityId:
+    '85f67958-7637-f111-88b5-7ced8d3b545a', entityRecordName: 'Account Message
+    Integration' }` — the parent, unbraced. Passed as `createFromEntity` the
+    saved row landed in this subgrid, so the relationship was seeded. It stays
+    optional in the code: a main grid has no parent to name.
+13. **Prerequisite.** Does `cll_account` have *Allow quick create* on and a
+    quick create form? If not, what does `openForm` do instead — open the main
+    form, resolve with nothing, or reject?
+
+    *Measured for the first half only.* `cll_account` has the setting on and a
+    quick create form, so the form opened. What `openForm` does on a table
+    without one was not exercised and is listed under *Not verified*;
+    `docs/model-driven.md` names the prerequisite.
+
+**What the measurements changed.** One feature out: the lookup editor (6).
+One assumption corrected: choice options are a value-keyed map, not an
+`Options` array (3). Three shapes pinned that the typings do not carry: cancel
+is `[]` from the dialog and `{ savedEntityReference: null }` from the form;
+the dialog and the form both return braced upper-case GUIDs where `getValue`
+and `contextInfo` return unbraced lower-case. One host behaviour the rig now
+refuses to hide: a `refresh()` during a `refresh()` is lost (9).
+
+### What the rig models now
+
+The dataset rig grew more in this release than in the three before it, because
+three of the four features touch surfaces it had never stood in for. Each item
+is a claim about the platform, with the measurement it rests on; each is
+asserted in `dev/smoke.js`, and the mutation named beside it was applied and
+caught before the item was written down.
+
+- **`context.utils.getEntityMetadata`**, resolving a class instance whose
+  `Attributes` is a prototype getter with `.get(column)` — the shape the field
+  rig in `_template` already carried — and now returning per-attribute nodes
+  in the measured shape: `attributeDescriptor.OptionSet` as an array for one
+  fixture column and a value-keyed `OptionSet` map for the other, so a parser
+  reading only one route is caught by the column that carries the other.
+  Absent under `quirks.utilsAbsent` and under `host: 'canvas'` whatever the
+  quirk says; rejecting under `quirks.metadataRejects`. *Mutation:*
+  `parseOptions` reading the descriptor only → "options are read from the
+  value-keyed map" fails with `[]`.
+- **`navigation.openForm`**, logging its full options and resolving
+  `o.openFormReturns`, whose default is the measured dismissal `{
+  savedEntityReference: null }` — the branch a control forgets. Absent under
+  `quirks.openFormAbsent` and on canvas. **`mode.contextInfo`** from the
+  `contextInfo` host option, `undefined` when unset, as a main grid is
+  expected to leave it.
+- **`On` (25), `OnOrBefore` (26), `OnOrAfter` (27)** in `holds()`, compared
+  as `yyyy-MM-dd` in the local zone, with an empty cell matching none of the
+  three. The pass-through default that used to certify an unmodelled operator
+  is still there for operators nothing sends, with a comment saying what it
+  once let through. *Mutation:* the `On` case removed → "the rig models On by
+  calendar day" reads twelve rows; `from`/`until` swapped in `DATE_OPERATOR` →
+  both operator checks fail with the other's count.
+- **The fixture's shapes.** `statecode` and the new `industrycode` hold
+  integers, `ownerid` holds `{ id: { guid }, etn, name }`, and
+  `getFormattedValue` turns both into text whether or not `format` is on —
+  the platform never shows a choice as its number. `getValue` on a choice
+  returns the **string**, as measured, so a control comparing what it wrote
+  with what it reads has to coerce; `handle.stored(id, column)` is the rig's
+  own back door for asserting the integer was written.
+- **Every column-count baseline derives from the fixture** — `VISIBLE` in
+  `smoke.js` — after the seventh visible column moved seven of them at once.
+  Derived, not copied from the failing output.
+
+Two limits of the rig, stated so nobody reads a green suite as more than it
+is. `renderToStaticMarkup` runs no effects, so the choice editor and the choice
+filter box never appear in the smoke markup; both are asserted on the props
+the class hands down and photographed by `dev/preview.html`, which also gained
+the poll that repaints when the rig owes a render — without it a filter typed
+by `?date` showed in the box and narrowed nothing in the picture. And the
+preview's editor-leaving now dispatches a synthetic `blur` beside the real
+one, because `blur()` fires nothing in a document that is not focused, and a
+preview pane behind another window is one.
+
+### Verified on a real form
+
+Two builds on the Accounts subgrid, 2026-09-11 and 12. The first (0.4.0)
+confirmed **New → save lands the row** in the subgrid and **the filter row
+filters**, date boxes and choice boxes alike — and exposed the three date
+faults in the section below. The second (0.4.1, with those fixed) walked the
+rest: a Choice pick persists across a reload, New → cancel does nothing, each
+of On / From / Until narrows the count on both date columns — including `On`
+on the DateOnly column, which the probe had never read cleanly — the choice
+filter, an edited date cell reading like its neighbours once the refresh
+lands, a date-and-time cell taking a time, and the filter row at phone width.
+All reported working by the maker. What the import prompt said is still not
+on record; it stays under *Not verified*.
+
+### Found on the form, after the probe
+
+The release is numbered **0.4.1**, and the reason is the second import trap:
+0.4.0 was the number the first build carried onto the form, and Dataverse
+accepts an import at the installed version while leaving the web resource
+alone. The feature set is 0.4.0's; the tag is `v0.4.1`.
+
+Three things the first build got wrong about dates, none of which the probe
+asked because none of them was new to 0.4.0 — they were 0.3.x behaviour that
+the first look at an edited date cell exposed.
+
+**An edited date cell kept its pending text for the life of the page.** The
+screenshot showed `2026-09-29` in a column of `9/1/2026 12:30 AM`. That text
+is the optimistic override, and it is supposed to go the moment the refresh
+lands; the retire test compared `String(record.getValue())` — the ISO string
+`"2026-09-29T00:00:00.000Z"` — with `String(pendingDate)` — `"Tue Sep 29
+2026 …"` — and the two are never equal. `sameValue` now compares per kind: a
+date by the day, a date-and-time by the minute, through the same reader the
+editor uses. And while the write is in flight the cell is formatted through
+`context.formatting.formatDateShort`, which renders in the *user's* zone, so
+the moment reads like the platform's own cell rather than as a different
+format.
+
+**A date-and-time cell was edited with a date box.** The 0.3.x comment said
+the time half was "preserved rather than offered"; the code wrote local
+midnight, which is why row 3 read `12:00 AM`. `DateAndTime.DateAndTime`
+columns now edit through `<input type="datetime-local">`, in the browser's
+zone — which is the one the reader is typing in, and may differ from the
+Dataverse user's; the platform formats the result in the user's, and the two
+disagreeing is a limitation stated rather than solved.
+
+**A date-only editor opened a day early west of Greenwich.** The probe
+measured `cll_startdate` reading back as `"2026-08-31T00:00:00.000Z"` — the
+`pcf-date-range-picker` finding, a DateOnly column hands its day over at UTC
+midnight — and `editorValue` read that value's *local* components, which at
+UTC-5 is 30 August at 7 PM. The reader now takes the UTC components of a
+value at exactly UTC midnight and the local ones of anything else; the write
+side anchors a whole day at local **midday**, the range picker's rule, so a
+DateOnly-behaviour column keeping the UTC date part and a UserLocal one
+keeping the instant both land on the day typed from any zone within twelve
+hours of Greenwich. The ambiguity the heuristic leaves — a UserLocal instant
+that happens to fall on UTC midnight — is one `Column` cannot resolve, since
+`Behavior` lives on the attribute metadata.
+
+The dev rig had hidden all three: its fixture held bare `yyyy-MM-dd` strings
+where the platform hands over the ISO instant, so nothing local ever met the
+UTC-midnight shape, and its preview never re-read after a write, so the
+override's retirement was never watched. Both fixtures — this repository's
+and `_template`'s — now carry the measured shapes, the rig's own day reader
+takes the UTC-midnight day, and `dev/preview.html` re-reads inside `paint`
+where the owed render is consumed. Verified in a browser at UTC-6: the editor
+opens on the stored day, a committed day retires its override and reads
+`Mar 5, 2026`, and a committed `14:45` reads `2:45 PM`.
+
+### Not verified in 0.4.0
+
+- Nothing in this release has been opened in a canvas app, and the date box
+  is the only part of it that would render there.
+- A date-and-time edit from a browser whose zone differs from the Dataverse
+  user's. The editor takes the time in the browser's zone and the platform
+  displays it in the user's; the two were the same on the form this was
+  walked on, so the offset case has not been seen.
+- The import prompt text for `Utility` (1) — the probe went in as an upgrade
+  and nothing was captured.
+- `openForm` with `useQuickCreateForm` on a table that has no quick create
+  form (13).
+- `lookupObjects` with two `entityTypes`, the `Lookup.Customer` case (4, 8) —
+  the dialog was opened for `['contact']` only, and nothing in 0.4.0 calls it.
+- Whether `record.setValue` on a Lookup column stages on any host other than
+  this one (6). One environment, one record, five shapes; the conclusion is
+  strong for this host and unmeasured elsewhere.

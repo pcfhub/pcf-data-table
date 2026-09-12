@@ -30,12 +30,18 @@ const AND = 0;
 
 /**
  * The `ConditionOperator` values used here, out of the ~90 the platform
- * defines. All are supported on canvas and model-driven alike; reaching past
- * this set is choosing a host.
+ * defines.
  *
  * `Like` (6) is case-insensitive and takes SQL wildcards rather than a
  * substring, which is why the value is wrapped in `%` below rather than passed
  * bare.
+ *
+ * The three date operators are the first values in this file past the set
+ * documented for both hosts. Measured on a model-driven subgrid, 2026-09-11,
+ * with `value: 'yyyy-MM-dd'`: all three narrow, `dataset.error` stays false,
+ * and the day is compared in the **user's** zone — a record stamped
+ * 04:30Z came back for `On` the previous day, because that is 11:30 PM where
+ * the user sits. Canvas has not been asked; see SPEC.md 0.4.0.
  */
 const EQUAL = 0;
 const GREATER_THAN = 2;
@@ -43,6 +49,9 @@ const LESS_THAN = 3;
 const GREATER_EQUAL = 4;
 const LESS_EQUAL = 5;
 const LIKE = 6;
+const ON = 25;
+const ON_OR_BEFORE = 26;
+const ON_OR_AFTER = 27;
 
 /**
  * What kind of filter input a column can carry, decided from `dataType`.
@@ -53,7 +62,7 @@ const LIKE = 6;
  * An unfilterable column is a visible, explicable state; a query that fails
  * names the column rather than the control, and only in a network trace.
  */
-export type FilterKind = 'text' | 'number' | 'none';
+export type FilterKind = 'text' | 'number' | 'date' | 'choice' | 'none';
 
 const TEXT_TYPES = [
     'SingleLine.Text',
@@ -67,6 +76,23 @@ const TEXT_TYPES = [
 
 const NUMBER_TYPES = ['Whole.None', 'Decimal', 'Currency', 'FP'];
 
+/**
+ * Date-only and date-and-time both *filter* as a date: the filter compares
+ * whole days, so it never sees the time. They edit differently — see
+ * `DATETIME_TYPES` under Editing.
+ */
+const DATE_TYPES = ['DateAndTime.DateOnly', 'DateAndTime.DateAndTime'];
+
+/**
+ * `OptionSet` is the string for a Choice — and, measured 2026-09-11, for
+ * `statecode` and `statuscode` as well. Nothing in `dataType` tells the three
+ * apart; `record.isEditable()` does, answering `false` for state and status,
+ * which is why the editor asks the platform per cell rather than trusting the
+ * type. `MultiSelectPicklist` is deliberately absent: its value is a list, and
+ * neither the `<select>` nor the `Equal` below says anything true about one.
+ */
+const CHOICE_TYPES = ['OptionSet'];
+
 export function filterKindFor(column: Column): FilterKind {
     if (TEXT_TYPES.includes(column.dataType)) {
         return 'text';
@@ -76,22 +102,28 @@ export function filterKindFor(column: Column): FilterKind {
         return 'number';
     }
 
+    if (DATE_TYPES.includes(column.dataType)) {
+        return 'date';
+    }
+
+    if (CHOICE_TYPES.includes(column.dataType)) {
+        return 'choice';
+    }
+
     /*
-     * Everything else — dates, choices, two-options, lookups — gets no input,
-     * and for two different reasons worth keeping apart.
+     * Everything else — two-options, multi-select choices, lookups — gets no
+     * input.
      *
-     * Dates: the operators that would express "on or after this day" (`On`,
-     * `OnOrAfter`, `OnOrBefore`) are not documented as supported on both hosts,
-     * and a `GreaterThan` against a date column compares the wrong thing.
+     * Lookups filter on a GUID, and **`Column` carries neither a GUID nor a
+     * name to find one by.** The whole interface is name, displayName,
+     * dataType, alias, order, visualSizeFactor, isHidden, isPrimary and
+     * disableSorting. A box that took a typed name would need a query to turn
+     * it into an id, which is `pcf-lookup-search`'s whole job and a second
+     * feature this control does not declare.
      *
-     * Choices, two-options and lookups: the value the server filters on is an
-     * integer or a GUID, and **`Column` carries neither.** The whole interface
-     * is name, displayName, dataType, alias, order, visualSizeFactor, isHidden,
-     * isPrimary and disableSorting — there is no option list on it. Reading one
-     * means `utils.getEntityMetadata()`, which is model-driven only and would
-     * add a `<uses-feature>` entry, i.e. an install-time permission prompt on
-     * every environment. See SPEC.md for the option that was considered and
-     * declined.
+     * A choice needs the same metadata the editor uses, and gets it: this
+     * function says the column *can* carry a box, and the component withholds
+     * it on a host with no `utils` — see `loadOptions` in `index.ts`.
      */
     return 'none';
 }
@@ -145,14 +177,42 @@ interface Condition {
 }
 
 /**
+ * How a date box compares: the day itself, that day onwards, or up to it.
+ *
+ * Three words rather than two boxes or a typed `>=`: `<input type="date">`
+ * cannot carry a prefix the way the number box does, a second box doubles the
+ * height of a filter row that the 320px measurements already fight, and On /
+ * From / Until is the vocabulary of the platform's own filter pane.
+ */
+export type DateOp = 'on' | 'from' | 'until';
+
+const DATE_OPERATOR: Record<DateOp, number> = { on: ON, from: ON_OR_AFTER, until: ON_OR_BEFORE };
+
+/** On, then From, then Until, then round again. */
+export function nextDateOp(current: DateOp | undefined): DateOp {
+    return current === 'on' ? 'from' : current === 'from' ? 'until' : 'on';
+}
+
+/** What `<input type="date">` yields, and the one shape the server was measured accepting. */
+const DAY = /^\d{4}-\d{2}-\d{2}$/;
+
+/** A choice filter is an integer or nothing; the `<select>` cannot produce anything else. */
+const INTEGER = /^-?\d+$/;
+
+/**
  * The expression for what is typed across the filter row, or `null` for none.
  *
  * One condition per filled box, combined with `And`. A column whose box is
  * empty contributes nothing — an empty filter is not a filter for `''`.
+ *
+ * `ops` is the date toggles, by column; a date column with no entry filters
+ * `On`. A half-typed day — `2026-03`, which a date input can hold mid-edit —
+ * sends nothing, on the same argument `numericCondition` makes.
  */
 export function buildFilter(
     filters: Record<string, string>,
     columns: Column[],
+    ops: Record<string, DateOp> = {},
 ): FilterExpression | null {
     const conditions: Condition[] = [];
 
@@ -181,6 +241,27 @@ export function buildFilter(
             if (condition) {
                 conditions.push(condition);
             }
+
+            return;
+        }
+
+        if (kind === 'date' && DAY.test(typed)) {
+            conditions.push({
+                attributeName: column.name,
+                conditionOperator: DATE_OPERATOR[ops[column.name] ?? 'on'],
+                value: typed,
+            });
+
+            return;
+        }
+
+        /*
+         * The integer as a string, which is what `ConditionExpression.value`
+         * is typed as. Measured 2026-09-11: the server accepted `'3'` and `3`
+         * alike on a Choice column, so the typed shape costs nothing.
+         */
+        if (kind === 'choice' && INTEGER.test(typed)) {
+            conditions.push({ attributeName: column.name, conditionOperator: EQUAL, value: typed });
         }
     });
 
@@ -635,27 +716,32 @@ export function pagerLabel(
  * yields `'none'` and no editor, rather than falling through to a text box that
  * builds a value the platform rejects.
  *
- * Choices and lookups are refused, not deferred. The value the platform stores
- * is an integer or a GUID, and **`Column` carries neither** — the whole
- * interface is name, displayName, dataType, alias, order, visualSizeFactor,
- * isHidden, isPrimary and disableSorting. Building a faithful picker needs
- * `utils.getEntityMetadata()`, which is model-driven only and would add a
- * `<uses-feature>` entry — an install-time permission prompt on every
- * environment, which is the exact cost this whole feature was shaped to avoid.
- * `pcf-grid-cell-styler` declines the same two cells for the same reason.
+ * A choice edits through a `<select>` of options read from entity metadata —
+ * `Column` carries no option list, so this is the one editor that costs a
+ * `<uses-feature>`, and SPEC.md 0.4.0 is where that price was weighed. The
+ * component withholds the editor until the options have arrived and offers
+ * nothing on a host with no `utils`.
+ *
+ * Lookups are still refused, and for a reason that was measured rather than
+ * reasoned: `record.setValue()` on a Lookup column stages nothing on the host
+ * this was built against — five value shapes, every `save()` refused with
+ * "Invalid snapshot", the stored value untouched. The dialog to pick one works;
+ * there is no write to hand its answer to. See SPEC.md 0.4.0, question 6.
  */
-export type EditKind = 'text' | 'number' | 'boolean' | 'date' | 'none';
+export type EditKind = 'text' | 'number' | 'boolean' | 'date' | 'datetime' | 'choice' | 'none';
 
 const BOOLEAN_TYPES = ['TwoOptions'];
 
 /**
- * Date-only and date-and-time both edit as a date.
+ * A date-and-time column edits as one, since 0.4.0.
  *
- * The time half of a `DateAndTime.DateAndTime` is preserved rather than
- * offered: an `<input type="date">` cannot express it, and zeroing it silently
- * would move every appointment to midnight.
+ * 0.3.x gave it the same `<input type="date">` as a date-only column and its
+ * comment claimed the time half was "preserved". It was not: the write was
+ * local midnight, so every edit of a `Last contacted` read `12:00 AM`
+ * afterwards — observed on the Accounts subgrid, 2026-09-11. A cell that shows
+ * a time is edited with one.
  */
-const DATE_TYPES = ['DateAndTime.DateOnly', 'DateAndTime.DateAndTime'];
+const DATETIME_TYPES = ['DateAndTime.DateAndTime'];
 
 export function editKindFor(column: Column): EditKind {
     if (TEXT_TYPES.includes(column.dataType)) {
@@ -670,11 +756,112 @@ export function editKindFor(column: Column): EditKind {
         return 'boolean';
     }
 
+    if (DATETIME_TYPES.includes(column.dataType)) {
+        return 'datetime';
+    }
+
     if (DATE_TYPES.includes(column.dataType)) {
         return 'date';
     }
 
+    if (CHOICE_TYPES.includes(column.dataType)) {
+        return 'choice';
+    }
+
     return 'none';
+}
+
+/** One entry of a Choice column's option list. */
+export interface Option {
+    value: number;
+    label: string;
+}
+
+/**
+ * The option list on one attribute's metadata node, or `[]`.
+ *
+ * `utils.getEntityMetadata(entity, [column])` resolves to a class instance
+ * whose `Attributes.get(column)` is the node this reads. **Its shape was
+ * measured rather than taken from the reference page, 2026-09-11, and it is
+ * not the shape `pcf-kanban-board` documented.** Two routes carry the options:
+ *
+ *  - `attributeDescriptor.OptionSet` is an array of `{ Label, Value, IsHidden
+ *    }` in the maker's order — state options add `DefaultStatus`, status
+ *    options add `State`. Read first, because it is the one that knows about
+ *    order and about hidden options.
+ *  - `OptionSet` is **a map keyed by value** — `{ 1: { text: 'Retail', value:
+ *    1 }, … }` — with no `Options` array on it and no `GlobalOptionSet` beside
+ *    it. Read second, sorted by value, because a map has no order of its own.
+ *
+ * `Label` is a plain string on both; the `{ UserLocalizedLabel: { Label } }`
+ * shape the Web API returns was not seen here and is still accepted, because
+ * accepting it costs a line and refusing it costs a release. `Color` was
+ * absent everywhere, so there is no colour to carry.
+ *
+ * Nothing here trusts a value it has not checked: a `Value` that is not a
+ * finite number, or a label that is not a string, drops the option rather than
+ * rendering `undefined` in a `<select>`.
+ */
+export function parseOptions(node: unknown): Option[] {
+    const record = node as Record<string, unknown> | null | undefined;
+
+    if (!record || typeof record !== 'object') {
+        return [];
+    }
+
+    const descriptor = record.attributeDescriptor as Record<string, unknown> | undefined;
+    const fromDescriptor = readOptionArray(descriptor?.OptionSet);
+
+    if (fromDescriptor.length > 0) {
+        return fromDescriptor;
+    }
+
+    const set = record.OptionSet as Record<string, unknown> | undefined;
+
+    if (!set || typeof set !== 'object') {
+        return [];
+    }
+
+    // The documented `Options` array, if a host ever supplies one.
+    const fromArray = readOptionArray(set.Options);
+
+    if (fromArray.length > 0) {
+        return fromArray;
+    }
+
+    return Object.keys(set)
+        .map((key) => readOption(set[key]))
+        .filter((option): option is Option => option !== null)
+        .sort((a, b) => a.value - b.value);
+}
+
+function readOptionArray(candidate: unknown): Option[] {
+    if (!Array.isArray(candidate)) {
+        return [];
+    }
+
+    return candidate
+        .filter((entry) => !(entry as { IsHidden?: boolean })?.IsHidden)
+        .map(readOption)
+        .filter((option): option is Option => option !== null);
+}
+
+/** One option, from either shape, or `null` when it does not have both halves. */
+function readOption(entry: unknown): Option | null {
+    const raw = entry as Record<string, unknown> | null | undefined;
+
+    if (!raw || typeof raw !== 'object') {
+        return null;
+    }
+
+    const value = Number(raw.Value ?? raw.value);
+    const label = raw.text ?? raw.Label;
+    const text =
+        typeof label === 'string'
+            ? label
+            : (label as { UserLocalizedLabel?: { Label?: unknown } })?.UserLocalizedLabel?.Label;
+
+    return Number.isFinite(value) && typeof text === 'string' ? { value, label: text } : null;
 }
 
 /**
@@ -707,7 +894,22 @@ export function coerceValue(kind: EditKind, typed: string): { ok: boolean; value
         return { ok: true, value: typed === 'true' };
     }
 
-    if (kind === 'date') {
+    /*
+     * The integer, not the string the `<select>` holds. `setValue(column, 4)`
+     * then `save()` was read back from the Web API as `4`, and `null` cleared
+     * it — measured 2026-09-11. The empty entry is `''`, which is the clear.
+     */
+    if (kind === 'choice') {
+        if (typed.trim() === '') {
+            return { ok: true, value: null };
+        }
+
+        return INTEGER.test(typed.trim())
+            ? { ok: true, value: Number(typed) }
+            : { ok: false, value: null };
+    }
+
+    if (kind === 'date' || kind === 'datetime') {
         if (typed.trim() === '') {
             return { ok: true, value: null };
         }
@@ -723,21 +925,71 @@ export function coerceValue(kind: EditKind, typed: string): { ok: boolean; value
          * and three of the theories along the way were wrong because they were
          * reasoned rather than measured.
          *
-         * `new Date(y, m - 1, d)` is local midnight, unambiguously, with no
-         * parsing rules involved.
+         * `new Date(y, m - 1, d, hh, mm)` is local time, unambiguously, with
+         * no parsing rules involved. A whole day is **anchored at midday**, the
+         * rule `pcf-date-range-picker` settled on: local noon is the same
+         * calendar day in UTC for every zone within twelve hours of it, so a
+         * DateOnly-behaviour column that keeps the UTC date part and a
+         * UserLocal one that keeps the instant both land on the day typed.
+         * Local midnight is the previous day in UTC east of Greenwich.
          */
-        const parts = typed.split('-').map(Number);
+        const match = /^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2}))?$/.exec(typed.trim());
 
-        if (parts.length !== 3 || parts.some((part) => !Number.isFinite(part))) {
+        if (!match) {
             return { ok: false, value: null };
         }
 
-        const value = new Date(parts[0], parts[1] - 1, parts[2]);
+        const [year, month, day] = [Number(match[1]), Number(match[2]), Number(match[3])];
+        const value =
+            kind === 'datetime' && match[4] !== undefined
+                ? new Date(year, month - 1, day, Number(match[4]), Number(match[5]))
+                : new Date(year, month - 1, day, 12, 0, 0, 0);
 
         return Number.isNaN(value.getTime()) ? { ok: false, value: null } : { ok: true, value };
     }
 
     return { ok: false, value: null };
+}
+
+/**
+ * The instant a stored date value denotes, or `null`.
+ *
+ * `record.getValue` on a date column returns an ISO **string**, not a `Date`
+ * — measured 2026-09-11: `"2026-08-31T00:00:00.000Z"` for a DateOnly column
+ * showing 8/31/2026, `"2026-09-01T04:30:00.000Z"` for a DateAndTime column
+ * showing 8/31/2026 11:30 PM. A `Date` is accepted too, because the optimistic
+ * override holds one.
+ */
+function toDate(raw: unknown): Date | null {
+    if (raw === null || raw === undefined || raw === '') {
+        return null;
+    }
+
+    const date = raw instanceof Date ? raw : new Date(String(raw));
+
+    return Number.isNaN(date.getTime()) ? null : date;
+}
+
+/**
+ * Whether a stored value is a whole day expressed as UTC midnight.
+ *
+ * A DateOnly-behaviour column hands a control its day as `T00:00:00.000Z` —
+ * the `pcf-date-range-picker` finding, measured again here on `cll_startdate`
+ * — so reading its *local* components is the previous day for every browser
+ * west of Greenwich, and the editor opened a day early through 0.3.x. A value
+ * exactly at UTC midnight is read by its UTC components; anything else is an
+ * instant and is read locally. A UserLocal value that happens to fall on UTC
+ * midnight is misread by this, which is the ambiguity `Column` cannot resolve
+ * — the behaviour lives on the attribute metadata, not on the column.
+ */
+function isUtcMidnight(raw: unknown): boolean {
+    // Strings only: a `Date` here is the control's own override, built from
+    // local components at midday, and is read the way it was built.
+    return typeof raw === 'string' && /T00:00:00(\.000)?Z$/.test(raw);
+}
+
+function pad(part: number): string {
+    return `${part}`.padStart(2, '0');
 }
 
 /**
@@ -762,26 +1014,34 @@ export function cellKey(recordId: string, columnName: string): string {
     return `${recordId}|${columnName}`;
 }
 
-/** The value an editor should open with, formatted for its input type. */
+/**
+ * The value an editor should open with, formatted for its input type.
+ *
+ * A date is read by the components the platform meant: UTC ones for a value
+ * at UTC midnight, which is how a DateOnly column hands over its day, and
+ * local ones for an instant — see `isUtcMidnight`. `toISOString()` for either
+ * would show the previous day west of Greenwich, and the editor would
+ * round-trip a value nobody typed.
+ */
 export function editorValue(kind: EditKind, raw: unknown): string {
     if (raw === null || raw === undefined) {
         return '';
     }
 
-    if (kind === 'date') {
-        const date = raw instanceof Date ? raw : new Date(String(raw));
+    if (kind === 'date' || kind === 'datetime') {
+        const date = toDate(raw);
 
-        if (Number.isNaN(date.getTime())) {
+        if (!date) {
             return '';
         }
 
-        // Local components again, for the same reason `coerceValue` builds
-        // them: `toISOString()` here would show the previous day west of
-        // Greenwich, and the editor would round-trip a value nobody typed.
-        const month = `${date.getMonth() + 1}`.padStart(2, '0');
-        const day = `${date.getDate()}`.padStart(2, '0');
+        const day = isUtcMidnight(raw)
+            ? `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())}`
+            : `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 
-        return `${date.getFullYear()}-${month}-${day}`;
+        // `<input type="datetime-local">` takes `YYYY-MM-DDTHH:mm`, in the
+        // browser's zone — which is the one the reader is typing in.
+        return kind === 'datetime' ? `${day}T${pad(date.getHours())}:${pad(date.getMinutes())}` : day;
     }
 
     if (kind === 'boolean') {
@@ -789,4 +1049,60 @@ export function editorValue(kind: EditKind, raw: unknown): string {
     }
 
     return String(raw);
+}
+
+/**
+ * Whether the value the platform now reports is the one the control wrote —
+ * the test that retires an optimistic override once the refresh lands.
+ *
+ * **Compared per kind, and 0.3.x compared as strings.** `String(aDate)` is
+ * `"Tue Sep 29 2026 …"` and `record.getValue` on a date column is
+ * `"2026-09-29T00:00:00.000Z"`, so the two were never equal, the override was
+ * never retired, and an edited date cell read `2026-09-29` for the life of
+ * the page while every other cell showed the platform's format — observed on
+ * the Accounts subgrid, 2026-09-11. A date is compared by the day, a
+ * date-and-time by the minute, both through the same reader the editor uses;
+ * everything else is still the rendered-string comparison, which is the
+ * question that matters for a text, a number or a choice.
+ */
+export function sameValue(kind: EditKind, stored: unknown, written: unknown): boolean {
+    if (kind === 'date' || kind === 'datetime') {
+        return editorValue(kind, stored) === editorValue(kind, written);
+    }
+
+    return String(stored ?? '') === String(written ?? '');
+}
+
+/**
+ * What a cell shows while its write is in flight, or until the refresh lands.
+ *
+ * `editorValue` is the right text for text and numbers and wrong for two
+ * kinds. A choice's pending value is the integer the platform was sent, and
+ * a cell reading `4` for the second between `save()` and `refresh()` is a
+ * cell that flickered a number where a word belongs — the option list the
+ * editor was built from turns it back into the label. A date's pending value
+ * is a `Date`, and `2026-09-29` beside a column of `9/1/2026` reads as a
+ * different format rather than as a moment in flight — `formatDate` is the
+ * platform's own formatter, handed down from `context.formatting`, and is
+ * used where the host has one.
+ */
+export function pendingText(
+    kind: EditKind,
+    value: unknown,
+    options: Option[] | undefined,
+    formatDate: ((value: Date, includeTime: boolean) => string) | null,
+): string {
+    if (kind === 'choice' && value !== null && value !== undefined) {
+        const match = (options ?? []).find((option) => option.value === Number(value));
+
+        return match ? match.label : String(value);
+    }
+
+    if ((kind === 'date' || kind === 'datetime') && formatDate) {
+        const date = toDate(value);
+
+        return date ? formatDate(date, kind === 'datetime') : '';
+    }
+
+    return editorValue(kind, value);
 }

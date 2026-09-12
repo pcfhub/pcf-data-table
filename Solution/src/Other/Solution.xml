@@ -12,14 +12,14 @@
       <LocalizedName description="Data Table" languagecode="1033" />
     </LocalizedNames>
     <Descriptions>
-      <Description description="A sortable, pageable table over any Dataverse view, with row selection." languagecode="1033" />
+      <Description description="A sortable, filterable table over any Dataverse view, with inline editing, pinned columns and a New button." languagecode="1033" />
     </Descriptions>
     <!--
       Kept in step with ControlManifest.Input.xml and with the git tag. The
       release workflow checks the tag against the control manifest; this is the
       third copy, and the one Dataverse shows in the solutions list.
     -->
-    <Version>0.3.4</Version>
+    <Version>0.4.1</Version>
     <!-- Managed(1)/Unmanaged(0)/Both(2). Both, to match the cdsproj. -->
     <Managed>2</Managed>
     <Publisher>

@@ -168,6 +168,11 @@ const INPUTS = {
      */
     enableEditing: false,
     editableColumns: null,
+    /*
+     * Off, the manifest default, for the reason `enableEditing` is: a control
+     * nobody configured must not offer to create rows.
+     */
+    enableCreate: false,
 };
 
 /**
@@ -276,7 +281,10 @@ check(
  */
 const columns = () => (view.props().columns || []).map((column) => column.displayName);
 
-check('shows only the columns the maker left visible', columns().length === 6, columns().join(' | '));
+/** The fixture's visible columns — every count below derives from this rather than restating it. */
+const VISIBLE = fixture.columns.filter((column) => !column.isHidden).length;
+
+check('shows only the columns the maker left visible', columns().length === VISIBLE, columns().join(' | '));
 
 check(
     'in the order the view designer set, not the order the array arrived in',
@@ -502,7 +510,7 @@ check(
  */
 check(
     'the header row is the columns the reader can see, in their order',
-    csvLines[0] === '﻿Account name,Account number,Primary contact,Status,Annual revenue,Modified on',
+    csvLines[0] === '﻿Account name,Account number,Primary contact,Status,Annual revenue,Modified on,Industry,Last contacted',
     JSON.stringify(csvLines[0]),
 );
 
@@ -727,8 +735,8 @@ const minWidth = (narrowMarkup.match(/min-width:\s*(\d+)px/) || [])[1];
 
 check(
     'the table carries a minimum width, so a narrow host scrolls rather than squeezing',
-    // Six visible columns at 100 plus the 40px select column.
-    minWidth === '640',
+    // The visible columns at 100 each, plus the 40px select column.
+    minWidth === String(VISIBLE * 100 + 40),
     `min-width: ${minWidth || 'absent'}px`,
 );
 
@@ -741,7 +749,7 @@ const noSelectMin = (renderDeep(narrowNoSelect.driven.element).match(/min-width:
 
 check(
     'and drops the select column from that width when there is no select column',
-    noSelectMin === '600',
+    noSelectMin === String(VISIBLE * 100),
     `min-width: ${noSelectMin || 'absent'}px without checkboxes`,
 );
 
@@ -860,8 +868,8 @@ const pinnedMin = (pinnedOneMarkup.match(/min-width:\s*(\d+)px/) || [])[1];
 
 check(
     'and the minimum width counts the pinned pixels rather than the budget',
-    // 200 pinned + 40 select + five loose columns at the 100px budget.
-    pinnedMin === '740',
+    // 200 pinned + 40 select + the loose columns at the 100px budget.
+    pinnedMin === String(200 + 40 + (VISIBLE - 1) * 100),
     `min-width: ${pinnedMin || 'absent'}px`,
 );
 
@@ -911,15 +919,15 @@ check(
  * The end of the run is trimmed before the start, because the start columns are
  * the ones that identify the row you have scrolled away from.
  */
-const pinnedAll = bind({ inputs: { pinnedStart: 6, pinnedEnd: 2 } });
+const pinnedAll = bind({ inputs: { pinnedStart: VISIBLE, pinnedEnd: 2 } });
 const pinnedAllMarkup = renderDeep(pinnedAll.driven.element);
 
 check(
     'at least one column is always left to scroll',
-    // Five of the six data columns, plus the select column riding along.
-    pinCount(pinnedAllMarkup, 'start') === (5 + 1) * 7
+    // All but one of the data columns, plus the select column riding along.
+    pinCount(pinnedAllMarkup, 'start') === (VISIBLE - 1 + 1) * 7
         && pinCount(pinnedAllMarkup, 'end') === 0,
-    `${pinCount(pinnedAllMarkup, 'start') / 7 - 1} of 6 data columns pinned, end trimmed first`,
+    `${pinCount(pinnedAllMarkup, 'start') / 7 - 1} of ${VISIBLE} data columns pinned, end trimmed first`,
 );
 
 /*
@@ -1115,14 +1123,18 @@ check(
 
 /*
  * A column whose values the server cannot be asked about gets no box at all.
- * The fixture's date and lookup columns are there for this: a text input over
- * a date builds a comparison against the wrong thing, and a choice or lookup
- * filters on an integer or a GUID that `Column` does not carry.
+ *
+ * Three text boxes, the number box and — since 0.4.0 — the two date boxes. The two
+ * choice columns are not among them **here**, and that is a limit of the
+ * renderer rather than of the control: `renderToStaticMarkup` runs no effects,
+ * so the metadata the choice box is built from never arrives and the column
+ * renders its read-only fallback. The positive case is asserted in
+ * `choiceChecks` below on the props, and photographed by `dev/preview.html`.
  */
 check(
     'only the columns that can be filtered get a box',
-    (emptyMarkup.match(/class="DataTable-filter"/g) || []).length === 4,
-    `${(emptyMarkup.match(/class="DataTable-filter"/g) || []).length} inputs across 6 visible columns`,
+    (emptyMarkup.match(/class="DataTable-filter"/g) || []).length === 6,
+    `${(emptyMarkup.match(/class="DataTable-filter"/g) || []).length} inputs across ${VISIBLE} visible columns`,
 );
 
 /*
@@ -1175,6 +1187,193 @@ check(
     'and offers no filter row rather than boxes that do nothing',
     unfilterable !== null && unfilterable.props().enableFiltering === false,
     unfilterable === null ? 'did not render' : `enableFiltering ${unfilterable.props().enableFiltering}`,
+);
+
+/* ------------------------------------------------------------ date filter */
+
+/**
+ * The rig first. `holds()` used to pass every operator it did not model, so
+ * a control sending `On` (25) narrowed nothing here and read as working to
+ * any assertion that counted rows. This is the check that the case exists:
+ * remove it from the switch and one row becomes twelve.
+ */
+const rigDates = host.createHost(fixture, { pageSize: 50, inputs: INPUTS });
+
+rigDates.dataset.filtering.setFilter({
+    filterOperator: host.AND,
+    conditions: [{ attributeName: 'modifiedon', conditionOperator: host.OPERATOR.On, value: '2026-03-01' }],
+});
+rigDates.dataset.refresh();
+
+check(
+    'the rig models On by calendar day rather than passing it through',
+    rigDates.dataset.sortedRecordIds.length === 1 && rigDates.dataset.sortedRecordIds[0] === 'a09',
+    `${rigDates.dataset.sortedRecordIds.length} rows for On 2026-03-01`,
+);
+
+/*
+ * The condition, exactly. `value` is the day as typed and the operator is 25
+ * — not a `GreaterEqual` against a string, which is what a date column got
+ * from a control that treated it as text, and which the server compares as
+ * the wrong thing.
+ */
+const dated = bind({ pageSize: 50 });
+
+typeFilter(dated, 'modifiedon', '2026-03-01');
+const dateExpression = dated.handle.dataset.filtering.getFilter();
+
+check(
+    'a date box sends On with the day as typed',
+    JSON.stringify(dateExpression) === JSON.stringify({
+        filterOperator: 0,
+        conditions: [{ attributeName: 'modifiedon', conditionOperator: 25, value: '2026-03-01' }],
+    })
+        && dated.props().pageIds.length === 1,
+    JSON.stringify(dateExpression),
+);
+
+/*
+ * The toggle re-asks straight away — no debounce, on the `clearFilterValue`
+ * argument that a click is a finished decision — so `settle()` alone is what
+ * proves it did not wait. From is 27 and Until is 26; the counts differ from
+ * each other and from On, so a swapped pair cannot pass.
+ */
+const beforeOp = dated.handle.state.refreshes;
+
+dated.props().onFilterOp('modifiedon', 'from');
+dated.settle();
+
+check(
+    'From sends OnOrAfter without waiting for the debounce',
+    dated.handle.dataset.filtering.getFilter().conditions[0].conditionOperator === 27
+        && dated.props().pageIds.length === 4
+        // `paging.reset()` is a fetch in its own right here, so "re-asked" is
+        // more than before rather than exactly one more.
+        && dated.handle.state.refreshes > beforeOp,
+    `operator ${dated.handle.dataset.filtering.getFilter().conditions[0].conditionOperator}, ${dated.props().pageIds.length} rows, ${dated.handle.state.refreshes - beforeOp} refreshes`,
+);
+
+dated.props().onFilterOp('modifiedon', 'until');
+dated.settle();
+
+check(
+    'and Until sends OnOrBefore',
+    dated.handle.dataset.filtering.getFilter().conditions[0].conditionOperator === 26
+        && dated.props().pageIds.length === 9,
+    `operator ${dated.handle.dataset.filtering.getFilter().conditions[0].conditionOperator}, ${dated.props().pageIds.length} rows`,
+);
+
+/*
+ * Clear filters empties the boxes and leaves the toggles. An operator is how
+ * the reader wants a column compared, not what they asked for; a Clear that
+ * flipped every From back to On would undo a preference to answer a query.
+ */
+dated.props().onClearFilters();
+dated.settle();
+
+check(
+    'clearing the filters keeps the operator the reader chose',
+    dated.props().pageIds.length === 12 && dated.props().filterOps.modifiedon === 'until',
+    `${dated.props().pageIds.length} rows, operator ${dated.props().filterOps.modifiedon}`,
+);
+
+/*
+ * A toggle over an empty box changes no expression, so it must cost no round
+ * trip — and it still has to be remembered, or the next day typed would be
+ * compared the old way.
+ */
+const untoggled = bind({ pageSize: 50 });
+const beforeToggle = untoggled.handle.state.refreshes;
+
+untoggled.props().onFilterOp('modifiedon', 'from');
+untoggled.settle();
+
+check(
+    'toggling the operator with an empty box asks the platform for nothing',
+    untoggled.handle.state.refreshes === beforeToggle && untoggled.props().filterOps.modifiedon === 'from',
+    `${untoggled.handle.state.refreshes - beforeToggle} refreshes, operator ${untoggled.props().filterOps.modifiedon}`,
+);
+
+/*
+ * A date input can hold `2026-03` mid-edit. That is not a day, and a condition
+ * built from it is the half-typed `>` case in another costume.
+ */
+typeFilter(untoggled, 'modifiedon', '2026-03');
+
+check(
+    'a half-typed day filters nothing rather than filtering wrongly',
+    untoggled.props().pageIds.length === 12
+        && untoggled.handle.dataset.filtering.getFilter() === undefined,
+    `${untoggled.props().pageIds.length} rows`,
+);
+
+/*
+ * The box is a date input with the toggle beside it, and the toggle shows the
+ * operator in force — From here, because this control toggled it above.
+ * Asserted on markup because both are the component's decision.
+ */
+const dateMarkup = renderDeep(untoggled.driven.element);
+
+check(
+    'a date column gets a date box and a toggle that names the operator',
+    dateMarkup.includes('type="date"')
+        && (dateMarkup.match(/class="DataTable-filterOp"/g) || []).length === 2
+        && dateMarkup.includes('>resx:DataTable_DateFrom<'),
+    `${(dateMarkup.match(/class="DataTable-filterOp"/g) || []).length} toggles (one per date column); ${dateMarkup.includes('type="date"') ? 'date input present' : 'NO date input'}`,
+);
+
+/* ---------------------------------------------------------- choice filter */
+
+/*
+ * `Equal` on the integer, sent as a string — what `ConditionExpression.value`
+ * is typed as, and what the server accepted alongside the number. Three
+ * fixture rows hold `3`; a control that fell through to `Like '%3%'` would
+ * match the same three here, so the assertion reads the operator too.
+ */
+const chosen = bind({ pageSize: 50 });
+
+typeFilter(chosen, 'industrycode', '3');
+const choiceExpression = chosen.handle.dataset.filtering.getFilter();
+
+check(
+    'a choice sends Equal on the integer, as a string',
+    JSON.stringify(choiceExpression) === JSON.stringify({
+        filterOperator: 0,
+        conditions: [{ attributeName: 'industrycode', conditionOperator: 0, value: '3' }],
+    })
+        && chosen.props().pageIds.join(',') === 'a02,a05,a11',
+    `${JSON.stringify(choiceExpression)} → ${chosen.props().pageIds.join(',')}`,
+);
+
+typeFilter(chosen, 'industrycode', 'abc');
+
+check(
+    'and anything that is not an integer sends nothing',
+    chosen.props().pageIds.length === 12,
+    `${chosen.props().pageIds.length} rows`,
+);
+
+/*
+ * Without metadata there is no option list to build the box from, and the
+ * column stays exactly what it was in 0.3.4: unfilterable, with the dash that
+ * says so. `loadOptions` is the fact the component reads, so it is asserted
+ * on the prop; the dash is asserted on markup.
+ */
+const noUtils = bind({ quirks: { utilsAbsent: true } });
+
+check(
+    'a host without utils offers no choice box and no way to ask for one',
+    noUtils.props().loadOptions === null
+        && (renderDeep(noUtils.driven.element).match(/class="DataTable-filterNone"/g) || []).length === 2,
+    `loadOptions ${noUtils.props().loadOptions === null ? 'null' : 'present'}`,
+);
+
+const canvasUtils = bind({ host: 'canvas', inputs: { enableCreate: true } });
+
+check(
+    'and canvas is such a host, whatever the manifest declares',
+    canvasUtils.props().loadOptions === null && canvasUtils.props().canCreate === false,
+    `loadOptions ${canvasUtils.props().loadOptions === null ? 'null' : 'present'}, canCreate ${canvasUtils.props().canCreate}`,
 );
 
 /* --------------------------------------------------------------- selection */
@@ -1474,10 +1673,250 @@ async function editingChecks() {
     );
 }
 
-editingChecks().then(report, (error) => {
-    check('the editing assertions ran at all', false, String((error && error.stack) || error));
-    report();
-});
+/* ----------------------------------------------------------- choice cells */
+
+/*
+ * What the rig can say about the choice editor is the same boundary as for
+ * editing above: the callbacks the class hands down, and what they do to the
+ * platform. The `<select>` itself mounts in an effect and is photographed by
+ * `dev/preview.html`.
+ */
+async function choiceChecks() {
+    const on = bind({ inputs: { enableEditing: true } });
+    const rowId = on.props().pageIds[0];
+
+    check(
+        'a host with utils hands the component a way to ask for options',
+        typeof on.props().loadOptions === 'function',
+        `loadOptions is ${typeof on.props().loadOptions}`,
+    );
+
+    /*
+     * **The map shape, which is what the platform actually carries.**
+     * `industrycode`'s fixture node has its options only at `OptionSet`, as a
+     * map keyed by value with no `Options` array — the measured shape, and
+     * not the one `pcf-kanban-board` documented. A parser written to the
+     * documentation reads `[]` here and the column silently loses its editor.
+     */
+    const industry = await on.props().loadOptions('industrycode');
+
+    check(
+        'options are read from the value-keyed map the platform carries',
+        JSON.stringify(industry) === JSON.stringify([
+            { value: 1, label: 'Retail' },
+            { value: 2, label: 'Manufacturing' },
+            { value: 3, label: 'Services' },
+            { value: 4, label: 'Technology' },
+        ]),
+        JSON.stringify(industry),
+    );
+
+    /*
+     * And the descriptor shape, in the maker's order. `statecode`'s node has
+     * them only at `attributeDescriptor.OptionSet`; a parser that read the
+     * map alone gets nothing here.
+     */
+    const state = await on.props().loadOptions('statecode');
+
+    check(
+        'and from the descriptor array where that is the one present',
+        JSON.stringify(state) === JSON.stringify([
+            { value: 0, label: 'Active' },
+            { value: 1, label: 'Inactive' },
+        ]),
+        JSON.stringify(state),
+    );
+
+    /*
+     * One fetch per column, narrowed to that column. `getEntityMetadata` with
+     * no attribute list is the whole table's metadata — a call a control with
+     * two choice columns must not make twice, and must not make wide.
+     */
+    await on.props().loadOptions('industrycode');
+
+    const metadataCalls = on.calls().filter((call) => call.startsWith('utils.getEntityMetadata'));
+
+    check(
+        'metadata is asked for once per column, and only for that column',
+        metadataCalls.length === 2
+            && metadataCalls[0] === 'utils.getEntityMetadata({"entity":"account","attributes":["industrycode"]})',
+        metadataCalls.join(' ') || 'never asked',
+    );
+
+    /*
+     * A refused metadata call reaches the component as a rejection, which it
+     * records as "no options" — the read-only fallback. The class must not
+     * swallow it into an empty list, or the component cannot tell "no
+     * options" from "could not ask", and neither can the console.
+     */
+    const refused = bind({ inputs: { enableEditing: true }, quirks: { metadataRejects: true } });
+    let metadataError = null;
+
+    await refused.props().loadOptions('industrycode').catch((error) => {
+        metadataError = error;
+    });
+
+    check(
+        'a refused metadata call rejects rather than resolving empty',
+        metadataError !== null,
+        metadataError ? String(metadataError.message) : 'resolved',
+    );
+
+    /*
+     * The write is the integer. `getValue` reads a choice back as a string —
+     * the rig does what the platform does — so the stored value is read
+     * through the rig's own back door to prove the control did not write
+     * `"4"`. Measured on the form: `setValue(column, 4)` persisted as 4.
+     */
+    await on.props().onCommitEdit(rowId, 'industrycode', 4);
+    await flush();
+    on.handle.reread();
+    on.settle();
+
+    check(
+        'a choice commit writes the integer and the re-read carries it',
+        on.handle.stored(rowId, 'industrycode') === 4
+            && on.props().dataset.records[rowId].getValue('industrycode') === '4'
+            && on.props().dataset.records[rowId].getFormattedValue('industrycode') === 'Technology',
+        `stored ${JSON.stringify(on.handle.stored(rowId, 'industrycode'))}, getValue ${JSON.stringify(on.props().dataset.records[rowId].getValue('industrycode'))}`,
+    );
+
+    await on.props().onCommitEdit(rowId, 'industrycode', null);
+    await flush();
+    on.handle.reread();
+    on.settle();
+
+    check(
+        'and null clears it',
+        on.handle.stored(rowId, 'industrycode') === null
+            && on.props().dataset.records[rowId].getFormattedValue('industrycode') === '',
+        `stored ${JSON.stringify(on.handle.stored(rowId, 'industrycode'))}`,
+    );
+
+    /*
+     * `statecode` is `OptionSet` too, and the platform refuses it. The type
+     * string cannot tell the two apart; `isEditable` can, and the rig's
+     * default `readOnlyColumns` models the measured answer.
+     */
+    const stateAnswer = await on.props().canEdit(rowId, 'statecode');
+    const industryAnswer = await on.props().canEdit(rowId, 'industrycode');
+
+    check(
+        'state stays read-only on the platform\'s answer, not on its type',
+        stateAnswer === false && industryAnswer === true,
+        `statecode=${stateAnswer}, industrycode=${industryAnswer}`,
+    );
+}
+
+/* ------------------------------------------------------------ quick create */
+
+async function createChecks() {
+    /*
+     * Off by default, and off on a host without `openForm` whatever the maker
+     * set — the method, not the bag: `navigation` is present on canvas and
+     * `openForm` is not.
+     */
+    check(
+        'the New button is off until a maker turns it on',
+        view.props().canCreate === false && !markup.includes('DataTable-create'),
+        `canCreate ${view.props().canCreate}`,
+    );
+
+    const noForm = bind({ inputs: { enableCreate: true }, quirks: { openFormAbsent: true } });
+
+    check(
+        'and off on a host without openForm, however it is configured',
+        noForm.props().canCreate === false
+            && !renderDeep(noForm.driven.element).includes('DataTable-create'),
+        `canCreate ${noForm.props().canCreate}`,
+    );
+
+    /*
+     * The saved case. `openForm` resolves the braced upper-case GUID the
+     * platform hands back; the output carries it unbraced and lower-case like
+     * the other three. `createFromEntity` is the parent from `contextInfo`,
+     * and `refresh()` is what puts the row on screen.
+     */
+    const parent = { entityTypeName: 'account', entityId: '85f67958-7637-f111-88b5-7ced8d3b545a' };
+    const saved = bind({
+        inputs: { enableCreate: true },
+        contextInfo: parent,
+        openFormReturns: {
+            savedEntityReference: [
+                { id: '{436E09A8-1111-4222-8333-444444444444}', entityType: 'account', name: 'New one' },
+            ],
+        },
+    });
+    const savedMarkup = renderDeep(saved.driven.element);
+
+    check(
+        'on, the button sits first among the pager tools',
+        saved.props().canCreate === true
+            && savedMarkup.indexOf('DataTable-create') > savedMarkup.indexOf('DataTable-pagerTools')
+            && savedMarkup.indexOf('DataTable-create') < savedMarkup.indexOf('DataTable-jump')
+            && savedMarkup.includes('resx:DataTable_New'),
+        `tools at ${savedMarkup.indexOf('DataTable-pagerTools')}, create at ${savedMarkup.indexOf('DataTable-create')}, jump at ${savedMarkup.indexOf('DataTable-jump')}`,
+    );
+
+    const notificationsBefore = saved.notifications();
+    const refreshesBefore = saved.handle.state.refreshes;
+    const createdId = await saved.props().onCreate();
+    const openCall = saved.calls().find((call) => call.startsWith('navigation.openForm'));
+
+    check(
+        'New opens the quick create form seeded with the parent record',
+        openCall === 'navigation.openForm({"entityName":"account","useQuickCreateForm":true,"createFromEntity":{"entityType":"account","id":"85f67958-7637-f111-88b5-7ced8d3b545a"}})',
+        openCall || 'openForm never called',
+    );
+
+    check(
+        'a saved row is reported unbraced and lower-case, and the view re-read',
+        createdId === '436e09a8-1111-4222-8333-444444444444'
+            && saved.outputs().createdRecordId === createdId
+            && saved.handle.state.refreshes === refreshesBefore + 1
+            && saved.notifications() === notificationsBefore + 1,
+        `resolved ${JSON.stringify(createdId)}, output ${JSON.stringify(saved.outputs().createdRecordId)}, ${saved.handle.state.refreshes - refreshesBefore} refreshes, ${saved.notifications() - notificationsBefore} notifications`,
+    );
+
+    /*
+     * The dismissed case — `{ savedEntityReference: null }`, measured, and the
+     * rig's default because it is the branch a control forgets. Nothing to
+     * refresh, nothing to report.
+     */
+    const dismissed = bind({ inputs: { enableCreate: true } });
+    const dismissedBefore = dismissed.handle.state.refreshes;
+    const dismissedId = await dismissed.props().onCreate();
+
+    check(
+        'a dismissed form resolves null, refreshes nothing and reports nothing',
+        dismissedId === null
+            && dismissed.outputs().createdRecordId === ''
+            && dismissed.handle.state.refreshes === dismissedBefore
+            && dismissed.notifications() === 0,
+        `resolved ${JSON.stringify(dismissedId)}, output ${JSON.stringify(dismissed.outputs().createdRecordId)}`,
+    );
+
+    /*
+     * A main grid has no parent. `createFromEntity` is left out rather than
+     * sent with undefined halves, which `openForm` would take as a reference
+     * to nothing.
+     */
+    const mainGridCall = dismissed.calls().find((call) => call.startsWith('navigation.openForm'));
+
+    check(
+        'without a parent record, createFromEntity is left out',
+        mainGridCall === 'navigation.openForm({"entityName":"account","useQuickCreateForm":true})',
+        mainGridCall || 'openForm never called',
+    );
+}
+
+editingChecks()
+    .then(choiceChecks)
+    .then(createChecks)
+    .then(report, (error) => {
+        check('the asynchronous assertions ran at all', false, String((error && error.stack) || error));
+        report();
+    });
 
 
 /* -------------------------------------------------------------- formatting */

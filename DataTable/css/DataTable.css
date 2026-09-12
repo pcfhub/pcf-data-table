@@ -253,6 +253,8 @@
 .DataTable-sort:focus-visible,
 .DataTable-open:focus-visible,
 .DataTable-filter:focus-visible,
+.DataTable-filterOp:focus-visible,
+.DataTable-create:focus-visible,
 .DataTable-filterClear:focus-visible,
 .DataTable-clearFilters:focus-visible,
 .DataTable-jump input:focus-visible,
@@ -369,6 +371,105 @@
     flex: 0 0 auto;
     width: 12px;
     height: 12px;
+}
+
+/*
+ * The date box: a toggle and an input side by side, in one filter cell.
+ *
+ * The toggle leads, so the cell reads as a sentence — "From 2026-03-01" — and
+ * so it never collides with the picker icon Chromium draws at the trailing
+ * edge of a date input. The clear cross still sits at the inline end of the
+ * box, inside the input, over the picker icon: a cleared filter is the rarer
+ * gesture and the icon reappears the moment the cross is gone.
+ */
+.DataTable-filterDate {
+    display: flex;
+    align-items: stretch;
+    gap: 2px;
+    /* A container, so the chip and the picker icon below can answer to the
+       cell's width rather than the viewport's — a column is what is narrow. */
+    container-type: inline-size;
+}
+
+.DataTable-filterDate .DataTable-filter {
+    /* `min-width: 0` so the flex item can shrink below a date input's intrinsic
+       width, which is wider than most of the columns it sits under. A point
+       smaller than the text boxes, because `mm/dd/yyyy` plus the picker icon
+       is the widest thing the filter row holds and the column budget is 100px. */
+    flex: 1 1 auto;
+    min-width: 0;
+    width: auto;
+    font-size: var(--fontSizeBase100, 10px);
+    padding-inline: var(--spacingHorizontalXS, 4px) 20px;
+}
+
+.DataTable-filterOpSign {
+    display: none;
+}
+
+/*
+ * **Below about 130px the sentence does not fit, and the day matters more
+ * than the word.** The chip collapses to its sign — =, ≥, ≤ — and the picker
+ * icon goes, which costs a mouse user the calendar (the segments still take
+ * typing, and Space still opens it from the keyboard) and buys the year back
+ * on a phone. Measured in a 375px preview: without this the box showed the
+ * icon and nothing else, a filter in force with no visible value.
+ */
+@container (max-width: 130px) {
+    .DataTable-filterOpWord {
+        display: none;
+    }
+
+    .DataTable-filterOpSign {
+        display: inline;
+    }
+
+    .DataTable-filterDate .DataTable-filter {
+        padding-inline-end: 16px;
+    }
+
+    .DataTable-filterDate .DataTable-filter::-webkit-calendar-picker-indicator {
+        display: none;
+    }
+}
+
+/*
+ * The On / From / Until chip. A button, in the tab order and named, drawn as
+ * a small label rather than a pager-style button: it is a modifier on the box
+ * beside it, not an action of its own.
+ */
+.DataTable-filterOp {
+    flex: 0 0 auto;
+    padding: 0 var(--spacingHorizontalXS, 4px);
+    font-family: inherit;
+    font-size: var(--fontSizeBase100, 10px);
+    font-weight: var(--fontWeightSemibold, 600);
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    color: var(--colorNeutralForeground2, #424242);
+    background: var(--colorNeutralBackground3, #f5f5f5);
+    border: 1px solid var(--colorNeutralStroke2, #e0e0e0);
+    border-radius: var(--borderRadiusMedium, 4px);
+    cursor: pointer;
+}
+
+.DataTable-filterOp:hover:not(:disabled) {
+    color: var(--colorNeutralForeground1, #242424);
+    background: var(--colorNeutralBackground3Hover, #ebebeb);
+}
+
+.DataTable-filterOp:disabled {
+    color: var(--colorNeutralForegroundDisabled, #bdbdbd);
+    cursor: default;
+}
+
+/*
+ * The choice box is a native `<select>` wearing the filter box's clothes. No
+ * trailing padding: it has no clear cross, because "Any" is the clear.
+ */
+.DataTable-filterSelect {
+    padding-inline: var(--spacingHorizontalS, 8px) var(--spacingHorizontalS, 8px);
+    cursor: pointer;
 }
 
 /*
@@ -542,6 +643,30 @@
 .DataTable-pager .DataTable-export:hover:not(:disabled) {
     color: var(--colorNeutralForeground1, #242424);
     background-color: var(--colorNeutralBackground1Hover, #f5f5f5);
+}
+
+/*
+ * The New button, first among the tools. Drawn as the export button is — a
+ * quiet chip beside the pager rather than a primary button above the table,
+ * because a model-driven subgrid already has a command bar up there and two
+ * buttons reading New that behave differently is the confusion to avoid.
+ */
+.DataTable-pager .DataTable-create {
+    padding: var(--spacingVerticalXS, 4px) var(--spacingHorizontalS, 8px);
+    color: var(--colorBrandForeground1, #0f6cbd);
+    background-color: transparent;
+    border-color: transparent;
+}
+
+.DataTable-pager .DataTable-create:hover:not(:disabled) {
+    color: var(--colorBrandForeground2, #115ea3);
+    background-color: var(--colorNeutralBackground1Hover, #f5f5f5);
+}
+
+/* Named against the button that caused it, like a cell's save error. */
+.DataTable-createError {
+    font-size: var(--fontSizeBase200, 12px);
+    color: var(--colorPaletteRedForeground1, #bc2f32);
 }
 
 /*

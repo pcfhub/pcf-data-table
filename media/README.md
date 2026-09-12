@@ -28,3 +28,20 @@ A video without a poster renders as a blank box until it loads, so always ship
 one.
 
 `pcfhub.json` also names a `logo` and up to twelve `screenshots` from here.
+
+## What is here, and how each was taken
+
+Every screenshot is captured from `dev/preview.html` served by `npm run
+preview`, in headless Chrome, at the width named. The query parameters are the
+whole recipe, so a picture can be retaken after any change:
+
+| File | Width | Query |
+| --- | --- | --- |
+| `screenshot.png` | 960 | `?fixture=demo&export=1` |
+| `screenshot-pinned.png` | 640 | `?fixture=demo&pinStart=1&pinEnd=1&scroll=200` |
+| `screenshot-editing.png` | 960 | `?edit=1&open=industrycode` — the choice editor open on the first row |
+| `screenshot-filters.png` | 960 | `?date=2026-03-01&dateOp=from&create=1` — the date box with its chip, the choice dropdowns, and the New button |
+| `screenshot-narrow.png` | 320 | `?fixture=demo` |
+
+`screenshot-form.png` is the exception: a real Accounts subgrid on 0.1.x,
+kept because only a real form has a command bar.

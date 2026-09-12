@@ -121,7 +121,7 @@
     <value>Allow filtering</value>
   </data>
   <data name="EnableFiltering_Desc" xml:space="preserve">
-    <value>Show a filter box under each text and numeric column heading. Filtering is applied by the server, across every page.</value>
+    <value>Show a filter box under each column heading that can carry one: text, numbers, dates, and — in a model-driven app — choices. Filtering is applied by the server, across every page.</value>
   </data>
 
   <data name="EnableExport_Name" xml:space="preserve">
@@ -169,6 +169,18 @@
   <data name="EditedRecordId_Desc" xml:space="preserve">
     <value>The ID of the row most recently saved by an inline edit.</value>
   </data>
+  <data name="EnableCreate_Name" xml:space="preserve">
+    <value>Allow adding rows</value>
+  </data>
+  <data name="EnableCreate_Desc" xml:space="preserve">
+    <value>Show a New button that opens the table's quick create form. The table needs quick create enabled and a quick create form. Model-driven apps only.</value>
+  </data>
+  <data name="CreatedRecordId_Name" xml:space="preserve">
+    <value>Created record ID</value>
+  </data>
+  <data name="CreatedRecordId_Desc" xml:space="preserve">
+    <value>The ID of the row most recently added through the New button.</value>
+  </data>
 
   <data name="DataTable_EditCell" xml:space="preserve">
     <value>Edit {0}</value>
@@ -190,6 +202,24 @@
   </data>
   <data name="DataTable_NotANumber" xml:space="preserve">
     <value>That is not a number, so nothing was saved.</value>
+  </data>
+  <data name="DataTable_Yes" xml:space="preserve">
+    <value>Yes</value>
+  </data>
+  <data name="DataTable_No" xml:space="preserve">
+    <value>No</value>
+  </data>
+  <data name="DataTable_NoValue" xml:space="preserve">
+    <value>(none)</value>
+  </data>
+  <data name="DataTable_New" xml:space="preserve">
+    <value>New</value>
+  </data>
+  <data name="DataTable_NewHint" xml:space="preserve">
+    <value>Add a row using the quick create form.</value>
+  </data>
+  <data name="DataTable_CreateFailed" xml:space="preserve">
+    <value>The quick create form could not be opened.</value>
   </data>
 
   <data name="SelectedRecordIds_Name" xml:space="preserve">
@@ -263,7 +293,25 @@
     <value>e.g. &gt;1000</value>
   </data>
   <data name="DataTable_Unfilterable" xml:space="preserve">
-    <value>{0} cannot be filtered here. Dates, choices and lookups are filtered by the view.</value>
+    <value>{0} cannot be filtered here. Lookups are filtered by the view; a choice needs table metadata this host does not provide.</value>
+  </data>
+  <data name="DataTable_FilterDateHint" xml:space="preserve">
+    <value>Filter by {0}. Pick a day; the button beside it chooses on, from or until that day.</value>
+  </data>
+  <data name="DataTable_DateOn" xml:space="preserve">
+    <value>On</value>
+  </data>
+  <data name="DataTable_DateFrom" xml:space="preserve">
+    <value>From</value>
+  </data>
+  <data name="DataTable_DateUntil" xml:space="preserve">
+    <value>Until</value>
+  </data>
+  <data name="DataTable_DateOpHint" xml:space="preserve">
+    <value>Change how {0} is compared: on, from or until the chosen day</value>
+  </data>
+  <data name="DataTable_FilterAny" xml:space="preserve">
+    <value>Any</value>
   </data>
 
   <data name="DataTable_ClearFilter" xml:space="preserve">

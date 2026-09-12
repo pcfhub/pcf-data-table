@@ -7,7 +7,7 @@
   -->
   <control namespace="PCFHub"
            constructor="DataTable"
-           version="0.3.4"
+           version="0.4.1"
            display-name-key="DataTable_Name"
            description-key="DataTable_Desc"
            control-type="virtual">
@@ -112,12 +112,17 @@
 
     <!--
       Filtering is server-side, through `dataset.filtering`. That is a property
-      of the dataset rather than a capability, so it adds no `<feature-usage>`
-      and no install-time prompt.
+      of the dataset rather than a capability, so the row itself adds no
+      `<feature-usage>`.
 
-      Only text and numeric columns get an input. A date needs operators that
-      are not supported on both hosts, and a choice or a lookup filters on an
-      integer or a GUID that `Column` does not carry — see the note in
+      Text and numeric columns get a box; since 0.4.0 a date column gets a date
+      box with an On / From / Until toggle, and a Choice column gets a
+      dropdown of its options. The dropdown is the one part of the row that
+      reads entity metadata, so it is the one part that needs the `Utility`
+      feature declared at the bottom of this file — on a host without it the
+      column stays unfilterable, as it was. Lookups still get nothing: they
+      filter on a GUID that `Column` does not carry, and finding one from a
+      typed name is a query this control does not make. See the note in
       `components/resolve.ts`.
     -->
     <property name="enableFiltering"
@@ -194,16 +199,24 @@
       property that changes what a control *writes* is one a maker turns on
       having read what it does.
 
-      **This costs no `<uses-feature>`, and that is the whole reason it is built
-      this way.** The write goes through `record.setValue()` and `record.save()`
+      **The write costs no `<uses-feature>`, and that is the whole reason it is
+      built this way.** It goes through `record.setValue()` and `record.save()`
       on the dataset record itself — measured on a real subgrid, 2026-09-09,
-      value committed and survived a reload. The obvious alternative,
+      value committed and survived a reload; measured again 2026-09-11 for a
+      Choice column, integer in and integer read back. The obvious alternative,
       `webAPI.updateRecord`, needs `<uses-feature name="WebAPI" />`, which is an
       install-time permission prompt in every environment, and does nothing at
       all in a canvas app. `pcf-kanban-board` predates the finding and pays it.
 
-      Neither method is in `@types/powerapps-component-framework@1.3.18` —
-      `EntityRecord` there declares four methods and none of them writes — so
+      What 0.4.0 added a feature for is not the write but the *editor*: a
+      Choice cell needs its option list, `Column` does not carry one, and
+      `utils.getEntityMetadata` does. Hence `Utility`, declared at the bottom
+      of this file. A Lookup cell stays read-only for a reason that was
+      measured rather than assumed — `setValue` on one stages nothing on this
+      host, five shapes tried — and `docs/limitations.md` says so.
+
+      Neither record method is in `@types/powerapps-component-framework@1.3.18`
+      — `EntityRecord` there declares four methods and none of them writes — so
       both are feature-detected at runtime before anything is offered. See
       `index.ts`.
     -->
@@ -232,6 +245,36 @@
               of-type="SingleLine.Text"
               usage="input"
               required="false" />
+
+    <!--
+      A New button. Off by default, on the `enableEditing` precedent: a property
+      that makes the control *create* rows is one a maker turns on having read
+      what it does.
+
+      **It opens the table's quick create form, and that is the whole design.**
+      `DataSet.newRecord` is measured absent on model-driven (SPEC.md 0.3.0), so
+      an inline blank row could only reach the server through
+      `webAPI.createRecord` — a second feature, a payload that bypasses every
+      business rule and required-field check the form would apply, and a row
+      that cannot fill a Choice or a Lookup. `navigation.openForm` with
+      `useQuickCreateForm: true` is the platform's own create surface, honours
+      all of that, and `createFromEntity` from `mode.contextInfo` seeds the
+      parent so the row lands in the subgrid it was asked for from — measured
+      2026-09-11. Nothing here costs a `<uses-feature>`: `navigation` is a bag
+      no feature gates.
+
+      The table needs *Allow quick create* on and a quick create form; what
+      `openForm` does without one has not been measured, and SPEC.md lists it
+      under *Not verified*. Canvas has no `openForm`, so the button never
+      appears there.
+    -->
+    <property name="enableCreate"
+              display-name-key="EnableCreate_Name"
+              description-key="EnableCreate_Desc"
+              of-type="TwoOptions"
+              usage="input"
+              required="false"
+              default-value="false" />
 
     <!--
       Two outputs rather than one. "Which rows are ticked" and "which row was
@@ -268,6 +311,18 @@
               of-type="SingleLine.Text"
               usage="output" />
 
+    <!--
+      A fourth output, on the argument the third made: "which row was created"
+      is a different question from "which row was edited". Unbraced lower-case
+      like the other three — `openForm` resolves a braced upper-case GUID, and
+      the control normalises it rather than handing a form two spellings.
+    -->
+    <property name="createdRecordId"
+              display-name-key="CreatedRecordId_Name"
+              description-key="CreatedRecordId_Desc"
+              of-type="SingleLine.Text"
+              usage="output" />
+
     <resources>
       <code path="index.ts" order="1" />
       <css path="css/DataTable.css" order="1" />
@@ -277,12 +332,20 @@
     </resources>
 
     <!--
-      No feature-usage, deliberately.
-
-      openDatasetItem() is a method on the dataset itself, not on
-      context.navigation, and nothing here touches webAPI, utils or device.
-      Every uses-feature entry becomes an install-time permission prompt for the
-      maker, and this control has earned none.
+      The control's first declared feature, taken in 0.4.0 for entity metadata:
+      the option list a Choice column's editor and filter box are built from.
+      Every uses-feature entry is an install-time permission prompt for the
+      maker; 0.2.0 and 0.3.0 declined this one because it bought a single
+      filter box. It now buys an editor and two boxes. It was specified to buy
+      a Lookup editor through utils.lookupObjects as well, and the probe took
+      that back — the dialog works, the write does not — so the trade is
+      thinner than planned and still positive. required="false" so a host
+      without the surface leaves it absent rather than refusing to load. No
+      WebAPI: writes go through record.setValue()/save(), and
+      navigation.openForm is on a bag no feature gates. See SPEC.md 0.4.0.
     -->
+    <feature-usage>
+      <uses-feature name="Utility" required="false" />
+    </feature-usage>
   </control>
 </manifest>

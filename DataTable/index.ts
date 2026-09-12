@@ -5,10 +5,13 @@ import {
     ASCENDING,
     buildFilter,
     clampPage,
+    DateOp,
     editableColumnSet,
     lastPage,
     nextDirection,
+    Option,
     pageSizeChoices,
+    parseOptions,
     pinPlan,
     SelectionMode,
     toCsv,
@@ -36,7 +39,13 @@ import {
  * `pcf-kanban-board` already uses: that needs `<uses-feature name="WebAPI" />`,
  * an install-time permission prompt in every environment, and it does nothing
  * at all in a canvas app. This path needs neither. It is the reason this
- * control still declares no features.
+ * control declares `Utility` and not `WebAPI`: the one feature it takes buys
+ * the option list a Choice editor is built from, not the write.
+ *
+ * **It does not write a Lookup.** Measured 2026-09-11: `setValue` on a Lookup
+ * column accepted five value shapes and staged none of them — every `save()`
+ * refused with "Invalid snapshot", the stored value untouched. The editor for
+ * that column type was cut from 0.4.0 on that measurement; SPEC.md has it.
  */
 interface EditableRecord {
     /**
@@ -89,6 +98,74 @@ function editableRecord(record: unknown): EditableRecord | null {
         && typeof candidate.isEditable === 'function'
         ? candidate
         : null;
+}
+
+/**
+ * The one method of `context.utils` this control calls, or `null`.
+ *
+ * **Detected per method, not per bag** — the `pcf-row-commands` rule. `utils`
+ * is typed as always present and is absent on canvas whatever the manifest
+ * declares; `required="false"` on the feature means a model-driven host may
+ * leave it out too. Checking the bag and then calling the method passes on the
+ * host it was written on and throws on the next one.
+ */
+type MetadataReader = (entity: string, attributes: string[]) => Promise<unknown>;
+
+function metadataReader(context: ComponentFramework.Context<IInputs>): MetadataReader | null {
+    const utils = (context as { utils?: { getEntityMetadata?: unknown } }).utils;
+
+    return utils && typeof utils.getEntityMetadata === 'function'
+        ? (utils.getEntityMetadata as MetadataReader).bind(utils)
+        : null;
+}
+
+/**
+ * `navigation.openForm`, or `null` — the same rule. Typed as always present;
+ * absent on canvas and on the hub's demo harness.
+ */
+type FormOpener = (options: Record<string, unknown>) => Promise<unknown>;
+
+function formOpener(context: ComponentFramework.Context<IInputs>): FormOpener | null {
+    const navigation = (context as { navigation?: { openForm?: unknown } }).navigation;
+
+    return navigation && typeof navigation.openForm === 'function'
+        ? (navigation.openForm as FormOpener).bind(navigation)
+        : null;
+}
+
+/**
+ * `mode.contextInfo` — untyped, and measured 2026-09-11 on a form subgrid as
+ * `{ entityTypeName: 'account', entityId: '85f6…', entityRecordName: '…' }`, the
+ * parent record. A main grid has no parent and is expected to carry nothing
+ * here, so both fields are checked and the result is optional.
+ */
+function parentReference(
+    context: ComponentFramework.Context<IInputs>,
+): { entityType: string; id: string } | null {
+    const info = (context.mode as { contextInfo?: { entityTypeName?: unknown; entityId?: unknown } })
+        .contextInfo;
+
+    return info && typeof info.entityTypeName === 'string' && typeof info.entityId === 'string'
+        ? { entityType: info.entityTypeName, id: info.entityId }
+        : null;
+}
+
+/**
+ * A GUID as the other three outputs spell it: unbraced, lower-case.
+ *
+ * `openForm` resolves `{ id: "{436E09A8-…}" }` and `record.getValue` on a
+ * lookup returns `a1e84297-…` — measured on the same day, on the same host —
+ * so a form that compared `createdRecordId` with `openedRecordId` would never
+ * find a match without this.
+ */
+function bareGuid(raw: unknown): string | null {
+    if (typeof raw !== 'string') {
+        return null;
+    }
+
+    const trimmed = raw.trim().replace(/^\{|\}$/g, '').toLowerCase();
+
+    return /^[0-9a-f-]{36}$/.test(trimmed) ? trimmed : null;
 }
 
 type DataSet = ComponentFramework.PropertyTypes.DataSet;
@@ -179,6 +256,28 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
 
     /** The debounce timer, cleared in `destroy()`. */
     private filterTimer: number | null = null;
+
+    /**
+     * The On / From / Until toggle per date column. Kept apart from `filters`
+     * so that clearing the boxes leaves the toggles where the reader put them
+     * — an operator is a preference, a value is a query.
+     */
+    private filterOps: Record<string, DateOp> = {};
+
+    /**
+     * The option lists asked for so far, by column, as the promise itself.
+     *
+     * The promise rather than the result, so that two cells asking at once
+     * share one fetch and a rejection is cached as firmly as an answer — a
+     * metadata call that fails once should not be retried on every render.
+     * Cleared when the table changes underneath the control and in
+     * `destroy()`.
+     */
+    private metadata = new Map<string, Promise<Option[]>>();
+    private metadataEntity = '';
+
+    /** The row most recently added through the New button, for `getOutputs`. */
+    private createdRecordId = '';
 
     /* --------------------------------------------------------------- editing */
 
@@ -281,6 +380,26 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
             (context.parameters.enableEditing.raw ?? false) && !context.mode.isControlDisabled;
         const allowedColumns = editableColumnSet(context.parameters.editableColumns.raw);
 
+        /*
+         * Two facts about the *host*, decided once here and handed down as
+         * function-or-null — see `loadOptions` in `IProps` for why that shape
+         * and not `canEdit`'s per-call null.
+         */
+        const readMetadata = metadataReader(context);
+        const openForm = formOpener(context);
+
+        /*
+         * The cache is per table. A control rebound to another view — the
+         * view selector on a subgrid does this — must not answer the new
+         * table's `industrycode` with the old one's options.
+         */
+        const entity = dataset.getTargetEntityType?.() ?? '';
+
+        if (entity !== this.metadataEntity) {
+            this.metadata.clear();
+            this.metadataEntity = entity;
+        }
+
         const props: IProps = {
             dataset,
             columns,
@@ -306,6 +425,7 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
             page: this.page,
             pageSize: this.appliedPageSize,
             filters: this.filters,
+            filterOps: this.filterOps,
             lastPage: lastPage(dataset.paging.totalResultCount, this.appliedPageSize),
             /*
              * Empty unless the maker listed sizes, and the empty list is what
@@ -330,6 +450,8 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
             onSort: (columnName: string): void => this.sortBy(dataset, columnName),
             onFilter: (columnName: string, value: string): void =>
                 this.setFilterValue(context, columnName, value),
+            onFilterOp: (columnName: string, op: DateOp): void =>
+                this.setFilterOp(context, columnName, op),
             onClearFilter: (columnName: string): void => this.clearFilterValue(context, columnName),
             onClearFilters: (): void => this.clearFilters(context),
             onGoToPage: (page: number): void => this.goToPage(dataset, page),
@@ -377,9 +499,127 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
             },
             onCommitEdit: (id: string, column: string, value: unknown): Promise<void> =>
                 this.writeCell(dataset, id, column, value),
+
+            /*
+             * `null` where the host has no `utils.getEntityMetadata` — canvas,
+             * the hub's harness, a model-driven host that declined the
+             * feature. The component reads `null` as "no choice editor and no
+             * choice box", which is exactly 0.3.4.
+             */
+            loadOptions: readMetadata
+                ? (column: string): Promise<Option[]> =>
+                    this.optionsFor(readMetadata, entity, column)
+                : null,
+
+            /*
+             * `formatDateShort` renders in the Dataverse user's zone rather
+             * than the browser's — the `pcf-date-range-picker` finding — which
+             * is what makes a pending date read like the platform's own cell
+             * beside it. Detected per method: `formatting` is typed as always
+             * present, and the hub's harness supplies a bag without it.
+             */
+            formatDate:
+                typeof context.formatting?.formatDateShort === 'function'
+                    ? (value: Date, includeTime: boolean): string =>
+                        context.formatting.formatDateShort(value, includeTime)
+                    : null,
+
+            canCreate:
+                (context.parameters.enableCreate.raw ?? false)
+                && !context.mode.isControlDisabled
+                && openForm !== null,
+            onCreate: (): Promise<string | null> =>
+                openForm
+                    ? this.createRecord(openForm, parentReference(context), dataset)
+                    : Promise.resolve(null),
         };
 
         return React.createElement(DataTableControl, props);
+    }
+
+    /**
+     * The option list for one Choice column, fetched once per column.
+     *
+     * `getEntityMetadata(entity, [column])` — the second argument narrows the
+     * request to the one attribute, which is what keeps this a small call on a
+     * table with two hundred columns. The result is a class instance whose
+     * `Attributes.get(column)` is the node `parseOptions` reads; see that
+     * function for the shape, which was measured rather than assumed.
+     */
+    private optionsFor(
+        read: MetadataReader,
+        entity: string,
+        column: string,
+    ): Promise<Option[]> {
+        const cached = this.metadata.get(column);
+
+        if (cached) {
+            return cached;
+        }
+
+        const fetched = read(entity, [column]).then((metadata) => {
+            const attributes = (metadata as { Attributes?: { get?: (name: string) => unknown } })
+                ?.Attributes;
+
+            return parseOptions(
+                attributes && typeof attributes.get === 'function' ? attributes.get(column) : null,
+            );
+        });
+
+        this.metadata.set(column, fetched);
+
+        return fetched;
+    }
+
+    /**
+     * Open the quick create form, and report the row it made.
+     *
+     * Resolves the new id, or `null` for a form the reader dismissed — measured
+     * 2026-09-11 as `{ savedEntityReference: null }`, not `[]` and not a
+     * rejection, which is why the read below is optional at every step. A saved
+     * row resolves `savedEntityReference[0].id` braced and upper-case, and is
+     * normalised to the spelling every other output uses.
+     *
+     * `createFromEntity` seeds the parent so the row lands in this subgrid; on
+     * a main grid there is no parent and the option is left out. `refresh()`
+     * is what puts the row on screen — the same argument `writeCell` makes.
+     */
+    private createRecord(
+        open: FormOpener,
+        parent: { entityType: string; id: string } | null,
+        dataset: DataSet,
+    ): Promise<string | null> {
+        const options: Record<string, unknown> = {
+            entityName: dataset.getTargetEntityType(),
+            useQuickCreateForm: true,
+        };
+
+        if (parent) {
+            options.createFromEntity = { entityType: parent.entityType, id: parent.id };
+        }
+
+        return Promise.resolve()
+            .then(() => open(options))
+            .then((result) => {
+                const saved = (result as { savedEntityReference?: { id?: unknown }[] | null })
+                    ?.savedEntityReference;
+                const id = bareGuid(saved?.[0]?.id);
+
+                if (id === null) {
+                    return null;
+                }
+
+                dataset.refresh();
+                this.createdRecordId = id;
+                this.notifyOutputChanged();
+
+                return id;
+            })
+            .catch((error: unknown) => {
+                console.warn('[DataTable] create failed', error);
+
+                throw error;
+            });
     }
 
     /**
@@ -396,6 +636,7 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
             selectedRecordIds: this.selected.join('\n'),
             openedRecordId: this.openedRecordId,
             editedRecordId: this.editedRecordId,
+            createdRecordId: this.createdRecordId,
         };
     }
 
@@ -498,6 +739,8 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
             window.clearTimeout(this.filterTimer);
             this.filterTimer = null;
         }
+
+        this.metadata.clear();
     }
 
     /**
@@ -786,7 +1029,41 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
         this.applyFilter(context);
     }
 
-    /** Drop every filter and ask for the unfiltered view, with no debounce. */
+    /**
+     * Change how one date box compares, and re-ask straight away if it holds a
+     * day.
+     *
+     * No debounce, on the `clearFilterValue` argument: a click on the toggle
+     * is a finished decision. With an empty box nothing changes on the
+     * server, and `applyFilter` finds the same signature and asks for nothing
+     * — the label repaints from component state, which is why it lives there.
+     */
+    private setFilterOp(
+        context: ComponentFramework.Context<IInputs>,
+        columnName: string,
+        op: DateOp,
+    ): void {
+        this.filterOps = { ...this.filterOps, [columnName]: op };
+
+        if ((this.filters[columnName] ?? '').trim() === '') {
+            return;
+        }
+
+        if (this.filterTimer !== null) {
+            window.clearTimeout(this.filterTimer);
+            this.filterTimer = null;
+        }
+
+        this.applyFilter(context);
+    }
+
+    /**
+     * Drop every filter and ask for the unfiltered view, with no debounce.
+     *
+     * The date toggles stay. They are how the reader wants a column compared,
+     * not what they asked for, and a Clear that flipped every "From" back to
+     * "On" would undo a preference to answer a query.
+     */
     private clearFilters(context: ComponentFramework.Context<IInputs>): void {
         if (this.filterTimer !== null) {
             window.clearTimeout(this.filterTimer);
@@ -814,6 +1091,12 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
      *     it. Filter from page three and the control asks for page three of a
      *     result set that may have one page in it, and what comes back is
      *     nothing at all — which reads as "no matches" for a term with plenty.
+     *  4. **One `refresh()` per decision, never two in a row.** Measured
+     *     2026-09-11: a refresh on this subgrid takes 3–14 s, and one issued
+     *     while another is in flight appears to be dropped rather than
+     *     queued. The debounce and the signature guard are what keep this to
+     *     one; a control that refreshed on every keystroke would lose most of
+     *     them and show the result of whichever one landed.
      */
     private applyFilter(context: ComponentFramework.Context<IInputs>): void {
         const dataset = context.parameters.records;
@@ -830,7 +1113,11 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
             return;
         }
 
-        const expression = buildFilter(this.filters, visibleColumns(dataset.columns ?? []));
+        const expression = buildFilter(
+            this.filters,
+            visibleColumns(dataset.columns ?? []),
+            this.filterOps,
+        );
         const signature = expression === null ? 'none' : JSON.stringify(expression);
 
         if (signature === this.appliedFilter) {

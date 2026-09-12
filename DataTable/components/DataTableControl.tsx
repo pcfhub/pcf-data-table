@@ -4,16 +4,21 @@ import {
     cellKey,
     coerceValue,
     columnWidths,
+    DateOp,
     DESCENDING,
     EditKind,
     editKindFor,
     editorValue,
     filterKindFor,
     headerCheckState,
+    nextDateOp,
+    Option,
     pagerLabel,
+    pendingText,
     PinnedColumn,
     PinPlan,
     primaryColumn,
+    sameValue,
     SelectionMode,
     tableMinWidth,
 } from './resolve';
@@ -64,6 +69,10 @@ function CellEditor(props: {
     kind: EditKind;
     initial: string;
     label: string;
+    /** The choice column's options; ignored by every other kind. */
+    options: Option[];
+    /** The three words a `<select>` needs and an `<input>` does not. */
+    strings: { yes: string; no: string; none: string };
     onCommit: (typed: string) => void;
     onCancel: () => void;
 }): React.ReactElement {
@@ -144,14 +153,41 @@ function CellEditor(props: {
         onClick: (event: React.MouseEvent): void => event.stopPropagation(),
     };
 
+    /*
+     * Yes and No from the `.resx`, where 0.3.x hardcoded them — the only two
+     * user-visible strings in the control that were.
+     */
     if (props.kind === 'boolean') {
         return (
             <select
                 {...shared}
                 onChange={(event): void => setValue(event.target.value)}
             >
-                <option value="true">Yes</option>
-                <option value="false">No</option>
+                <option value="true">{props.strings.yes}</option>
+                <option value="false">{props.strings.no}</option>
+            </select>
+        );
+    }
+
+    /*
+     * A native `<select>`, not a Fluent one: this control has never mounted a
+     * Fluent input, and a portalled listbox inside a table cell is a layout
+     * problem the boolean editor above already declined to take on. The empty
+     * entry is the clear — `coerceValue` turns `''` into `null` — and it is
+     * first so that a cleared cell reads as chosen rather than as broken.
+     */
+    if (props.kind === 'choice') {
+        return (
+            <select
+                {...shared}
+                onChange={(event): void => setValue(event.target.value)}
+            >
+                <option value="">{props.strings.none}</option>
+                {props.options.map((option) => (
+                    <option key={option.value} value={String(option.value)}>
+                        {option.label}
+                    </option>
+                ))}
             </select>
         );
     }
@@ -159,7 +195,15 @@ function CellEditor(props: {
     return (
         <input
             {...shared}
-            type={props.kind === 'number' ? 'number' : props.kind === 'date' ? 'date' : 'text'}
+            type={
+                props.kind === 'number'
+                    ? 'number'
+                    : props.kind === 'date'
+                      ? 'date'
+                      : props.kind === 'datetime'
+                        ? 'datetime-local'
+                        : 'text'
+            }
             onChange={(event): void => setValue(event.target.value)}
         />
     );
@@ -256,6 +300,9 @@ const DOWNLOAD_GLYPH = 'M10 3v8m0 0 3-3m-3 3-3-3M4 14v2h12v-2';
 
 /** The clear-filter cross, on the same grid but drawn smaller — see the CSS. */
 const CLEAR_GLYPH = 'M6 6l8 8M14 6l-8 8';
+
+/** The New button's plus, on the chevrons' grid. */
+const PLUS_GLYPH = 'M10 4v12M4 10h12';
 
 /**
  * The cross inside a filter box.
@@ -361,6 +408,8 @@ export interface IProps {
     page: number;
     pageSize: number;
     filters: Record<string, string>;
+    /** The On / From / Until toggle per date column; absent means On. */
+    filterOps: Record<string, DateOp>;
     enableFiltering: boolean;
     lastPage: number;
     pageSizeOptions: number[];
@@ -372,6 +421,7 @@ export interface IProps {
     getString: (id: string) => string;
     onSort: (columnName: string) => void;
     onFilter: (columnName: string, value: string) => void;
+    onFilterOp: (columnName: string, op: DateOp) => void;
     onClearFilter: (columnName: string) => void;
     onClearFilters: () => void;
     onGoToPage: (page: number) => void;
@@ -398,6 +448,42 @@ export interface IProps {
     canEdit: (id: string, column: string) => Promise<boolean> | null;
     /** Write one cell. Rejects with whatever the platform refused it with. */
     onCommitEdit: (id: string, column: string, value: unknown) => Promise<void>;
+
+    /**
+     * The option list for a choice column, from entity metadata.
+     *
+     * **Function-or-null where `canEdit` is per-call null**, and the
+     * difference is what each one is a fact about. `canEdit` answers for a
+     * *record* — this row may lack the write methods — so it has to be asked
+     * per cell. This answers for the *host*: either `utils.getEntityMetadata`
+     * exists or it does not, decided once in `updateView`. The component needs
+     * that before it renders a filter box or asks `isEditable` for a cell that
+     * can never get an editor, so it is a fact about the prop rather than
+     * about a call. `null` is a host without `utils`, and canvas is one.
+     */
+    loadOptions: ((column: string) => Promise<Option[]>) | null;
+
+    /**
+     * The platform's own date formatter, or `null` where the host has none.
+     *
+     * Used for the text a date cell shows while its write is in flight, so
+     * the moment reads like the platform's `9/1/2026 12:30 AM` rather than
+     * as a different format — `context.formatting.formatDateShort`, which
+     * renders in the *user's* zone rather than the browser's. Function-or-null
+     * on the `loadOptions` argument: a fact about the host.
+     */
+    formatDate: ((value: Date, includeTime: boolean) => string) | null;
+
+    /**
+     * Whether the New button is offered — the maker's switch and the host's
+     * `navigation.openForm`, resolved in `updateView`.
+     */
+    canCreate: boolean;
+    /**
+     * Open the quick create form. Resolves the new row's id, or `null` when the
+     * form was dismissed; rejects when the platform refused to open it.
+     */
+    onCreate: () => Promise<string | null>;
 }
 
 /**
@@ -446,8 +532,11 @@ function useEditing(props: IProps): {
      * per answer. It only grows, which is what makes the effect terminate.
      */
     const asked = React.useRef<Set<string>>(new Set());
+    const mounted = useMounted();
 
-    const { enableEditing, allowedColumns, canEdit, columns, pageIds, dataset, getString } = props;
+    const {
+        enableEditing, allowedColumns, canEdit, loadOptions, columns, pageIds, dataset, getString,
+    } = props;
     const pageKey = pageIds.join('|');
     const columnKey = columns.map((column) => column.name).join('|');
 
@@ -463,11 +552,18 @@ function useEditing(props: IProps): {
          * only about columns that could carry an editor also saves a call per
          * cell on every choice and lookup column in the view.
          */
-        const candidates = columns.filter(
-            (column) =>
-                editKindFor(column) !== 'none'
-                && (allowedColumns === null || allowedColumns.has(column.name)),
-        );
+        const candidates = columns.filter((column) => {
+            const kind = editKindFor(column);
+
+            // A choice column on a host with no metadata can never get an
+            // editor, so asking `isEditable` for it is a fetch bought for
+            // nothing — the same argument as the allow-list below.
+            return (
+                kind !== 'none'
+                && (kind !== 'choice' || loadOptions !== null)
+                && (allowedColumns === null || allowedColumns.has(column.name))
+            );
+        });
 
         const answers: Promise<[string, boolean]>[] = [];
 
@@ -505,10 +601,15 @@ function useEditing(props: IProps): {
             return undefined;
         }
 
-        let live = true;
-
+        /*
+         * Guarded on unmount, not on this effect's cleanup. 0.3.x dropped the
+         * batch whenever the page changed while it was in flight — and `asked`
+         * is permanent, so the cells of the page the reader left were never
+         * asked about again and came back read-only. Same guard as
+         * `useChoiceOptions`.
+         */
         Promise.all(answers).then((entries) => {
-            if (!live) {
+            if (!mounted.current) {
                 return;
             }
 
@@ -521,11 +622,9 @@ function useEditing(props: IProps): {
             });
         });
 
-        return (): void => {
-            live = false;
-        };
+        return undefined;
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [enableEditing, pageKey, columnKey, allowedColumns]);
+    }, [enableEditing, pageKey, columnKey, allowedColumns, loadOptions === null]);
 
     /**
      * Retire optimistic values the dataset has caught up with.
@@ -563,10 +662,18 @@ function useEditing(props: IProps): {
                 return;
             }
 
-            // Compared as strings because `getValue` returns whatever the column
-            // holds — a Date, a number, a boolean — and what was written came
-            // from an `<input>`. Equality of *rendered* value is the question.
-            if (String(record.getValue(key.slice(separator + 1)) ?? '') === String(value ?? '')) {
+            /*
+             * Compared per kind — see `sameValue`. 0.3.x compared as strings,
+             * and a date's `String(Date)` never equals the ISO string the
+             * record reports, so an edited date cell kept its pending text for
+             * the life of the page. The kind comes from the column, which is
+             * why `columns` is a dependency below.
+             */
+            const columnName = key.slice(separator + 1);
+            const column = columns.find((candidate) => candidate.name === columnName);
+            const kind = column ? editKindFor(column) : 'none';
+
+            if (sameValue(kind, record.getValue(columnName), value)) {
                 next.delete(key);
                 changed = true;
             }
@@ -578,7 +685,7 @@ function useEditing(props: IProps): {
         // The guard above is what stops this looping: a pass that changes
         // nothing sets nothing, so the next render finds the same map and
         // stops. `dataset.records` is the thing being reconciled against.
-    }, [pending, saving, dataset.records]);
+    }, [pending, saving, dataset.records, columns]);
 
     const drop = <T,>(collection: Set<string> | Map<string, T>, key: string): void => {
         if (collection instanceof Set) {
@@ -659,6 +766,95 @@ function useEditing(props: IProps): {
 }
 
 /**
+ * The option lists for the choice columns on screen, one fetch per column.
+ *
+ * **One hook for the editor and the filter box**, so a view with a choice
+ * column asks for its metadata exactly once however many rows it has and
+ * whichever of the two features is on. The answer lives here rather than in the
+ * control class for the reason every other piece of editing state does: it
+ * arrives asynchronously and has to repaint the table when it lands, which a
+ * `setState` does and `notifyOutputChanged()` does not.
+ *
+ * A rejected fetch is recorded as `[]` — the column then gets neither editor
+ * nor box, which is the read-only fallback the host without `utils` gets —
+ * and logged once, because a metadata call that fails silently is a feature
+ * that vanished for no visible reason.
+ */
+function useChoiceOptions(props: IProps): Map<string, Option[]> {
+    const [options, setOptions] = React.useState<Map<string, Option[]>>(() => new Map());
+    const asked = React.useRef<Set<string>>(new Set());
+    const mounted = useMounted();
+
+    const { loadOptions, columns, enableEditing, enableFiltering } = props;
+    const wanted = loadOptions !== null && (enableEditing || enableFiltering);
+    const columnKey = columns.map((column) => column.name).join('|');
+
+    React.useEffect(() => {
+        if (!wanted || loadOptions === null) {
+            return undefined;
+        }
+
+        const pending = columns
+            .filter((column) => editKindFor(column) === 'choice' && !asked.current.has(column.name))
+            .map((column) => {
+                asked.current.add(column.name);
+
+                return loadOptions(column.name).then(
+                    (list): [string, Option[]] => [column.name, list],
+                    (error: unknown): [string, Option[]] => {
+                        console.warn('[DataTable] metadata failed', column.name, error);
+
+                        return [column.name, []];
+                    },
+                );
+            });
+
+        if (pending.length === 0) {
+            return undefined;
+        }
+
+        /*
+         * Guarded on unmount and not on the effect's own cleanup. `asked` is
+         * permanent, so an answer dropped because the column set changed while
+         * it was in flight would never be asked for again — the column would
+         * sit read-only for the life of the control.
+         */
+        Promise.all(pending).then((entries) => {
+            if (!mounted.current) {
+                return;
+            }
+
+            setOptions((current) => {
+                const next = new Map(current);
+
+                entries.forEach(([name, list]) => next.set(name, list));
+
+                return next;
+            });
+        });
+
+        return undefined;
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [wanted, columnKey]);
+
+    return options;
+}
+
+/** Whether the component is still mounted, for answers that arrive after it is not. */
+function useMounted(): React.MutableRefObject<boolean> {
+    const mounted = React.useRef(true);
+
+    React.useEffect(
+        () => (): void => {
+            mounted.current = false;
+        },
+        [],
+    );
+
+    return mounted;
+}
+
+/**
  * Selection is mirrored in local state rather than rendered straight from
  * props.
  *
@@ -696,12 +892,27 @@ function useMirroredSelection(selected: string[]): [string[], (next: string[]) =
  */
 function useMirroredFilters(
     filters: Record<string, string>,
-): [Record<string, string>, (columnName: string, value: string) => void] {
+    ops: Record<string, DateOp>,
+): [
+    Record<string, string>,
+    (columnName: string, value: string) => void,
+    Record<string, DateOp>,
+    (columnName: string, op: DateOp) => void,
+] {
     const [local, setLocal] = React.useState(filters);
-    const key = JSON.stringify(filters);
+    /*
+     * The toggle is mirrored for a stronger reason than the boxes are. An
+     * operator change on an *empty* box changes no expression, so the class
+     * applies nothing, refreshes nothing, and `updateView` never runs — and a
+     * label read straight from props would stay on "On" however many times it
+     * was clicked. Component state is the only thing that repaints it.
+     */
+    const [localOps, setLocalOps] = React.useState(ops);
+    const key = JSON.stringify([filters, ops]);
 
     React.useEffect(() => {
         setLocal(filters);
+        setLocalOps(ops);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [key]);
 
@@ -709,6 +920,9 @@ function useMirroredFilters(
         local,
         (columnName: string, value: string): void =>
             setLocal((current) => ({ ...current, [columnName]: value })),
+        localOps,
+        (columnName: string, op: DateOp): void =>
+            setLocalOps((current) => ({ ...current, [columnName]: op })),
     ];
 }
 
@@ -729,11 +943,39 @@ export function DataTableControl(props: IProps): React.ReactElement | null {
     const { dataset, columns, pageIds, getString } = props;
 
     const [selected, setSelected] = useMirroredSelection(props.selected);
-    const [filters, setFilter] = useMirroredFilters(props.filters);
+    const [filters, setFilter, filterOps, setFilterOp] = useMirroredFilters(
+        props.filters,
+        props.filterOps,
+    );
     const checkState = headerCheckState(selected, pageIds);
     const headerRef = useIndeterminate(checkState);
     // Before every early return: hooks cannot be conditional.
     const edit = useEditing(props);
+    const choiceOptions = useChoiceOptions(props);
+    const [creating, setCreating] = React.useState(false);
+    const [createFailure, setCreateFailure] = React.useState<string | null>(null);
+
+    /**
+     * The New button. `creating` disables it while the quick create form is
+     * up, because a second click would open a second form over the first.
+     * A dismissed form resolves `null` and is not a failure; a form the
+     * platform would not open is, and it is said under the button rather than
+     * lost in the console.
+     */
+    const create = (): void => {
+        setCreating(true);
+        setCreateFailure(null);
+
+        props.onCreate().then(
+            () => setCreating(false),
+            (error: unknown) => {
+                setCreating(false);
+                setCreateFailure(
+                    (error as Error)?.message || getString('DataTable_CreateFailed'),
+                );
+            },
+        );
+    };
 
     // Whether the reader has narrowed the view themselves. It decides whether
     // an empty result is "this view is empty" or "your filters matched nothing"
@@ -961,8 +1203,19 @@ export function DataTableControl(props: IProps): React.ReactElement | null {
 
                                 {columns.map((column, index) => {
                                     const kind = filterKindFor(column);
+                                    const options = choiceOptions.get(column.name);
 
-                                    if (kind === 'none') {
+                                    /*
+                                      A choice column can carry a box only once
+                                      its options are here: nothing on a host
+                                      without `utils`, nothing while they load,
+                                      nothing when the list came back empty.
+                                      Read-only is the fallback for all three.
+                                    */
+                                    const withheld =
+                                        kind === 'choice' && !(options && options.length > 0);
+
+                                    if (kind === 'none' || withheld) {
                                         /*
                                           Empty, and it has to say why. A blank
                                           cell between two filter boxes reads as
@@ -991,14 +1244,108 @@ export function DataTableControl(props: IProps): React.ReactElement | null {
                                     const label = (
                                         kind === 'number'
                                             ? getString('DataTable_FilterNumberHint')
-                                            : getString('DataTable_FilterColumn')
+                                            : kind === 'date'
+                                              ? getString('DataTable_FilterDateHint')
+                                              : getString('DataTable_FilterColumn')
                                     ).replace('{0}', column.displayName);
+
+                                    /*
+                                      The choice box has no clear cross: "Any"
+                                      is the clear, and it is the first entry so
+                                      that a box nobody has touched reads as a
+                                      choice made rather than as a box that is
+                                      empty.
+                                    */
+                                    if (kind === 'choice') {
+                                        return (
+                                            <th key={column.name} {...pinCell(pins.columns[index])}>
+                                                <select
+                                                    className="DataTable-filter DataTable-filterSelect"
+                                                    value={filters[column.name] ?? ''}
+                                                    disabled={props.disabled}
+                                                    aria-label={label}
+                                                    title={label}
+                                                    onChange={(event): void => {
+                                                        setFilter(column.name, event.target.value);
+                                                        props.onFilter(column.name, event.target.value);
+                                                    }}
+                                                >
+                                                    <option value="">
+                                                        {getString('DataTable_FilterAny')}
+                                                    </option>
+                                                    {(options ?? []).map((option) => (
+                                                        <option
+                                                            key={option.value}
+                                                            value={String(option.value)}
+                                                        >
+                                                            {option.label}
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                            </th>
+                                        );
+                                    }
+
+                                    const op = filterOps[column.name] ?? 'on';
+                                    const opLabel = getString(
+                                        op === 'from'
+                                            ? 'DataTable_DateFrom'
+                                            : op === 'until'
+                                              ? 'DataTable_DateUntil'
+                                              : 'DataTable_DateOn',
+                                    );
 
                                     return (
                                         <th key={column.name} {...pinCell(pins.columns[index])}>
-                                            <span className="DataTable-filterBox">
+                                            <span className={
+                                                kind === 'date'
+                                                    ? 'DataTable-filterBox DataTable-filterDate'
+                                                    : 'DataTable-filterBox'
+                                            }>
+                                            {/*
+                                              The toggle leads the box, so the
+                                              cell reads as a sentence — "From
+                                              2026-03-01" — and so the date
+                                              input's own picker icon, which
+                                              Chromium draws at the trailing
+                                              edge, does not collide with it.
+                                            */}
+                                            {kind === 'date' && (
+                                                <button
+                                                    type="button"
+                                                    className="DataTable-filterOp"
+                                                    disabled={props.disabled}
+                                                    aria-label={getString('DataTable_DateOpHint').replace(
+                                                        '{0}',
+                                                        column.displayName,
+                                                    )}
+                                                    title={getString('DataTable_DateOpHint').replace(
+                                                        '{0}',
+                                                        column.displayName,
+                                                    )}
+                                                    onClick={(): void => {
+                                                        const next = nextDateOp(op);
+
+                                                        setFilterOp(column.name, next);
+                                                        props.onFilterOp(column.name, next);
+                                                    }}
+                                                >
+                                                    {/*
+                                                      The word, and the sign
+                                                      the stylesheet swaps in
+                                                      when the cell is too
+                                                      narrow for the word. The
+                                                      accessible name is the
+                                                      hint above either way.
+                                                    */}
+                                                    <span className="DataTable-filterOpWord">{opLabel}</span>
+                                                    <span className="DataTable-filterOpSign" aria-hidden="true">
+                                                        {op === 'from' ? '≥' : op === 'until' ? '≤' : '='}
+                                                    </span>
+                                                </button>
+                                            )}
                                             <input
-                                                type="text"
+                                                type={kind === 'date' ? 'date' : 'text'}
                                                 className="DataTable-filter"
                                                 value={filters[column.name] ?? ''}
                                                 disabled={props.disabled}
@@ -1015,7 +1362,11 @@ export function DataTableControl(props: IProps): React.ReactElement | null {
                                                 placeholder={
                                                     kind === 'number'
                                                         ? getString('DataTable_FilterNumberPlaceholder')
-                                                        : getString('DataTable_FilterPlaceholder')
+                                                        : kind === 'date'
+                                                          // A date input draws its own
+                                                          // mask and ignores this.
+                                                          ? undefined
+                                                          : getString('DataTable_FilterPlaceholder')
                                                 }
                                                 onChange={(event): void => {
                                                     setFilter(column.name, event.target.value);
@@ -1146,9 +1497,14 @@ export function DataTableControl(props: IProps): React.ReactElement | null {
                                           offering one the platform then refuses
                                           is not.
                                         */
+                                        const options = choiceOptions.get(column.name);
                                         const editable =
                                             props.enableEditing
                                             && kind !== 'none'
+                                            // A choice with no options to offer
+                                            // is a `<select>` that can only
+                                            // clear, so it waits for them.
+                                            && (kind !== 'choice' || Boolean(options && options.length > 0))
                                             && (props.allowedColumns === null
                                                 || props.allowedColumns.has(column.name))
                                             && edit.editableCells.get(key) === true;
@@ -1167,16 +1523,18 @@ export function DataTableControl(props: IProps): React.ReactElement | null {
                                         /*
                                           The optimistic value outranks the
                                           record's, because the record has not
-                                          been re-read yet. Formatted through
-                                          `editorValue` rather than the
-                                          platform's formatter, which cannot see
-                                          a value the dataset does not hold — so
-                                          a date reads as `2026-03-01` for the
-                                          moment between the save landing and
-                                          the refresh arriving.
+                                          been re-read yet. `getFormattedValue`
+                                          cannot see a value the dataset does
+                                          not hold, so `pendingText` formats it
+                                          — through `context.formatting` for a
+                                          date, so the moment between the save
+                                          landing and the refresh arriving
+                                          reads like the platform's own cell
+                                          rather than as `2026-03-01`. Retired
+                                          by `sameValue` once the record agrees.
                                         */
                                         const text = hasPending
-                                            ? editorValue(kind, edit.pending.get(key))
+                                            ? pendingText(kind, edit.pending.get(key), options, props.formatDate)
                                             : record.getFormattedValue(column.name);
 
                                         const cellClass = [
@@ -1208,6 +1566,12 @@ export function DataTableControl(props: IProps): React.ReactElement | null {
                                                         label={getString(
                                                             'DataTable_EditCell',
                                                         ).replace('{0}', column.displayName)}
+                                                        options={options ?? []}
+                                                        strings={{
+                                                            yes: getString('DataTable_Yes'),
+                                                            no: getString('DataTable_No'),
+                                                            none: getString('DataTable_NoValue'),
+                                                        }}
                                                         onCommit={(typed): void =>
                                                             edit.commit(id, column.name, kind, typed)
                                                         }
@@ -1417,6 +1781,33 @@ export function DataTableControl(props: IProps): React.ReactElement | null {
                   re-baselining.
                 */}
                 <span className="DataTable-pagerTools">
+                {/*
+                  First among the tools, because it is the one a reader
+                  reaches for most and the one that is not about the rows
+                  already on screen. Beside the pager rather than above the
+                  table: a model-driven subgrid already has a command bar up
+                  there, and a second New above it would be two buttons that
+                  read the same and behave differently.
+                */}
+                {props.canCreate && (
+                    <button
+                        type="button"
+                        className="DataTable-create"
+                        disabled={props.disabled || creating}
+                        title={getString('DataTable_NewHint')}
+                        onClick={create}
+                    >
+                        <Chevron d={PLUS_GLYPH} />
+                        {getString('DataTable_New')}
+                    </button>
+                )}
+
+                {createFailure && (
+                    <span className="DataTable-createError" role="alert">
+                        {createFailure}
+                    </span>
+                )}
+
                 {props.lastPage > 1 && (
                     <span className="DataTable-jump">
                         <label>
