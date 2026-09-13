@@ -1738,17 +1738,21 @@ stub for `EntityDefinitions` — each with its absence as a quirk, and
 comes from the fetch, not from the column name) was broken on purpose and
 failed by name.
 
+### Verified on a real form
+
+Walked on the Accounts subgrid on 2026-09-13, the same day as the probe, with
+the 0.5.0 build: a Primary contact cell opened as its name with *Choose…* and
+*Clear*, the platform's dialog opened from it, a pick showed at once and the
+refresh confirmed it; a Customer cell took an **account** through
+`parentcustomer_account` — the navigation property the probe had only ever
+asserted against the rig's table; a populated cell cleared; an empty cell
+offered no *Clear*; Escape and the cross closed without writing. Released as
+`v0.5.0` on the number the walkthrough build carried.
+
 ### Not verified in 0.5.0
 
-- **No lookup has been edited through the control's own UI on a real form.**
-  The write path was driven from the console on the probe build; the editor,
-  its optimistic name, and the refresh retiring it are asserted against
-  `dev/host.js` and photographed from the dev rig.
-- **The import prompt text for `WebAPI`** — the probe went in as an upgrade
-  and nothing was captured, as with `Utility` in 0.4.0.
-- **A Customer lookup written to an account** — the probe wrote one to a
-  contact (5); the `_account` navigation property is asserted against the
-  rig's relationship table only.
+- **The import prompt text for `WebAPI`** — the walkthrough build went in as
+  an upgrade and the text was not recorded, as with `Utility` in 0.4.0.
 - **A write refused by privilege**, as opposed to by a bad GUID. The shape
   is assumed to be the server-fault shape (7) and the sentence is whatever
   the platform sends.
