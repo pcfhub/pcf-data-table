@@ -7,6 +7,34 @@ appliesTo: ">=0.2.0"
 
 # Migration
 
+## 0.4.x → 0.5.0
+
+0.5.0 adds a lookup editor. **Nothing was renamed, nothing was removed, and no
+property changed its default.** A lookup cell that was read-only becomes
+editable wherever **Inline editing** is already on, on a model-driven app.
+
+### The import asks for a second permission
+
+:::callout{type=warning}
+**0.5.0 declares the `WebAPI` feature** beside `Utility`, so re-importing the
+solution raises a prompt for it. It buys the one write the dataset record
+cannot make: `record.setValue()` on a lookup column stages nothing — measured,
+five value shapes — so a lookup pick is saved with `webAPI.updateRecord`.
+Every other column still writes through the record, as before. Declining the
+feature leaves lookup cells read-only and changes nothing else.
+:::
+
+### What changes on upgrade
+
+- A `Lookup.Simple` or `Lookup.Customer` cell in an editable column opens as
+  its current name with **Choose…** and **Clear**. Choose opens the platform's
+  lookup dialog; Clear writes `null`.
+- On a canvas app nothing changes: canvas has no `webAPI` and no dialog, so
+  lookup cells stay read-only there.
+- Owner lookups stay read-only everywhere.
+- `editableColumns` still narrows; a lookup column left out of the list stays
+  read-only.
+
 ## 0.3.x → 0.4.1
 
 0.4.0 adds a choice editor, a New button, and date and choice filter boxes.
@@ -54,11 +82,11 @@ already has a command bar up there — see [Model-driven apps](model-driven.md).
 
 ### What did not change, and why
 
-Lookup cells are still read-only. 0.4.0 was specified to edit them through the
-platform's own lookup dialog and the measurement removed the feature rather
-than the specification: the dialog works, and `record.setValue()` on a lookup
-column stages nothing on the host it was tried on. [Limitations](limitations.md)
-has the detail.
+Lookup cells stayed read-only in 0.4.x. 0.4.0 was specified to edit them
+through the platform's own lookup dialog and the measurement removed the
+feature rather than the specification: the dialog works, and
+`record.setValue()` on a lookup column stages nothing on the host it was tried
+on. 0.5.0 measured the other write path and took it — see above.
 
 ## 0.2.0 → 0.3.0
 

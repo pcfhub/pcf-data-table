@@ -7,7 +7,7 @@
   -->
   <control namespace="PCFHub"
            constructor="DataTable"
-           version="0.4.3"
+           version="0.5.0"
            display-name-key="DataTable_Name"
            description-key="DataTable_Desc"
            control-type="virtual">
@@ -211,9 +211,19 @@
       What 0.4.0 added a feature for is not the write but the *editor*: a
       Choice cell needs its option list, `Column` does not carry one, and
       `utils.getEntityMetadata` does. Hence `Utility`, declared at the bottom
-      of this file. A Lookup cell stays read-only for a reason that was
-      measured rather than assumed — `setValue` on one stages nothing on this
-      host, five shapes tried — and `docs/limitations.md` says so.
+      of this file.
+
+      **A Lookup cell is the one exception, since 0.5.0, and it pays the
+      price above.** `setValue` on a lookup column stages nothing on this
+      host — five shapes tried, 2026-09-11 — so a lookup is picked in the
+      platform's own dialog (`utils.lookupObjects`) and written with
+      `webAPI.updateRecord` through an `@odata.bind` key, measured 2026-09-13:
+      the write persists, `null` clears, and the navigation property the key
+      is spelled with is *read* from `EntityDefinitions` rather than derived,
+      because on the probe table it was the logical name and a Customer lookup
+      has two. Hence `WebAPI`, also at the bottom. Canvas has neither the
+      dialog nor the Web API, so lookup cells stay read-only there; every
+      other column still writes through the record. SPEC.md 0.5.0.
 
       Neither record method is in `@types/powerapps-component-framework@1.3.18`
       — `EntityRecord` there declares four methods and none of them writes — so
@@ -340,15 +350,21 @@
       a Lookup editor through utils.lookupObjects as well, and the probe took
       that back — the dialog works, the write does not — so the trade is
       thinner than planned and still positive. required="false" so a host
-      without the surface leaves it absent rather than refusing to load. No
-      WebAPI: writes go through record.setValue()/save(), and
+      without the surface leaves it absent rather than refusing to load.
       navigation.openForm is on a bag no feature gates. See SPEC.md 0.4.0.
+
+      The second, WebAPI, is what 0.5.0 took the Lookup editor back with. It
+      buys exactly one call — updateRecord, for the one column type the
+      dataset record cannot write — and nothing else in this control goes
+      through it; text, number, date and choice cells still write through
+      record.setValue()/save(), which is the reason 0.3.0 declined this
+      feature and the reason it is still not used for them. Declined at
+      install, it leaves lookup cells read-only and changes nothing else.
+      The relationship metadata the write needs is read with a same-origin
+      fetch of EntityDefinitions, which no feature gates. See SPEC.md 0.5.0.
     -->
     <feature-usage>
       <uses-feature name="Utility" required="false" />
-      <!-- TEMPORARY 0.4.2 probe: the lookup write under measurement is
-           webAPI.updateRecord, and the prompt this line adds is itself one of
-           the questions. Remove with probe.ts unless 0.5.0 keeps the editor. -->
       <uses-feature name="WebAPI" required="false" />
     </feature-usage>
   </control>

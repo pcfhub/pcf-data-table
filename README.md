@@ -59,10 +59,15 @@ before an editor is offered. The obvious alternative, `webAPI.updateRecord`,
 needs `<uses-feature name="WebAPI" />` — an install-time prompt in every
 environment — and does nothing at all in a canvas app.
 
-What that write path does *not* do is a lookup. 0.4.0 was specified to edit
-lookup cells through the platform's own dialog, and the probe took it back:
-the dialog works, `setValue` on a lookup column stages nothing, and every
-`save()` is refused. The cell stays read-only and SPEC.md has the measurement.
+What that write path does *not* do is a lookup: `setValue` on a lookup column
+stages nothing, five shapes tried, every `save()` refused. So since 0.5.0 a
+lookup cell is the one exception — picked in the platform's own dialog
+(`utils.lookupObjects`) and written with `webAPI.updateRecord` through an
+`@odata.bind` key whose navigation property is **read** from
+`EntityDefinitions` rather than derived, because on the probe table it was the
+logical name and not the schema-cased one, and a Customer lookup has two. That
+costs the `WebAPI` feature and makes lookup editing model-driven only; SPEC.md
+0.5.0 has the nine measurements it rests on.
 
 The same undocumented surface answers `isEditable(column)` per column *and* per
 record, which is what lets the control render a cell the user cannot write as

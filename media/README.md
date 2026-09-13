@@ -42,6 +42,7 @@ whole recipe, so a picture can be retaken after any change:
 | `screenshot-editing.png` | 960 | `?edit=1&open=industrycode` — the choice editor open on the first row |
 | `screenshot-filters.png` | 960 | `?date=2026-03-01&dateOp=from&create=1` — the date box with its chip, the choice dropdowns, and the New button |
 | `screenshot-narrow.png` | 320 | `?fixture=demo` |
+| `screenshot-lookup.png` | 1280×340 | `?lookups=1&edit=1&open=primarycontactid` — the lookup editor open on the first row: name, Choose…, Clear, cross |
 
 `screenshot-form.png` is the exception: a real Accounts subgrid on 0.1.x,
 kept because only a real form has a command bar.

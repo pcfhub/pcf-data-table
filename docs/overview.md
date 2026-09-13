@@ -55,6 +55,7 @@ columns get one on a model-driven app; lookups do not, and
 [Limitations](limitations.md) says why.
 
 Inline editing covers text, number, yes/no, date and — on a model-driven app —
-choice cells, one cell at a time, through the dataset record rather than the
-Web API. A **New** button opens the table's quick create form and reports the
-row it made. Both are off until a maker turns them on.
+choice and lookup cells, one cell at a time. Every column but a lookup writes
+through the dataset record; a lookup is picked in the platform's own dialog and
+saved through the Web API. A **New** button opens the table's quick create form
+and reports the row it made. Both are off until a maker turns them on.

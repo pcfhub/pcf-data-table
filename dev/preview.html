@@ -34,6 +34,8 @@
     ?edit=1                turn editing on
     ?open=1                and open the first editable cell's editor
     ?open=industrycode     or the first editable cell in that column — the choice editor
+    ?lookups=1             bind the view with two lookup columns on it (fixture.withLookups)
+    ?open=primarycontactid with lookups=1: the lookup editor, Choose… / Clear
     ?pick=3                and pick that option value in an open choice editor, then leave
     ?create=1              show the New button (manifest default is off)
     ?date=2026-03-01       type a day into the date box
@@ -125,6 +127,20 @@
             var response = await fetch('../demo/records.json');
 
             fixture = await response.json();
+        }
+
+        /*
+          The view with the two lookups on it — `fixture.withLookups()`, the
+          same shape the lookup suite in `smoke.js` binds — so `?open=
+          primarycontactid` photographs the lookup editor. The page's host
+          has `page`, `webAPI` and `lookupObjects` by default, which is what
+          makes the cell editable here; the hub's demo harness has none, so
+          the demo fixture keeps its lookups read-only and says so.
+        */
+        if (params.get('lookups') === '1' && typeof fixture.withLookups === 'function') {
+            var extended = fixture.withLookups();
+
+            fixture = Object.assign({}, fixture, { columns: extended.columns, records: extended.records });
         }
 
         /*

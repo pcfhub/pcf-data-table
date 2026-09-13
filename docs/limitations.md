@@ -63,13 +63,18 @@ order: 7
 - **While a save is in flight the cell shows the value through the platform's
   formatter**, so it reads like its neighbours; once the view has re-read, the
   platform's own text replaces it.
-- **Lookup cells are read-only, and the reason was measured rather than
-  assumed.** The platform's own lookup dialog opens and hands back a reference;
-  `record.setValue()` on a lookup column then stages nothing, and every save
-  is refused with *Invalid snapshot* — five value shapes tried, the stored
-  value untouched each time. Until there is a write path that does not need the
-  Web API, a lookup is edited on the form. Multi-select choices and
-  owner/customer lookups stay read-only for the same reason.
+- **A lookup cell is edited through the Web API, so it is the one editor that
+  is model-driven only.** Every other column writes through the dataset record
+  and works wherever the record can be written. `record.setValue()` on a
+  lookup column stages nothing — measured, five value shapes, every save
+  refused — so a lookup pick is written with `webAPI.updateRecord` instead,
+  which a canvas app does not have. On canvas, lookup cells stay read-only.
+  The write also needs the organisation URL to read the table's relationship
+  metadata from; a host that withholds it, such as the hub's demo, gets the
+  same read-only cell.
+- **Owner lookups and multi-select choices stay read-only.** An owner column
+  points at two tables through a navigation property no measurement has
+  watched, and a multi-select has no editor yet.
 - **Adding a row opens the quick create form, not a blank row in the table.**
   The form is where the business rules and required fields live; an inline row
   would have to bypass both. The table needs *Allow quick create* on and a

@@ -212,6 +212,15 @@
   <data name="DataTable_NoValue" xml:space="preserve">
     <value>(none)</value>
   </data>
+  <data name="DataTable_LookupChoose" xml:space="preserve">
+    <value>Choose…</value>
+  </data>
+  <data name="DataTable_LookupClear" xml:space="preserve">
+    <value>Clear</value>
+  </data>
+  <data name="DataTable_LookupCancel" xml:space="preserve">
+    <value>Cancel</value>
+  </data>
   <data name="DataTable_New" xml:space="preserve">
     <value>New</value>
   </data>

@@ -1910,8 +1910,281 @@ async function createChecks() {
     );
 }
 
+/* ----------------------------------------------------------- lookup cells */
+
+/*
+ * The one editor whose write leaves the record. What the rig can say is what
+ * the control asked the platform for: which tables the dialog was offered,
+ * which navigation property the bind key was spelled with, whether the
+ * relationships were fetched once or per write, and what a refusal is turned
+ * into. The `LookupEditor` itself mounts in the browser and is photographed.
+ */
+async function lookupChecks() {
+    const view = fixture.withLookups();
+    const withLookups = (options) => bind({
+        columns: view.columns,
+        records: view.records,
+        inputs: { enableEditing: true },
+        ...options,
+    });
+
+    /* ---- the host fact */
+
+    const on = withLookups({});
+
+    check(
+        'a host with the dialog, metadata, the Web API and an organisation URL offers lookup editing',
+        typeof on.props().pickLookup === 'function',
+        `pickLookup is ${typeof on.props().pickLookup}`,
+    );
+
+    /*
+     * **Four surfaces, each removable on its own.** On a real host they go
+     * missing one at a time — `WebAPI` declined at install, a harness with
+     * no `page`, a `utils` bag without `lookupObjects` — and a control that
+     * checks one and calls all four passes on the host it was written on.
+     * Canvas is all four at once.
+     */
+    const withheld = {
+        webApiAbsent: withLookups({ quirks: { webApiAbsent: true } }),
+        pageAbsent: withLookups({ quirks: { pageAbsent: true } }),
+        lookupObjectsAbsent: withLookups({ quirks: { lookupObjectsAbsent: true } }),
+        utilsAbsent: withLookups({ quirks: { utilsAbsent: true } }),
+        canvas: withLookups({ host: 'canvas' }),
+    };
+    const stillOffered = Object.keys(withheld).filter(
+        (name) => withheld[name].props().pickLookup !== null,
+    );
+
+    check(
+        'any one of the four missing withholds it, and canvas withholds all four',
+        stillOffered.length === 0,
+        stillOffered.length ? `still offered under ${stillOffered.join(', ')}` : 'null under every absence',
+    );
+
+    /* ---- the dialog */
+
+    const rowId = on.props().pageIds[0];
+    const cancelled = await on.props().pickLookup('primarycontactid');
+    const dialogCall = on.calls().find((call) => call.startsWith('utils.lookupObjects'));
+
+    check(
+        'a closed dialog resolves null and writes nothing',
+        cancelled === null
+            && dialogCall === 'utils.lookupObjects({"entityTypes":["contact"],"defaultEntityType":"contact","allowMultiSelect":false})'
+            && !on.calls().some((call) => call.startsWith('webAPI.')),
+        `${JSON.stringify(cancelled)}; ${dialogCall || 'dialog never opened'}`,
+    );
+
+    /*
+     * The Customer column's targets live only under `attributeDescriptor` —
+     * the top-level `Targets` is `undefined` on that node, measured — so a
+     * dialog offered both tables is the proof the reader fell through.
+     */
+    await on.props().pickLookup('parentcustomerid');
+
+    const customerDialog = on.calls().filter((call) => call.startsWith('utils.lookupObjects')).pop();
+
+    check(
+        'a Customer lookup offers both targets, read from under the descriptor',
+        customerDialog === 'utils.lookupObjects({"entityTypes":["account","contact"],"defaultEntityType":"account","allowMultiSelect":false})',
+        customerDialog || 'dialog never opened',
+    );
+
+    const contact = fixture.related.contact.rows[2];
+    const picking = withLookups({ lookupPick: { id: contact.id, entityType: 'contact', name: contact.name } });
+    const picked = await picking.props().pickLookup('primarycontactid');
+
+    check(
+        'a pick arrives braced and upper-case and is handed on unbraced and lower-case',
+        JSON.stringify(picked) === JSON.stringify({ id: contact.id, entityType: 'contact', name: contact.name }),
+        JSON.stringify(picked),
+    );
+
+    /* ---- the write */
+
+    const refreshesBefore = picking.handle.state.refreshes;
+
+    await picking.props().onCommitEdit(rowId, 'primarycontactid', picked);
+    await flush();
+
+    const update = picking.calls().find((call) => call.startsWith('webAPI.updateRecord'));
+    const relationshipFetches = () => picking.calls().filter((call) => call.startsWith('fetch(')).length;
+
+    check(
+        'a lookup commit binds the navigation property to the target\'s entity set, then refreshes',
+        update === `webAPI.updateRecord({"entity":"account","id":"${rowId}","data":{"primarycontactid@odata.bind":"/contacts(${contact.id})"}})`
+            && picking.handle.state.refreshes === refreshesBefore + 1
+            && picking.outputs().editedRecordId === rowId,
+        `${update || 'updateRecord never called'}; refreshes ${picking.handle.state.refreshes - refreshesBefore}; editedRecordId ${JSON.stringify(picking.outputs().editedRecordId)}`,
+    );
+
+    /*
+     * **The navigation property was read, not derived.** The relationships
+     * came from one `fetch` of `EntityDefinitions`, and the key the write
+     * used is the one that fetch named. On the probe table it was the
+     * logical name; the rig's Customer column has two, `_account` and
+     * `_contact`, which no derivation from the column name produces.
+     */
+    const fetched = picking.calls().find((call) => call.startsWith('fetch('));
+
+    check(
+        'the navigation property comes from one fetch of the table\'s relationships',
+        relationshipFetches() === 1
+            && fetched === "fetch(\"/api/data/v9.2/EntityDefinitions(LogicalName='account')/ManyToOneRelationships?$select=ReferencingAttribute,ReferencedEntity,ReferencingEntityNavigationPropertyName\")",
+        fetched || 'nothing fetched',
+    );
+
+    picking.handle.reread();
+    picking.settle();
+
+    const reread = picking.props().dataset.records[rowId].getValue('primarycontactid');
+
+    check(
+        'the re-read carries the new reference in the platform\'s own shape',
+        reread && reread.etn === 'contact' && reread.id.guid === contact.id && reread.name === contact.name,
+        JSON.stringify(reread),
+    );
+
+    /*
+     * A Customer lookup pointing at a contact binds through `_contact`; the
+     * same column pointing at an account binds through `_account`. The
+     * dialog's `entityType` is what chooses, and the entity set follows it.
+     */
+    // Caught rather than awaited bare, so a key the rig refuses fails *this*
+    // assertion with the refusal in it, instead of aborting the suite.
+    const customerRefusals = [];
+    const account = fixture.related.account.rows[1];
+
+    await picking.props().onCommitEdit(rowId, 'parentcustomerid', picked)
+        .catch((error) => customerRefusals.push(error.message));
+    await flush();
+
+    const customerToContact = picking.calls().filter((call) => call.startsWith('webAPI.updateRecord')).pop();
+
+    await picking.props().onCommitEdit(rowId, 'parentcustomerid', { id: account.id, entityType: 'account', name: account.name })
+        .catch((error) => customerRefusals.push(error.message));
+    await flush();
+
+    const customerToAccount = picking.calls().filter((call) => call.startsWith('webAPI.updateRecord')).pop();
+
+    check(
+        'a Customer lookup binds through the navigation property of the table picked',
+        customerRefusals.length === 0
+            && customerToContact === `webAPI.updateRecord({"entity":"account","id":"${rowId}","data":{"parentcustomerid_contact@odata.bind":"/contacts(${contact.id})"}})`
+            && customerToAccount === `webAPI.updateRecord({"entity":"account","id":"${rowId}","data":{"parentcustomerid_account@odata.bind":"/accounts(${account.id})"}})`
+            && relationshipFetches() === 1,
+        customerRefusals.length
+            ? `refused: ${customerRefusals.join(' / ')}`
+            : `${customerToContact}\n         ${customerToAccount}; ${relationshipFetches()} fetch(es)`,
+    );
+
+    /* ---- clearing */
+
+    picking.handle.reread();
+    picking.settle();
+
+    let clearRefusal = null;
+
+    await picking.props().onCommitEdit(rowId, 'parentcustomerid', null)
+        .catch((error) => { clearRefusal = error.message; });
+    await flush();
+
+    const cleared = picking.calls().filter((call) => call.startsWith('webAPI.updateRecord')).pop();
+
+    check(
+        'a clear binds null through the navigation property of the value being cleared',
+        clearRefusal === null
+            && cleared === `webAPI.updateRecord({"entity":"account","id":"${rowId}","data":{"parentcustomerid_account@odata.bind":null}})`,
+        clearRefusal ? `refused: ${clearRefusal}` : (cleared || 'updateRecord never called'),
+    );
+
+    picking.handle.reread();
+    picking.settle();
+
+    const updatesBefore = picking.calls().filter((call) => call.startsWith('webAPI.updateRecord')).length;
+
+    await picking.props().onCommitEdit(rowId, 'parentcustomerid', null);
+    await flush();
+
+    check(
+        'clearing an empty cell writes nothing',
+        picking.props().dataset.records[rowId].getValue('parentcustomerid') === null
+            && picking.calls().filter((call) => call.startsWith('webAPI.updateRecord')).length === updatesBefore,
+        `stored ${JSON.stringify(picking.props().dataset.records[rowId].getValue('parentcustomerid'))}`,
+    );
+
+    /* ---- refusals, and what the cell is told */
+
+    /*
+     * A payload fault's `message` opens with a generic line and runs into a
+     * stack trace; a server fault's is one sentence with a `title` beside
+     * it. The cell gets the one sentence either way, and never `raw`.
+     */
+    const refused = withLookups({ quirks: { webApiRejects: true } });
+    let payloadFault = null;
+
+    await refused.props().onCommitEdit(rowId, 'primarycontactid', picked).catch((error) => {
+        payloadFault = error;
+    });
+
+    check(
+        'a payload fault is reduced to the sentence after the last InnerException',
+        payloadFault instanceof Error
+            && payloadFault.message === "An undeclared property 'cll_PrimaryContact' which only has property annotations in the payload but no property value was found in the payload.",
+        payloadFault ? JSON.stringify(payloadFault.message) : 'resolved',
+    );
+
+    let missing = null;
+
+    await picking.props().onCommitEdit(rowId, 'primarycontactid', {
+        id: '00000000-0000-0000-0000-000000000001',
+        entityType: 'contact',
+        name: 'Nobody',
+    }).catch((error) => {
+        missing = error;
+    });
+
+    check(
+        'a server fault is shown as its own sentence',
+        missing instanceof Error && missing.message === 'The requested record was not found.',
+        missing ? JSON.stringify(missing.message) : 'resolved',
+    );
+
+    const unreadable = withLookups({ quirks: { relationshipsStatus: 403 } });
+    let noRelationships = null;
+
+    await unreadable.props().onCommitEdit(rowId, 'primarycontactid', picked).catch((error) => {
+        noRelationships = error;
+    });
+
+    check(
+        'relationships that cannot be read refuse the write rather than guessing a key',
+        noRelationships instanceof Error
+            && noRelationships.message === 'Relationships for account could not be read (403).'
+            && !unreadable.calls().some((call) => call.startsWith('webAPI.')),
+        noRelationships ? JSON.stringify(noRelationships.message) : 'resolved',
+    );
+
+    const unnamed = withLookups({ quirks: { entitySetAbsent: true } });
+    let noSet = null;
+
+    await unnamed.props().onCommitEdit(rowId, 'primarycontactid', picked).catch((error) => {
+        noSet = error;
+    });
+
+    check(
+        'a target with no entity set name refuses the write rather than guessing the plural',
+        noSet instanceof Error
+            && noSet.message === 'No entity set name for contact.'
+            && !unnamed.calls().some((call) => call.startsWith('webAPI.')),
+        noSet ? JSON.stringify(noSet.message) : 'resolved',
+    );
+}
+
 editingChecks()
     .then(choiceChecks)
+    .then(lookupChecks)
     .then(createChecks)
     .then(report, (error) => {
         check('the asynchronous assertions ran at all', false, String((error && error.stack) || error));

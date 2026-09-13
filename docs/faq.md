@@ -52,14 +52,25 @@ which the platform hands a dataset control no other way. Declining it is safe:
 choice cells and choice filters stay as they were in 0.3.x, and nothing else in
 the control depends on it. There is still no Web API in this control.
 
-## Why can I edit a choice cell but not a lookup?
+## Why does the import ask for the Web API?
 
-Because the lookup write was tried and did not work. The platform's lookup
-dialog opens and hands back a reference; `record.setValue()` on a lookup
-column then stages nothing, and the save is refused. Rather than offer an
-editor that fails on save, the cell stays read-only and the lookup is edited on
-the form. A choice saves as its integer through the same call, and that was
-measured to persist.
+Because a lookup cell is the one column the dataset record cannot write.
+`record.setValue()` on a lookup column stages nothing — measured, five value
+shapes — so a lookup pick is saved with `webAPI.updateRecord`, and that needs
+the `WebAPI` feature declared. Every other column still writes through the
+record. Declining the feature at import leaves lookup cells read-only and
+changes nothing else.
+
+## Why is a lookup cell read-only in my canvas app?
+
+A canvas app has no `webAPI`, and no lookup dialog to pick from either. The
+control offers the editor only where all of it works; on canvas the cell shows
+the reference and the lookup is edited on the form.
+
+## How do I clear a lookup?
+
+Open the cell and press **Clear**. It is offered only while the cell holds
+something, and it writes `null` through the same call a pick does.
 
 ## I typed a time into a date-and-time cell and the cell shows a different one.
 

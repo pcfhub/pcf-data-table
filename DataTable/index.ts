@@ -7,12 +7,20 @@ import {
     clampPage,
     DateOp,
     editableColumnSet,
+    editKindFor,
+    faultMessage,
     lastPage,
+    LookupValue,
+    lookupTargets,
+    lookupValue,
+    navigationProperty,
     nextDirection,
     Option,
     pageSizeChoices,
     parseOptions,
+    parseRelationships,
     pinPlan,
+    Relationship,
     SelectionMode,
     toCsv,
     toggleId,
@@ -117,6 +125,68 @@ function metadataReader(context: ComponentFramework.Context<IInputs>): MetadataR
     return utils && typeof utils.getEntityMetadata === 'function'
         ? (utils.getEntityMetadata as MetadataReader).bind(utils)
         : null;
+}
+
+/**
+ * The four host surfaces a lookup edit needs, or `null` if any one is missing.
+ *
+ * **The only editor that leaves the record.** `record.setValue()` on a Lookup
+ * column stages nothing (measured 2026-09-11, five shapes), so the write is
+ * `webAPI.updateRecord` with an `@odata.bind` key — which needs the navigation
+ * property name from `EntityDefinitions` (a same-origin `fetch`, because
+ * `context.webAPI` cannot address metadata entities), the target's entity set
+ * name from `utils.getEntityMetadata`, and the pick itself from
+ * `utils.lookupObjects`. Each was measured on 2026-09-13; SPEC.md 0.5.0 has
+ * the nine questions. Canvas has none of the four, so a lookup cell is
+ * read-only there and the component is told so by this returning `null`.
+ *
+ * `page.getClientUrl` is not in the typings and is preferred over a
+ * root-relative URL for the reason `pcf-grid-data-bars` gives: on-premises
+ * puts the organisation in a *path*, where `/api/...` 404s. The `Xrm` global
+ * is the fallback, not the preference.
+ */
+interface LookupHost {
+    clientUrl: string;
+    readMetadata: MetadataReader;
+    pick: (options: Record<string, unknown>) => Promise<unknown>;
+    update: (entity: string, id: string, data: Record<string, unknown>) => Promise<unknown>;
+}
+
+function lookupHost(context: ComponentFramework.Context<IInputs>): LookupHost | null {
+    const loose = context as {
+        utils?: { lookupObjects?: unknown };
+        webAPI?: { updateRecord?: unknown };
+        page?: { getClientUrl?: unknown };
+    };
+    const readMetadata = metadataReader(context);
+    const pick = loose.utils?.lookupObjects;
+    const update = loose.webAPI?.updateRecord;
+    const fromPage =
+        typeof loose.page?.getClientUrl === 'function'
+            ? (loose.page.getClientUrl as () => unknown)()
+            : undefined;
+    const fromGlobal = (globalThis as {
+        Xrm?: { Utility?: { getGlobalContext?: () => { getClientUrl?: () => unknown } } };
+    }).Xrm?.Utility?.getGlobalContext?.()?.getClientUrl?.();
+    const clientUrl = [fromPage, fromGlobal].find(
+        (url): url is string => typeof url === 'string' && url !== '',
+    );
+
+    if (
+        !readMetadata
+        || typeof pick !== 'function'
+        || typeof update !== 'function'
+        || !clientUrl
+    ) {
+        return null;
+    }
+
+    return {
+        clientUrl: clientUrl.replace(/\/$/, ''),
+        readMetadata,
+        pick: (pick as LookupHost['pick']).bind(loose.utils),
+        update: (update as LookupHost['update']).bind(loose.webAPI),
+    };
 }
 
 /**
@@ -276,6 +346,17 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
     private metadata = new Map<string, Promise<Option[]>>();
     private metadataEntity = '';
 
+    /**
+     * What a lookup write needs and reads once: the bound table's many-to-one
+     * relationships (one fetch per table), each lookup column's targets (one
+     * metadata call per column) and each target table's entity set name (one
+     * per table). Promises, for the reason `metadata` above holds promises,
+     * and cleared with it.
+     */
+    private relationships: Promise<Relationship[]> | null = null;
+    private targets = new Map<string, Promise<string[]>>();
+    private entitySets = new Map<string, Promise<string>>();
+
     /** The row most recently added through the New button, for `getOutputs`. */
     private createdRecordId = '';
 
@@ -387,16 +468,20 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
          */
         const readMetadata = metadataReader(context);
         const openForm = formOpener(context);
+        const lookups = lookupHost(context);
 
         /*
          * The cache is per table. A control rebound to another view — the
          * view selector on a subgrid does this — must not answer the new
-         * table's `industrycode` with the old one's options.
+         * table's `industrycode` with the old one's options, nor write its
+         * lookups with the old one's navigation properties.
          */
         const entity = dataset.getTargetEntityType?.() ?? '';
 
         if (entity !== this.metadataEntity) {
             this.metadata.clear();
+            this.relationships = null;
+            this.targets.clear();
             this.metadataEntity = entity;
         }
 
@@ -497,8 +582,29 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
 
                 return record ? Promise.resolve(record.isEditable(column)) : null;
             },
-            onCommitEdit: (id: string, column: string, value: unknown): Promise<void> =>
-                this.writeCell(dataset, id, column, value),
+            /*
+             * Routed by the column's kind rather than by the value's shape: a
+             * lookup is the one column whose write leaves the record, and
+             * `null` — a clear — looks the same for every kind.
+             */
+            onCommitEdit: (id: string, column: string, value: unknown): Promise<void> => {
+                const target = (dataset.columns ?? []).find((candidate) => candidate.name === column);
+
+                return target && editKindFor(target) === 'lookup'
+                    ? this.writeLookup(lookups, dataset, id, column, lookupValue(value))
+                    : this.writeCell(dataset, id, column, value);
+            },
+
+            /*
+             * `null` where any of the four surfaces a lookup edit needs is
+             * missing — canvas, the hub's harness, a host that declined
+             * `WebAPI`. The component reads `null` as "lookup cells stay
+             * read-only", which is exactly 0.4.x.
+             */
+            pickLookup: lookups
+                ? (column: string): Promise<LookupValue | null> =>
+                    this.pickLookup(lookups, entity, column)
+                : null,
 
             /*
              * `null` where the host has no `utils.getEntityMetadata` — canvas,
@@ -569,6 +675,230 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
         this.metadata.set(column, fetched);
 
         return fetched;
+    }
+
+    /**
+     * The tables one lookup column can point at, fetched once per column.
+     *
+     * Same call as `optionsFor` — `getEntityMetadata(entity, [column])` — and
+     * a different key off the node: `Targets`, which a `Lookup.Simple` carries
+     * at the top and a `Lookup.Customer` only under `attributeDescriptor`.
+     * `lookupTargets` reads both. Cached separately from the option lists
+     * because the two are asked at different moments and a rejection of one
+     * should not be the answer to the other.
+     */
+    private targetsFor(read: MetadataReader, entity: string, column: string): Promise<string[]> {
+        const cached = this.targets.get(column);
+
+        if (cached) {
+            return cached;
+        }
+
+        const fetched = read(entity, [column]).then((metadata) => {
+            const attributes = (metadata as { Attributes?: { get?: (name: string) => unknown } })
+                ?.Attributes;
+
+            return lookupTargets(
+                attributes && typeof attributes.get === 'function' ? attributes.get(column) : null,
+            );
+        });
+
+        this.targets.set(column, fetched);
+
+        return fetched;
+    }
+
+    /**
+     * The entity set name of a target table — the plural the bind value is
+     * spelled with — fetched once per table.
+     *
+     * `getEntityMetadata(table)` with no column list, as `pcf-tag-list` does;
+     * `EntitySetName` answered `contacts` and `accounts` on the probe. A node
+     * without one rejects rather than guessing `${table}s`, because a guess
+     * that is wrong writes to a URL that does not exist and the platform's
+     * refusal names neither the table nor the guess.
+     */
+    private entitySetFor(read: MetadataReader, table: string): Promise<string> {
+        const cached = this.entitySets.get(table);
+
+        if (cached) {
+            return cached;
+        }
+
+        const fetched = read(table, []).then((metadata) => {
+            const set = (metadata as { EntitySetName?: unknown })?.EntitySetName;
+
+            if (typeof set !== 'string' || set === '') {
+                throw new Error(`No entity set name for ${table}.`);
+            }
+
+            return set;
+        });
+
+        this.entitySets.set(table, fetched);
+
+        return fetched;
+    }
+
+    /**
+     * The bound table's many-to-one relationships, fetched once per table.
+     *
+     * **A same-origin `fetch`, not `context.webAPI`.** `retrieveMultipleRecords`
+     * addresses records by entity logical name and cannot reach
+     * `EntityDefinitions` — the finding `pcf-grid-data-bars` made for numeric
+     * ranges applies to navigation properties for the same reason. Reading
+     * metadata needs no feature declaration and no privilege beyond being
+     * signed in; the probe read it in 84 ms.
+     *
+     * It is the navigation property that makes this necessary: the bind key
+     * for a lookup is *not* its logical name by rule and *not* its schema name
+     * by rule — on the probe table it was the logical name, and a Customer
+     * lookup has two — so the control reads the answer rather than deriving it.
+     */
+    private relationshipsFor(host: LookupHost, entity: string): Promise<Relationship[]> {
+        if (this.relationships) {
+            return this.relationships;
+        }
+
+        const url =
+            `${host.clientUrl}/api/data/v9.2/EntityDefinitions(LogicalName='${encodeURIComponent(entity)}')`
+            + '/ManyToOneRelationships?$select=ReferencingAttribute,ReferencedEntity,'
+            + 'ReferencingEntityNavigationPropertyName';
+
+        const fetched = fetch(url, {
+            headers: {
+                Accept: 'application/json',
+                'OData-MaxVersion': '4.0',
+                'OData-Version': '4.0',
+            },
+            credentials: 'same-origin',
+        }).then((response) => {
+            if (!response.ok) {
+                throw new Error(`Relationships for ${entity} could not be read (${response.status}).`);
+            }
+
+            return response.json().then(parseRelationships);
+        });
+
+        this.relationships = fetched;
+
+        return fetched;
+    }
+
+    /**
+     * Open the platform's lookup dialog for one column, and hand back the pick.
+     *
+     * Resolves a `LookupValue` in this control's spelling, or `null` for a
+     * dialog the reader closed — measured 2026-09-11 as a resolve of `[]`,
+     * not `undefined` and not a rejection, so the read below treats anything
+     * that is not a non-empty array as a cancel. A pick arrives with the GUID
+     * braced and upper-case; `lookupValue` normalises it.
+     *
+     * The dialog is offered every table the column can point at, which for a
+     * Customer lookup is two; the resolved `entityType` says which was picked
+     * and is what `writeLookup` chooses the navigation property by. A column
+     * whose metadata names no target gets no dialog — there is nothing to
+     * search — and the rejection is the sentence the cell shows.
+     */
+    private pickLookup(
+        host: LookupHost,
+        entity: string,
+        column: string,
+    ): Promise<LookupValue | null> {
+        return this.targetsFor(host.readMetadata, entity, column).then((targets) => {
+            if (targets.length === 0) {
+                throw new Error(`${column} names no table to search.`);
+            }
+
+            return host
+                .pick({
+                    entityTypes: targets,
+                    defaultEntityType: targets[0],
+                    allowMultiSelect: false,
+                })
+                .then((picked) => {
+                    const first = Array.isArray(picked) ? picked[0] : undefined;
+
+                    return first ? lookupValue(first) : null;
+                });
+        });
+    }
+
+    /**
+     * Write one lookup cell through the Web API, and report the row afterwards.
+     *
+     * `updateRecord(entity, id, { '<navigationProperty>@odata.bind':
+     * '/<entitySet>(<guid>)' })` — or `null` in place of the path to clear,
+     * which the probe measured as accepted and clearing (2026-09-13). The
+     * `$ref` DELETE the Web API also offers for a clear works too and is not
+     * used: this control makes no write the feature declaration does not
+     * cover.
+     *
+     * **A clear names the navigation property of the value being cleared.** A
+     * Customer lookup has one per target, and `null` on the wrong one is a
+     * no-op rather than an error — so the current reference's `entityType`
+     * picks it, and clearing a cell that is already empty writes nothing at
+     * all.
+     *
+     * Everything about how this looks while it happens belongs to the
+     * component, as with `writeCell`; the rejection is turned into the one
+     * readable sentence a `webAPI` fault carries, because the raw `message`
+     * of a payload fault opens with a generic line and runs into a stack
+     * trace.
+     */
+    private writeLookup(
+        host: LookupHost | null,
+        dataset: DataSet,
+        id: string,
+        column: string,
+        value: LookupValue | null,
+    ): Promise<void> {
+        if (!host) {
+            return Promise.reject(new Error('This host cannot write a lookup.'));
+        }
+
+        const entity = dataset.getTargetEntityType();
+        const current = lookupValue(dataset.records[id]?.getValue(column));
+        const target = value?.entityType ?? current?.entityType ?? null;
+
+        // Nothing to clear, so nothing to write — and no navigation property
+        // to name it by either.
+        if (value === null && target === null) {
+            return Promise.resolve();
+        }
+
+        const started = Date.now();
+        const since = (): string => `+${Date.now() - started}ms`;
+
+        return Promise.all([
+            this.relationshipsFor(host, entity),
+            value ? this.entitySetFor(host.readMetadata, value.entityType) : Promise.resolve(null),
+        ])
+            .then(([relationships, entitySet]) => {
+                const key = navigationProperty(relationships, column, target as string);
+
+                if (!key) {
+                    throw new Error(`No relationship from ${column} to ${target}.`);
+                }
+
+                return host.update(entity, id, {
+                    [`${key}@odata.bind`]: value && entitySet ? `/${entitySet}(${value.id})` : null,
+                });
+            })
+            .then(() => {
+                // The same rule as `writeCell`: `refresh()` is part of the
+                // write. Measured 2026-09-13: the new reference was on the
+                // next pass, about a second later.
+                dataset.refresh();
+
+                this.editedRecordId = id;
+                this.notifyOutputChanged();
+            })
+            .catch((error: unknown) => {
+                console.warn('[DataTable] lookup write failed', column, since(), error);
+
+                throw new Error(faultMessage(error, 'The lookup could not be saved.'));
+            });
     }
 
     /**
@@ -741,6 +1071,9 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
         }
 
         this.metadata.clear();
+        this.relationships = null;
+        this.targets.clear();
+        this.entitySets.clear();
     }
 
     /**

@@ -87,6 +87,131 @@
                 ],
             },
             ownerid: { targets: ['systemuser'] },
+
+            /*
+             * The two lookups `withLookups()` adds. **`descriptorOnly`
+             * reproduces a measured asymmetry**: on the probe table a
+             * `Lookup.Simple` carried `Targets` at the top of the node and
+             * again under `attributeDescriptor`, while the `Lookup.Customer`
+             * carried it only under the descriptor — the top-level key was
+             * `undefined`. A reader that stops at the top level gets `[]` for
+             * every Customer lookup and offers no dialog. SPEC.md 0.4.0 (4).
+             */
+            primarycontactid: { targets: ['contact'] },
+            parentcustomerid: { targets: ['account', 'contact'], descriptorOnly: true },
+        },
+
+        /**
+         * What `EntityDefinitions(...)/ManyToOneRelationships` returns for the
+         * bound table, reduced to the three fields a lookup write needs.
+         *
+         * **The navigation property is not derivable and this is why it is a
+         * table.** Measured 2026-09-13: `cll_primarycontact`'s was its logical
+         * name, not the schema-cased `cll_PrimaryContact` the first design
+         * assumed — and the Customer lookup had **two**, one per target,
+         * `<column>_account` and `<column>_contact`. The rig serves these
+         * through a same-origin `fetch`, because that is the only route a
+         * control has: `context.webAPI` cannot address `EntityDefinitions`.
+         */
+        relationships: [
+            { column: 'primarycontactid', target: 'contact', navigationProperty: 'primarycontactid' },
+            { column: 'parentcustomerid', target: 'account', navigationProperty: 'parentcustomerid_account' },
+            { column: 'parentcustomerid', target: 'contact', navigationProperty: 'parentcustomerid_contact' },
+            { column: 'ownerid', target: 'systemuser', navigationProperty: 'ownerid' },
+        ],
+
+        /**
+         * The tables a lookup can point at: entity set name — the plural the
+         * `@odata.bind` value is spelled with, off `getEntityMetadata(table)
+         * .EntitySetName` — and the rows a pick can land on. A bind to a GUID
+         * not listed here is refused the way the platform refused one:
+         * "The requested record was not found." (2147746327).
+         */
+        related: {
+            contact: {
+                entitySet: 'contacts',
+                rows: [
+                    { id: 'c1e84297-9486-ec11-93b0-000d3a5c8441', name: 'Dana Whitfield' },
+                    { id: 'c2e84297-9486-ec11-93b0-000d3a5c8441', name: 'Ravi Menon' },
+                    { id: 'c3e84297-9486-ec11-93b0-000d3a5c8441', name: 'Susanna Stubberod' },
+                ],
+            },
+            account: {
+                entitySet: 'accounts',
+                rows: [
+                    { id: 'a1e84297-9486-ec11-93b0-000d3a5c8441', name: 'Adventure Works' },
+                    { id: 'a2e84297-9486-ec11-93b0-000d3a5c8441', name: 'Fabrikam' },
+                ],
+            },
+            systemuser: {
+                entitySet: 'systemusers',
+                rows: [
+                    { id: 'b3f1a0c2-0000-4000-8000-000000000001', name: 'Sam Vaziri' },
+                    { id: 'b3f1a0c2-0000-4000-8000-000000000002', name: 'Jo Park' },
+                ],
+            },
+        },
+
+        /**
+         * The view with two visible lookups on it — a `Lookup.Simple` to
+         * contact and a `Lookup.Customer` to account-or-contact — for the
+         * lookup-editing suite. **A separate shape rather than two more columns
+         * on `columns`**, because the pinning assertions count cells per row
+         * and the screenshots are framed for the eight that are there.
+         */
+        withLookups: function () {
+            var self = this;
+            var contacts = self.related.contact.rows;
+            var accounts = self.related.account.rows;
+
+            return {
+                columns: self.columns.concat([
+                    {
+                        name: 'primarycontactid',
+                        // Not 'Primary contact': the text column above already has that
+                        // heading, and dev/preview.html finds a cell by its heading.
+                        displayName: 'Contact',
+                        dataType: 'Lookup.Simple',
+                        alias: 'primarycontactid',
+                        order: 9,
+                        visualSizeFactor: 140,
+                    },
+                    {
+                        name: 'parentcustomerid',
+                        displayName: 'Customer',
+                        dataType: 'Lookup.Customer',
+                        alias: 'parentcustomerid',
+                        order: 10,
+                        visualSizeFactor: 140,
+                    },
+                ]),
+                records: self.records.map(function (row, index) {
+                    var values = {};
+
+                    Object.keys(row.values).forEach(function (name) {
+                        values[name] = row.values[name];
+                    });
+
+                    // Every row but the last carries a contact; the last is
+                    // empty, so clearing an empty cell has a row to try on.
+                    var contact = contacts[index % contacts.length];
+
+                    values.primarycontactid = index === self.records.length - 1
+                        ? null
+                        : { id: { guid: contact.id }, etn: 'contact', name: contact.name };
+                    // Alternating targets, so the Customer column has both
+                    // navigation properties in play on one page.
+                    var customer = index % 2 === 0 ? accounts[0] : contacts[1];
+
+                    values.parentcustomerid = {
+                        id: { guid: customer.id },
+                        etn: index % 2 === 0 ? 'account' : 'contact',
+                        name: customer.name,
+                    };
+
+                    return { id: row.id, values: values };
+                }),
+            };
         },
 
         /*

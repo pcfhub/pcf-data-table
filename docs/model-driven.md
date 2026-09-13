@@ -105,8 +105,18 @@ columns that look like choices stay read-only: **Status** (`statecode`) and
 **Status reason** (`statuscode`). The platform reports them as not editable
 and the control asks before offering anything, so nothing needs configuring.
 
-Lookup cells stay read-only on every host — [Limitations](limitations.md)
-explains the measurement behind that.
+A lookup column's cells open as the current name with two buttons. **Choose…**
+opens the platform's own lookup dialog — the table's views, its search and its
+security, exactly as on the form — and the pick is saved the moment the dialog
+closes. **Clear** empties the cell, and is offered only while there is
+something to clear. Escape or the cross closes the cell without writing. A
+Customer lookup offers both tables in the dialog.
+
+::image{src=media/screenshot-lookup.png alt="A lookup cell open for editing: the current contact's name, a Choose button, a Clear button and a cross" zoom}
+
+This is the one editor that writes through the Web API rather than the dataset
+record, which is why 0.5.0's import asks for that feature — see
+[Limitations](limitations.md). Owner columns stay read-only.
 
 ## Adding rows
 

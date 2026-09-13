@@ -11,6 +11,8 @@ import {
     editorValue,
     filterKindFor,
     headerCheckState,
+    LookupValue,
+    lookupValue,
     nextDateOp,
     Option,
     pagerLabel,
@@ -206,6 +208,90 @@ function CellEditor(props: {
             }
             onChange={(event): void => setValue(event.target.value)}
         />
+    );
+}
+
+/**
+ * The editor for a lookup cell: the current name and two buttons.
+ *
+ * **Not an input, because the value is not typed.** The platform's own lookup
+ * dialog — `utils.lookupObjects` — is the picker, with the table's views,
+ * its search and its security for free, and a type-ahead beside it would be
+ * a second, worse picker (the argument `pcf-lookup-search` records). So the
+ * cell in edit mode is *Choose…*, which opens the dialog, and *Clear*, which
+ * is offered only while there is something to clear. Escape and the cross
+ * close it; **blur does not**, unlike `CellEditor`, because opening the
+ * dialog takes focus away and a blur-cancel would close this editor under the
+ * dialog it just opened.
+ *
+ * While the dialog is up the buttons are disabled rather than hidden, so the
+ * cell keeps its size and the reader can see where the answer will land.
+ */
+function LookupEditor(props: {
+    current: string;
+    label: string;
+    busy: boolean;
+    strings: { choose: string; clear: string; cancel: string; none: string };
+    onChoose: () => void;
+    onClear: () => void;
+    onCancel: () => void;
+}): React.ReactElement {
+    const ref = React.useRef<HTMLButtonElement>(null);
+
+    React.useEffect(() => {
+        ref.current?.focus();
+    }, []);
+
+    const onKeyDown = (event: React.KeyboardEvent): void => {
+        if (event.key === 'Escape') {
+            event.stopPropagation();
+            props.onCancel();
+        }
+    };
+
+    return (
+        <span
+            className="DataTable-lookupEditor"
+            role="group"
+            aria-label={props.label}
+            onKeyDown={onKeyDown}
+            // A click inside the editor must not reach the row, which opens
+            // the record — the same guard every editor here carries.
+            onClick={(event): void => event.stopPropagation()}
+        >
+            <span className="DataTable-lookupCurrent">
+                {props.current || props.strings.none}
+            </span>
+            <button
+                ref={ref}
+                type="button"
+                className="DataTable-lookupChoose"
+                disabled={props.busy}
+                onClick={props.onChoose}
+            >
+                {props.strings.choose}
+            </button>
+            {props.current !== '' && (
+                <button
+                    type="button"
+                    className="DataTable-lookupClear"
+                    disabled={props.busy}
+                    onClick={props.onClear}
+                >
+                    {props.strings.clear}
+                </button>
+            )}
+            <button
+                type="button"
+                className="DataTable-lookupCancel"
+                disabled={props.busy}
+                aria-label={props.strings.cancel}
+                title={props.strings.cancel}
+                onClick={props.onCancel}
+            >
+                <ClearGlyph />
+            </button>
+        </span>
     );
 }
 
@@ -464,6 +550,18 @@ export interface IProps {
     loadOptions: ((column: string) => Promise<Option[]>) | null;
 
     /**
+     * Open the platform's lookup dialog for a column, or `null` where the host
+     * cannot edit a lookup at all.
+     *
+     * Function-or-null on the `loadOptions` argument — a fact about the host,
+     * decided once: a lookup edit needs the dialog, entity metadata, the Web
+     * API and the organisation URL, and canvas has none of the four. Resolves
+     * the pick in the control's own spelling, or `null` for a dialog the
+     * reader closed; rejects with a sentence for a column that names no table.
+     */
+    pickLookup: ((column: string) => Promise<LookupValue | null>) | null;
+
+    /**
      * The platform's own date formatter, or `null` where the host has none.
      *
      * Used for the text a date cell shows while its write is in flight, so
@@ -515,6 +613,10 @@ function useEditing(props: IProps): {
     begin: (id: string, column: string) => void;
     cancel: () => void;
     commit: (id: string, column: string, kind: EditKind, typed: string) => void;
+    /** A value that was never typed — a lookup's pick, or `null` to clear it. */
+    commitValue: (id: string, column: string, value: unknown) => void;
+    /** A failure that happened before any write — a dialog that could not open. */
+    fail: (id: string, column: string, message: string) => void;
 } {
     const [editing, setEditing] = React.useState<{ id: string; column: string } | null>(null);
     const [editableCells, setEditableCells] = React.useState<Map<string, boolean>>(
@@ -535,7 +637,8 @@ function useEditing(props: IProps): {
     const mounted = useMounted();
 
     const {
-        enableEditing, allowedColumns, canEdit, loadOptions, columns, pageIds, dataset, getString,
+        enableEditing, allowedColumns, canEdit, loadOptions, pickLookup, columns, pageIds, dataset,
+        getString,
     } = props;
     const pageKey = pageIds.join('|');
     const columnKey = columns.map((column) => column.name).join('|');
@@ -561,6 +664,9 @@ function useEditing(props: IProps): {
             return (
                 kind !== 'none'
                 && (kind !== 'choice' || loadOptions !== null)
+                // The same argument for a lookup on a host with no dialog,
+                // no Web API or no organisation URL — canvas is all three.
+                && (kind !== 'lookup' || pickLookup !== null)
                 && (allowedColumns === null || allowedColumns.has(column.name))
             );
         });
@@ -624,7 +730,7 @@ function useEditing(props: IProps): {
 
         return undefined;
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [enableEditing, pageKey, columnKey, allowedColumns, loadOptions === null]);
+    }, [enableEditing, pageKey, columnKey, allowedColumns, loadOptions === null, pickLookup === null]);
 
     /**
      * Retire optimistic values the dataset has caught up with.
@@ -709,6 +815,37 @@ function useEditing(props: IProps): {
         });
     };
 
+    /**
+     * The write half, shared by a typed value and a picked one: the editor
+     * closes, the optimistic value goes up, the cell is marked saving, and the
+     * platform's answer retires one or both.
+     */
+    const write = (id: string, column: string, value: unknown): void => {
+        const key = cellKey(id, column);
+
+        setEditing(null);
+        setFailure(null);
+        setPending((current) => new Map(current).set(key, value));
+        setSaving((current) => new Set(current).add(key));
+
+        withTimeout(
+            props.onCommitEdit(id, column, value),
+            getString('DataTable_SaveTimedOut'),
+        ).then(
+            () => drop(saving, key),
+            (error: unknown) => {
+                drop(saving, key);
+                drop(pending, key);
+                setFailure({
+                    key,
+                    message:
+                        (error as Error)?.message
+                        || getString('DataTable_SaveFailedGeneric'),
+                });
+            },
+        );
+    };
+
     return {
         editing,
         editableCells,
@@ -724,10 +861,7 @@ function useEditing(props: IProps): {
         },
         cancel: (): void => setEditing(null),
         commit: (id, column, kind, typed): void => {
-            const key = cellKey(id, column);
             const coerced = coerceValue(kind, typed);
-
-            setEditing(null);
 
             /*
              * A half-typed number writes nothing, on the same argument
@@ -736,31 +870,18 @@ function useEditing(props: IProps): {
              * swallowed, because a cell that silently reverts reads as broken.
              */
             if (!coerced.ok) {
-                setFailure({ key, message: getString('DataTable_NotANumber') });
+                setEditing(null);
+                setFailure({ key: cellKey(id, column), message: getString('DataTable_NotANumber') });
 
                 return;
             }
 
-            setFailure(null);
-            setPending((current) => new Map(current).set(key, coerced.value));
-            setSaving((current) => new Set(current).add(key));
-
-            withTimeout(
-                props.onCommitEdit(id, column, coerced.value),
-                getString('DataTable_SaveTimedOut'),
-            ).then(
-                () => drop(saving, key),
-                (error: unknown) => {
-                    drop(saving, key);
-                    drop(pending, key);
-                    setFailure({
-                        key,
-                        message:
-                            (error as Error)?.message
-                            || getString('DataTable_SaveFailedGeneric'),
-                    });
-                },
-            );
+            write(id, column, coerced.value);
+        },
+        commitValue: write,
+        fail: (id, column, message): void => {
+            setEditing(null);
+            setFailure({ key: cellKey(id, column), message });
         },
     };
 }
@@ -952,6 +1073,9 @@ export function DataTableControl(props: IProps): React.ReactElement | null {
     // Before every early return: hooks cannot be conditional.
     const edit = useEditing(props);
     const choiceOptions = useChoiceOptions(props);
+    // Whether the lookup dialog is up. One flag rather than one per cell:
+    // the dialog is modal, so at most one cell is choosing at a time.
+    const [picking, setPicking] = React.useState(false);
     const [creating, setCreating] = React.useState(false);
     const [createFailure, setCreateFailure] = React.useState<string | null>(null);
 
@@ -1505,6 +1629,10 @@ export function DataTableControl(props: IProps): React.ReactElement | null {
                                             // is a `<select>` that can only
                                             // clear, so it waits for them.
                                             && (kind !== 'choice' || Boolean(options && options.length > 0))
+                                            // A lookup needs the dialog and the
+                                            // Web API, which is a fact about
+                                            // the host decided in `updateView`.
+                                            && (kind !== 'lookup' || props.pickLookup !== null)
                                             && (props.allowedColumns === null
                                                 || props.allowedColumns.has(column.name))
                                             && edit.editableCells.get(key) === true;
@@ -1540,6 +1668,9 @@ export function DataTableControl(props: IProps): React.ReactElement | null {
                                         const cellClass = [
                                             saving ? 'is-saving' : '',
                                             failure ? 'is-invalid' : '',
+                                            // The lookup editor is wider than
+                                            // its cell; the cell lets it out.
+                                            isEditingCell && kind === 'lookup' ? 'is-lookupEditing' : '',
                                         ]
                                             .filter(Boolean)
                                             .join(' ');
@@ -1556,7 +1687,80 @@ export function DataTableControl(props: IProps): React.ReactElement | null {
                                                         .join(' ') || undefined
                                                 }
                                             >
-                                                {isEditingCell ? (
+                                                {isEditingCell && kind === 'lookup' ? (
+                                                    <LookupEditor
+                                                        current={editorValue(
+                                                            kind,
+                                                            record.getValue(column.name),
+                                                        )}
+                                                        label={getString(
+                                                            'DataTable_EditCell',
+                                                        ).replace('{0}', column.displayName)}
+                                                        busy={picking}
+                                                        strings={{
+                                                            choose: getString('DataTable_LookupChoose'),
+                                                            clear: getString('DataTable_LookupClear'),
+                                                            cancel: getString('DataTable_LookupCancel'),
+                                                            none: getString('DataTable_NoValue'),
+                                                        }}
+                                                        onChoose={(): void => {
+                                                            const pick = props.pickLookup;
+
+                                                            if (!pick) {
+                                                                return;
+                                                            }
+
+                                                            setPicking(true);
+                                                            pick(column.name).then(
+                                                                (picked): void => {
+                                                                    setPicking(false);
+
+                                                                    /*
+                                                                      A closed dialog and
+                                                                      a re-pick of the
+                                                                      same row both leave
+                                                                      the cell as it was:
+                                                                      nothing to write, so
+                                                                      nothing is.
+                                                                    */
+                                                                    const current = lookupValue(
+                                                                        record.getValue(column.name),
+                                                                    );
+
+                                                                    if (
+                                                                        picked === null
+                                                                        || picked.id === current?.id
+                                                                    ) {
+                                                                        edit.cancel();
+
+                                                                        return;
+                                                                    }
+
+                                                                    edit.commitValue(
+                                                                        id,
+                                                                        column.name,
+                                                                        picked,
+                                                                    );
+                                                                },
+                                                                (error: unknown): void => {
+                                                                    setPicking(false);
+                                                                    edit.fail(
+                                                                        id,
+                                                                        column.name,
+                                                                        (error as Error)?.message
+                                                                            || getString(
+                                                                                'DataTable_SaveFailedGeneric',
+                                                                            ),
+                                                                    );
+                                                                },
+                                                            );
+                                                        }}
+                                                        onClear={(): void =>
+                                                            edit.commitValue(id, column.name, null)
+                                                        }
+                                                        onCancel={edit.cancel}
+                                                    />
+                                                ) : isEditingCell ? (
                                                     <CellEditor
                                                         kind={kind}
                                                         initial={editorValue(

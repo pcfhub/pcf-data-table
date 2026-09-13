@@ -722,15 +722,22 @@ export function pagerLabel(
  * component withholds the editor until the options have arrived and offers
  * nothing on a host with no `utils`.
  *
- * Lookups are still refused, and for a reason that was measured rather than
- * reasoned: `record.setValue()` on a Lookup column stages nothing on the host
- * this was built against — five value shapes, every `save()` refused with
- * "Invalid snapshot", the stored value untouched. The dialog to pick one works;
- * there is no write to hand its answer to. See SPEC.md 0.4.0, question 6.
+ * A lookup edits through the platform's own dialog and writes through
+ * `webAPI.updateRecord`, since 0.5.0 — the one column type whose write does
+ * not go through the record. `record.setValue()` on a Lookup column stages
+ * nothing on the host this was built against (five value shapes, every
+ * `save()` refused with "Invalid snapshot", measured 2026-09-11), so 0.4.0 cut
+ * the editor; 0.5.0 measured the other route and took it. See SPEC.md 0.5.0.
+ * `Lookup.Owner` stays `'none'`: it binds to two tables through a navigation
+ * property no probe has watched, and offering an editor on an unmeasured write
+ * is the mistake this file exists to refuse.
  */
-export type EditKind = 'text' | 'number' | 'boolean' | 'date' | 'datetime' | 'choice' | 'none';
+export type EditKind =
+    | 'text' | 'number' | 'boolean' | 'date' | 'datetime' | 'choice' | 'lookup' | 'none';
 
 const BOOLEAN_TYPES = ['TwoOptions'];
+
+const LOOKUP_TYPES = ['Lookup.Simple', 'Lookup.Customer'];
 
 /**
  * A date-and-time column edits as one, since 0.4.0.
@@ -768,7 +775,199 @@ export function editKindFor(column: Column): EditKind {
         return 'choice';
     }
 
+    if (LOOKUP_TYPES.includes(column.dataType)) {
+        return 'lookup';
+    }
+
     return 'none';
+}
+
+/* -------------------------------------------------------------------------
+ * Lookups
+ * ---------------------------------------------------------------------- */
+
+/**
+ * A reference to a row of another table, in the one spelling this control
+ * uses: unbraced lower-case GUID, the target's logical name, the display name.
+ *
+ * The platform hands the same thing over in two shapes and neither is this
+ * one. `record.getValue()` on a lookup column is an `EntityReference` —
+ * `{ id: { guid }, etn, name }`, unbraced lower-case — and
+ * `utils.lookupObjects` resolves a `LookupValue[]` — `{ id, entityType, name }`
+ * with the GUID **braced and upper-case**. Both measured 2026-09-11. `lookupValue`
+ * below reads either; everything past it reads only this.
+ */
+export interface LookupValue {
+    id: string;
+    entityType: string;
+    name: string;
+}
+
+/**
+ * Either platform shape as a `LookupValue`, or `null` for an empty cell.
+ *
+ * Reads the `EntityReference` shape first because that is what a cell holds
+ * ninety-nine times in a hundred; the dialog's shape is the one arriving once,
+ * when a reader picks.
+ */
+export function lookupValue(raw: unknown): LookupValue | null {
+    if (!raw || typeof raw !== 'object') {
+        return null;
+    }
+
+    const reference = raw as {
+        id?: unknown;
+        etn?: unknown;
+        entityType?: unknown;
+        name?: unknown;
+    };
+    const guid =
+        typeof reference.id === 'object' && reference.id !== null
+            ? (reference.id as { guid?: unknown }).guid
+            : reference.id;
+    const id = typeof guid === 'string' ? guid.replace(/^\{|\}$/g, '').toLowerCase() : '';
+    const entityType =
+        typeof reference.etn === 'string'
+            ? reference.etn
+            : typeof reference.entityType === 'string'
+              ? reference.entityType
+              : '';
+
+    if (!/^[0-9a-f-]{36}$/.test(id) || entityType === '') {
+        return null;
+    }
+
+    return { id, entityType, name: typeof reference.name === 'string' ? reference.name : '' };
+}
+
+/**
+ * The tables a lookup column can point at, read off its metadata node.
+ *
+ * **Two places, and which one is populated depends on the column type** —
+ * measured 2026-09-11: a `Lookup.Simple` carries `Targets` at the top of the
+ * node and again under `attributeDescriptor`; a `Lookup.Customer` carries it
+ * **only** under the descriptor, the top-level key being `undefined`. So the
+ * top level is tried and the descriptor is the fall-through, and a node with
+ * neither yields `[]` — which the caller reads as "no dialog to open".
+ */
+export function lookupTargets(node: unknown): string[] {
+    const shaped = node as {
+        Targets?: unknown;
+        attributeDescriptor?: { Targets?: unknown };
+    } | null;
+    const candidates = [shaped?.Targets, shaped?.attributeDescriptor?.Targets];
+
+    for (const candidate of candidates) {
+        if (Array.isArray(candidate)) {
+            const names = candidate.filter(
+                (entry): entry is string => typeof entry === 'string' && entry !== '',
+            );
+
+            if (names.length > 0) {
+                return names;
+            }
+        }
+    }
+
+    return [];
+}
+
+/**
+ * One many-to-one relationship of the bound table, as the Web API describes
+ * it — the three fields a lookup write needs and nothing else.
+ */
+export interface Relationship {
+    /** The lookup column's logical name. */
+    column: string;
+    /** The table the relationship points at. */
+    target: string;
+    /** The navigation property the `@odata.bind` key is spelled with. */
+    navigationProperty: string;
+}
+
+/**
+ * The rows of a `ManyToOneRelationships` response worth keeping.
+ *
+ * **The navigation property is read, never derived, and the reason is
+ * measured.** The bind key for `cll_primarycontact` on the probe table turned
+ * out to be `cll_primarycontact` — the logical name — while the schema-cased
+ * `cll_PrimaryContact` this control's first design assumed was rejected as an
+ * undeclared property. A Customer lookup has *two*: `cll_customer_account` and
+ * `cll_customer_contact`, one per target. Neither is a rule a control can
+ * apply; `ReferencingEntityNavigationPropertyName` is the answer and this is
+ * where it comes from. The `getEntityMetadata` node carries no `SchemaName`
+ * to derive one from anyway. SPEC.md 0.5.0, questions 2 and 3.
+ */
+export function parseRelationships(body: unknown): Relationship[] {
+    const rows = (body as { value?: unknown })?.value;
+
+    if (!Array.isArray(rows)) {
+        return [];
+    }
+
+    return rows
+        .map((row) => {
+            const shaped = row as {
+                ReferencingAttribute?: unknown;
+                ReferencedEntity?: unknown;
+                ReferencingEntityNavigationPropertyName?: unknown;
+            };
+
+            return {
+                column: shaped.ReferencingAttribute,
+                target: shaped.ReferencedEntity,
+                navigationProperty: shaped.ReferencingEntityNavigationPropertyName,
+            };
+        })
+        .filter(
+            (row): row is Relationship =>
+                typeof row.column === 'string'
+                && typeof row.target === 'string'
+                && typeof row.navigationProperty === 'string'
+                && row.navigationProperty !== '',
+        );
+}
+
+/** The navigation property for one column pointing at one table, or `null`. */
+export function navigationProperty(
+    relationships: Relationship[],
+    column: string,
+    target: string,
+): string | null {
+    const match = relationships.find(
+        (row) => row.column === column && row.target === target,
+    );
+
+    return match ? match.navigationProperty : null;
+}
+
+/**
+ * The sentence worth showing from a rejected `webAPI` call.
+ *
+ * A rejection is `{ errorCode, message, title, code, raw }` — measured
+ * 2026-09-13 — and `message` comes in two shapes. A server fault puts the
+ * useful sentence first and a `title` beside it: "The requested record was
+ * not found." / "Record Is Unavailable". A payload fault opens with the
+ * generic "Error identified in Payload provided by the user for Entity :''"
+ * and buries the useful part after `InnerException :` — sometimes twice, with
+ * a `--->` between an outer and an inner exception — followed by a stack
+ * trace. So: the last segment after either marker, the exception class name
+ * stripped, the first line, the first sentence. `raw` is never parsed.
+ */
+export function faultMessage(error: unknown, fallback: string): string {
+    const fault = error as { message?: unknown } | null;
+    const message = typeof fault?.message === 'string' ? fault.message.trim() : '';
+
+    if (message === '') {
+        return fallback;
+    }
+
+    const segment = (message.split(/InnerException\s*:|--->/).pop() ?? message).trim();
+    const withoutClass = segment.replace(/^[\w.]*Exception:\s*/, '');
+    const firstLine = withoutClass.split(/\r?\n/)[0].trim();
+    const sentence = firstLine.match(/^.*?[.!?](?=\s|$)/);
+
+    return (sentence ? sentence[0] : firstLine) || fallback;
 }
 
 /** One entry of a Choice column's option list. */
@@ -878,6 +1077,13 @@ function readOption(entry: unknown): Option | null {
 export function coerceValue(kind: EditKind, typed: string): { ok: boolean; value: unknown } {
     if (kind === 'text') {
         return { ok: true, value: typed };
+    }
+
+    // A lookup is never typed: its value arrives from the dialog as an
+    // object, through `commitValue` rather than `commit`. Refused here so a
+    // caller that reaches this path by mistake writes nothing.
+    if (kind === 'lookup') {
+        return { ok: false, value: null };
     }
 
     if (kind === 'number') {
@@ -1028,6 +1234,12 @@ export function editorValue(kind: EditKind, raw: unknown): string {
         return '';
     }
 
+    // The name, which is what the cell shows and what the editor's "current"
+    // line reads; the id is compared by `sameValue`, never shown.
+    if (kind === 'lookup') {
+        return lookupValue(raw)?.name ?? '';
+    }
+
     if (kind === 'date' || kind === 'datetime') {
         const date = toDate(raw);
 
@@ -1068,6 +1280,15 @@ export function editorValue(kind: EditKind, raw: unknown): string {
 export function sameValue(kind: EditKind, stored: unknown, written: unknown): boolean {
     if (kind === 'date' || kind === 'datetime') {
         return editorValue(kind, stored) === editorValue(kind, written);
+    }
+
+    /*
+     * By id, not by name. The record reports an `EntityReference` and the
+     * override holds the dialog's `LookupValue`; `lookupValue` reads both to
+     * the same GUID spelling, and two empties compare as `null === null`.
+     */
+    if (kind === 'lookup') {
+        return (lookupValue(stored)?.id ?? null) === (lookupValue(written)?.id ?? null);
     }
 
     return String(stored ?? '') === String(written ?? '');

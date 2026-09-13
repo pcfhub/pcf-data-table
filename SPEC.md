@@ -1685,3 +1685,74 @@ Not asked, and listed here so they are not mistaken for answered: an
 `ownerid@odata.bind` to `systemusers` or `teams` and is a separate
 measurement); a write refused by privilege rather than by a bad GUID; and any
 of this on canvas, which has no `webAPI` at all.
+
+### What shipped, and the shape it took
+
+Every measurement above turned into one line of design, and the design is
+smaller than the one 0.4.0 had planned because two of the measurements
+removed work rather than adding it.
+
+- **The editor is two buttons, not an input.** A lookup cell in edit mode
+  shows the current name, *Choose…* and — while there is something to clear —
+  *Clear*, with a cross to close. Choose opens `utils.lookupObjects` with every
+  table the column's metadata names (the Customer column's two, read from
+  under `attributeDescriptor` because the top-level `Targets` is `undefined`
+  there); the resolved `entityType` is what picks the navigation property. No
+  type-ahead beside it: the platform's dialog carries the views, the search and
+  the security, and `pcf-lookup-search` already records why a second picker is
+  a worse one.
+- **The write reads its key.** `writeLookup` fetches the bound table's
+  `ManyToOneRelationships` once (same-origin, `page.getClientUrl` first and
+  the `Xrm` global as fallback — the `pcf-grid-data-bars` rule), resolves the
+  target's `EntitySetName` once per table, and calls `updateRecord(entity, id,
+  { '<navigationProperty>@odata.bind': '/<set>(<guid>)' })`. A clear is the
+  same call with `null`, on the navigation property of the value being
+  cleared; clearing an empty cell writes nothing. The `$ref` DELETE that also
+  works is not used — no write leaves `context.webAPI`.
+- **Four host surfaces, one prop.** `pickLookup` is function-or-null on the
+  `loadOptions` argument: `lookupHost()` in `index.ts` needs `utils.lookupObjects`,
+  `utils.getEntityMetadata`, `webAPI.updateRecord` and an organisation URL, and
+  any one missing withholds the editor. Canvas is all four. The rig removes
+  them one at a time and the suite asserts each withholds.
+- **The refusal is one sentence.** `faultMessage` takes the last segment after
+  `InnerException :` or `--->`, strips the exception class, and keeps the first
+  sentence — so a payload fault reads "An undeclared property 'x' …" and a
+  server fault reads "The requested record was not found.", and `raw` is never
+  shown.
+- **The cell lets the editor out.** Four things need ~150px and a lookup
+  column is often narrower; the first screenshot photographed the name and the
+  cross clipped by the cell's `overflow: hidden`. The editing cell is now
+  positioned, un-clipped and lifted (`z-index: 3`, over the pinned cells' 2),
+  and the editor floats at `max-content` width — a transient surface, like the
+  choice editor's dropdown. Found by looking, not by an assertion.
+- **Owner stays read-only.** `Lookup.Owner` binds through `ownerid` to two
+  tables and nothing here has watched that write; `editKindFor` returns
+  `'none'` for it and says why.
+
+The rig grew four surfaces to model this — `webAPI.updateRecord` applying a
+bind the way the server did and refusing the way it did, `utils.lookupObjects`
+resolving braced upper-case, `page.getClientUrl`, and a same-origin `fetch`
+stub for `EntityDefinitions` — each with its absence as a quirk, and
+`fixture.withLookups()` for a view with a `Lookup.Simple` and a
+`Lookup.Customer` on it. Fifteen assertions; the load-bearing one (the key
+comes from the fetch, not from the column name) was broken on purpose and
+failed by name.
+
+### Not verified in 0.5.0
+
+- **No lookup has been edited through the control's own UI on a real form.**
+  The write path was driven from the console on the probe build; the editor,
+  its optimistic name, and the refresh retiring it are asserted against
+  `dev/host.js` and photographed from the dev rig.
+- **The import prompt text for `WebAPI`** — the probe went in as an upgrade
+  and nothing was captured, as with `Utility` in 0.4.0.
+- **A Customer lookup written to an account** — the probe wrote one to a
+  contact (5); the `_account` navigation property is asserted against the
+  rig's relationship table only.
+- **A write refused by privilege**, as opposed to by a bad GUID. The shape
+  is assumed to be the server-fault shape (7) and the sentence is whatever
+  the platform sends.
+- **The `Xrm` global fallback for the organisation URL.** `page.getClientUrl`
+  answered on the probe form, so the fallback has never been the path taken.
+- **On-premises**, where the organisation sits in a path and the
+  `clientUrl` preference is the thing that matters.

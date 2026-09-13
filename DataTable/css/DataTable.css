@@ -814,6 +814,123 @@
 }
 
 /*
+ * The lookup editor: the editor's box, with buttons in it instead of a caret.
+ *
+ * Same border and radius as `.DataTable-editor`, so a lookup cell opening
+ * reads as the same thing happening as a text cell opening — and the name
+ * stays visible in it, because the value is what the reader is about to
+ * replace. The buttons are the pager's size, which is the only other button
+ * treatment sitting inside a table cell.
+ */
+.DataTable-lookupEditor {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacingHorizontalXS, 4px);
+    box-sizing: border-box;
+    padding-block: 1px;
+    padding-inline: var(--spacingHorizontalXS, 4px);
+    background: var(--colorNeutralBackground1, #ffffff);
+    border: 1px solid var(--colorCompoundBrandStroke, #0f6cbd);
+    border-radius: var(--borderRadiusMedium, 4px);
+    box-shadow: var(--shadow4, 0 2px 4px rgba(0, 0, 0, 0.14));
+}
+
+/*
+ * **Four things in a cell sized for one.** A name, two buttons and a cross
+ * need about 150px, and a lookup column is often narrower — the first
+ * screenshot photographed the name and the cross clipped away by the cell's
+ * `overflow: hidden`. So the editing cell positions itself and stops clipping,
+ * and the editor floats over its neighbours at its own width, the way the
+ * choice editor's dropdown does. `z-index` lifts it above the cells after it
+ * in the row, which would otherwise paint on top; 3 clears the pinned cells'
+ * 2. It is a transient surface — it closes on commit, Escape or the cross —
+ * so nothing underneath it is unreachable for longer than a pick takes.
+ */
+.DataTable-table td.is-lookupEditing {
+    position: relative;
+    overflow: visible;
+    z-index: 3;
+}
+
+.DataTable-table td.is-lookupEditing .DataTable-lookupEditor {
+    position: absolute;
+    inset-inline-start: var(--spacingHorizontalXS, 4px);
+    top: 50%;
+    transform: translateY(-50%);
+    width: max-content;
+    max-width: min(360px, 80vw);
+}
+
+.DataTable-lookupCurrent {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.DataTable-lookupChoose,
+.DataTable-lookupClear {
+    flex: 0 0 auto;
+    min-height: 24px;
+    padding-block: 0;
+    padding-inline: var(--spacingHorizontalS, 8px);
+    font-family: inherit;
+    font-size: var(--fontSizeBase200, 12px);
+    color: var(--colorNeutralForeground1, #242424);
+    background: var(--colorNeutralBackground1, #ffffff);
+    border: 1px solid var(--colorNeutralStroke1, #d1d1d1);
+    border-radius: var(--borderRadiusMedium, 4px);
+    cursor: pointer;
+}
+
+.DataTable-lookupChoose {
+    color: var(--colorBrandForeground1, #0f6cbd);
+    border-color: var(--colorBrandStroke1, #0f6cbd);
+}
+
+.DataTable-lookupChoose:hover:not(:disabled),
+.DataTable-lookupClear:hover:not(:disabled) {
+    background: var(--colorNeutralBackground1Hover, #f5f5f5);
+}
+
+.DataTable-lookupChoose:disabled,
+.DataTable-lookupClear:disabled,
+.DataTable-lookupCancel:disabled {
+    color: var(--colorNeutralForegroundDisabled, #bdbdbd);
+    border-color: var(--colorNeutralStrokeDisabled, #e0e0e0);
+    cursor: default;
+}
+
+/* The cross, on the filter box's clear button treatment — same glyph, same size. */
+.DataTable-lookupCancel {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    color: var(--colorNeutralForeground3, #616161);
+    background: none;
+    border: 0;
+    border-radius: var(--borderRadiusSmall, 2px);
+    cursor: pointer;
+}
+
+.DataTable-lookupCancel:hover:not(:disabled) {
+    color: var(--colorNeutralForeground1, #242424);
+    background: var(--colorNeutralBackground3Hover, #ebebeb);
+}
+
+.DataTable-lookupChoose:focus-visible,
+.DataTable-lookupClear:focus-visible,
+.DataTable-lookupCancel:focus-visible {
+    outline: 2px solid var(--colorStrokeFocus2, #000000);
+    outline-offset: 1px;
+}
+
+/*
  * A cell mid-write. Dimmed rather than replaced or spinner-ed: the value on
  * screen is the one being written, and hiding it would leave the reader with no
  * idea what they had just typed.
