@@ -1579,7 +1579,17 @@ being measured.
    halves refused for that reason alone: `updateRecord` with `null` → 400
    "Invalid property 'cll_PrimaryContact' was found in entity"; the `$ref`
    DELETE → 400 `0x80060888` "The URI segment '$ref' is invalid after the
-   segment 'cll_PrimaryContact'". Re-run with `cll_primarycontact` pending.
+   segment 'cll_PrimaryContact'". Re-run with `cll_primarycontact`:
+
+   *Measured — `null` clears.* `updateRecord('cll_account', id,
+   { 'cll_primarycontact@odata.bind': null })` **resolved in 161 ms** with the
+   usual `{ id, entityType }`, and the read-back was
+   `_cll_primarycontact_value: null` — no annotations, which is how an empty
+   lookup reads. The `$ref` DELETE also works (204 in 130 ms, run against an
+   already-empty column), and is **not shipped**: the editor's clear stays
+   inside `context.webAPI`, so the control makes no write the feature
+   declaration does not cover. The fetch route is recorded here as the
+   fallback that exists if a host ever refuses the `null` bind.
 
 7. **Shapes.** What does `updateRecord` resolve with — `{ id, entityType }`,
    with a `name`? What does a write to a GUID that does not exist reject with —
@@ -1601,7 +1611,16 @@ being measured.
    **and three annotations** — `FormattedValue`, `lookuplogicalname`,
    `associatednavigationproperty` — in ~80 ms. The non-existent-GUID write
    was sent with the wrong key (6) and measured the same undeclared-property
-   error; re-run pending.
+   error. Re-run with the right key: **rejected in 273 ms** with
+   `{ errorCode: 2147746327, message: 'The requested record was not found.',
+   title: 'Record Is Unavailable' }` — a one-sentence `message` and a
+   `title`, with the specific text ("Entity 'Contact' With Id = … Does Not
+   Exist", HTTP 404, `ApiExceptionMessageName: ObjectDoesNotExist`) only in
+   `raw`. So the two rejections seen so far have different shapes of
+   `message`: a payload fault buries the useful sentence after
+   `InnerException :`, a server fault puts it first. The control shows
+   `title` when present, then the first sentence of `message`, and never
+   parses `raw`.
 
 8. **What the subgrid shows.** After a resolved `updateRecord`, does
    `record.getValue(lookupColumn)` still return the old reference until
@@ -1617,7 +1636,13 @@ being measured.
    subgrid did not re-read" from "that object is a dead snapshot and each
    pass hands down a new one". 0.4.3 keeps the latest context, polls both
    each second for 30 s and reports whether they are the same object.
-   Pending.
+
+   *Half measured, by eye.* After the subgrid's own refresh the rows showed
+   the contacts the probe had written — Patrick Sands on
+   `cll_primarycontact`, Susanna Stubberod on `cll_customer` — so the
+   subgrid **does** re-read after a write, and the 0.4.2 line was reading a
+   dead snapshot. Which object is live, and how many seconds the control's
+   own `refresh()` takes to hand the new value down, is what 0.4.3 answers.
 
 9. **Customer dialog.** Does `lookupObjects({ entityTypes: ['account',
    'contact'] })` open with a table switcher, and does the resolved
