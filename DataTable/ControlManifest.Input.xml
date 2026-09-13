@@ -7,7 +7,7 @@
   -->
   <control namespace="PCFHub"
            constructor="DataTable"
-           version="0.4.1"
+           version="0.4.2"
            display-name-key="DataTable_Name"
            description-key="DataTable_Desc"
            control-type="virtual">
@@ -346,6 +346,10 @@
     -->
     <feature-usage>
       <uses-feature name="Utility" required="false" />
+      <!-- TEMPORARY 0.4.2 probe: the lookup write under measurement is
+           webAPI.updateRecord, and the prompt this line adds is itself one of
+           the questions. Remove with probe.ts unless 0.5.0 keeps the editor. -->
+      <uses-feature name="WebAPI" required="false" />
     </feature-usage>
   </control>
 </manifest>

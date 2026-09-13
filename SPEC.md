@@ -1460,3 +1460,97 @@ opens on the stored day, a committed day retires its override and reads
 - Whether `record.setValue` on a Lookup column stages on any host other than
   this one (6). One environment, one record, five shapes; the conclusion is
   strong for this host and unmeasured elsewhere.
+
+## 0.5.0
+
+### What it is for
+
+The one feature every community editable grid is judged by that 0.4.0 could
+not ship: **editing a Lookup cell.** It was picked outward, like 0.2.0 and
+0.4.0 — the editable grid is the most-starred single control category in the
+PCF community, and a grid whose lookups are read-only is the first thing a
+comparison notices. 0.4.0's probe measured the dialog half working
+(`utils.lookupObjects`: a pick is a `LookupValue[]` with a braced upper-case
+GUID, a cancel is `[]`) and the write half dead (`record.setValue` on a Lookup
+column stages nothing, five shapes tried). The design in *0.4.0 → What it was
+going to add* is kept as written; what changes is the write, which has to be
+`webAPI.updateRecord` with an `@odata.bind` key.
+
+That costs what 0.3.0 was built to avoid — `<uses-feature name="WebAPI">`, one
+more install-time prompt, and a write that does nothing in canvas, where
+lookup cells will stay read-only. The trade is taken because the alternative
+is no lookup editor at all, measured rather than assumed.
+
+### What must be measured first
+
+Probe build 0.4.2 — throwaway, `DataTable/probe.ts`, `window.__pcfDataTableProbe`
+— asks these on the `cll_account` subgrid. Every answer goes here as
+*Measured* before a line of the feature exists, and an answer that goes the
+wrong way removes the feature that depends on it rather than being worked
+around. The manifest already declares `WebAPI required="false"`, because the
+prompt is itself a question (1) and a surface that is not declared is not
+being measured.
+
+1. **Import.** With `WebAPI` declared `required="false"` beside `Utility`,
+   what does the import prompt say, verbatim? On the subgrid afterwards, is
+   `context.webAPI` an object with `updateRecord` and `retrieveRecord` as
+   functions? Is `context.page.getClientUrl` there?
+
+2. **Bind key case.** Does
+   `updateRecord('cll_account', id, { 'cll_primarycontact@odata.bind': '/contacts(guid)' })`
+   — the column's *logical* name — resolve and persist? Does the schema-cased
+   navigation property `cll_PrimaryContact@odata.bind`? If only the second,
+   the control needs a metadata read for every lookup column before it can
+   write, and (3) decides where that read goes.
+
+3. **Where the navigation property name lives.** Does the
+   `getEntityMetadata` node for a lookup column carry `SchemaName`, at the top
+   or under `attributeDescriptor`? Does
+   `EntityDefinitions(LogicalName='cll_account')/ManyToOneRelationships`
+   answer through a same-origin `fetch`, and does it list one row for
+   `cll_primarycontact` and **two** for `cll_customer` (one per target), each
+   with `ReferencingEntityNavigationPropertyName`? For a Customer lookup the
+   schema name cannot be the key — there are two keys — so this query is the
+   only route unless (2) accepts the logical name.
+
+4. **Entity set name.** Does `getEntityMetadata('contact').EntitySetName`
+   answer `contacts`, and `getEntityMetadata('account')` → `accounts`? The
+   bind value is `/<set>(<guid>)`; `pcf-tag-list` rests on this key and has
+   never been on a form.
+
+5. **Customer write.** Does
+   `{ 'cll_customer_contact@odata.bind': '/contacts(guid)' }` persist to
+   `cll_customer`, and does the read-back's
+   `_cll_customer_value@Microsoft.Dynamics.CRM.lookuplogicalname` say
+   `contact`?
+
+6. **Clear.** Does `updateRecord` with `{ 'cll_PrimaryContact@odata.bind': null }`
+   resolve and clear the column, or reject — and with what? If it rejects,
+   does a same-origin `DELETE …/cll_accounts(id)/cll_PrimaryContact/$ref`
+   return 204 and clear it? The second is a write outside `context.webAPI`;
+   whether the editor offers a clear at all depends on the first, and
+   shipping the second is a decision to take on the answer, not a default.
+
+7. **Shapes.** What does `updateRecord` resolve with — `{ id, entityType }`,
+   with a `name`? What does a write to a GUID that does not exist reject with —
+   `{ errorCode, message }`, and is `message` readable, unlike the `UciError`
+   snapshot string? Does `retrieveRecord` with `?$select=_x_value` return the
+   `@OData.Community.Display.V1.FormattedValue` annotation, so the optimistic
+   cell can be confirmed against the server's own name?
+
+8. **What the subgrid shows.** After a resolved `updateRecord`, does
+   `record.getValue(lookupColumn)` still return the old reference until
+   `dataset.refresh()`? How long does the refresh take this time, and does
+   the row then carry the new name? This decides whether the optimistic value
+   from 0.3.x's editor holds through the same stale window.
+
+9. **Customer dialog.** Does `lookupObjects({ entityTypes: ['account',
+   'contact'] })` open with a table switcher, and does the resolved
+   `entityType` name the table picked — the value the bind key in (5) is
+   chosen by?
+
+Not asked, and listed here so they are not mistaken for answered: an
+`Owner` lookup (none in the view; `ownerid` binds through
+`ownerid@odata.bind` to `systemusers` or `teams` and is a separate
+measurement); a write refused by privilege rather than by a bad GUID; and any
+of this on canvas, which has no `webAPI` at all.
