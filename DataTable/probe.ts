@@ -35,7 +35,16 @@ import { IInputs } from './generated/ManifestTypes';
 
 let reported = false;
 
-const TAG = '[pcf-data-table probe 0.4.2]';
+/**
+ * 0.4.3: the context of the *latest* `updateView`, not the first. 0.4.2 parked
+ * the first pass's dataset and read `records[id]` off it after a `refresh()`;
+ * it never changed, and the probe could not say whether the subgrid had not
+ * re-read or the parked object was a dead snapshot. Both are now visible.
+ */
+let latest: ComponentFramework.Context<IInputs> | undefined;
+let passes = 0;
+
+const TAG = '[pcf-data-table probe 0.4.3]';
 
 /** Braced upper-case (dialog, openForm) → unbraced lower-case (getValue, Web API URLs). */
 const bareGuid = (id: string): string => id.replace(/[{}]/g, '').toLowerCase();
@@ -67,6 +76,9 @@ function clientUrl(context: any): string {
 }
 
 export function probe(context: ComponentFramework.Context<IInputs>): void {
+    latest = context;
+    passes += 1;
+
     if (reported) {
         return;
     }
@@ -204,15 +216,39 @@ export function probe(context: ComponentFramework.Context<IInputs>): void {
                 return Object.fromEntries(Object.entries(row).filter(([name]) => name.includes(column)));
             }),
 
-        /** Q8: what the dataset record says now, then after a `refresh()`, and how long the refresh took. */
+        /**
+         * Q8: what the dataset record says now, then after a `refresh()`,
+         * read from the *latest* context each second for 30 s — and whether
+         * that is even the same object as the one parked on the first pass.
+         */
         after: async (recordId: string, column: string) => {
-            const target = dataset.records[bareGuid(recordId)] ?? record;
-            console.log(TAG, 'getValue before refresh →', target.getValue(column));
+            const id = bareGuid(recordId);
+            const read = (label: string) => {
+                const live = latest?.parameters.records;
+                const parked = dataset.records[id]?.getValue(column);
+                const fresh = live?.records[id]?.getValue(column);
+                console.log(TAG, label, {
+                    passes,
+                    sameDatasetObject: live === dataset,
+                    sameRecordsObject: live?.records === dataset.records,
+                    parked,
+                    latest: fresh,
+                    loading: live?.loading,
+                });
+                return fresh;
+            };
+            const before = read('before refresh');
             const started = Date.now();
-            dataset.refresh();
-            await new Promise((resolve) => setTimeout(resolve, 15000));
-            const fresh = dataset.records[bareGuid(recordId)];
-            console.log(TAG, 'getValue 15 s after refresh →', fresh?.getValue(column), 'loading:', dataset.loading, 'elapsed', Date.now() - started, 'ms');
+            latest?.parameters.records.refresh();
+            for (let second = 1; second <= 30; second += 1) {
+                await new Promise((resolve) => setTimeout(resolve, 1000));
+                const now = read(`t+${second}s`);
+                if (JSON.stringify(now) !== JSON.stringify(before) && !latest?.parameters.records.loading) {
+                    console.log(TAG, 'latest context changed after', Date.now() - started, 'ms');
+                    return;
+                }
+            }
+            console.log(TAG, 'no change in the latest context after 30 s');
         },
 
         /** Q9: the dialog for a Customer lookup — both targets at once. */
@@ -226,21 +262,12 @@ export function probe(context: ComponentFramework.Context<IInputs>): void {
 
     console.log(
         TAG,
-        'window.__pcfDataTableProbe is parked. Suggested order — replace the GUIDs with ones from this subgrid:\n' +
+        'window.__pcfDataTableProbe is parked. 0.4.3 asks Q8 again with the live context:\n' +
             '  const p = window.__pcfDataTableProbe;\n' +
-            "  await p.node('cll_primarycontact'); await p.node('cll_customer');\n" +
-            "  await p.setName('contact'); await p.setName('account');\n" +
-            '  await p.navProps();\n' +
-            "  const [c] = await p.pick(['contact']);            // pick any contact\n" +
-            "  await p.bind(REC, 'cll_primarycontact', 'contacts', c.id);   // Q2: logical name\n" +
-            "  await p.bind(REC, 'cll_PrimaryContact', 'contacts', c.id);   // Q2: schema name (use navProps() answer)\n" +
-            "  await p.readBack(REC, 'cll_primarycontact');\n" +
-            "  await p.after(REC, 'cll_primarycontact');\n" +
-            "  await p.clearViaBind(REC, 'cll_PrimaryContact');  await p.readBack(REC, 'cll_primarycontact');\n" +
-            "  await p.clearViaRef(REC, 'cll_accounts', 'cll_PrimaryContact'); await p.readBack(REC, 'cll_primarycontact');\n" +
-            "  const [x] = await p.pick(['account', 'contact']);   // Q9: Customer dialog, pick a contact\n" +
-            "  await p.bind(REC, 'cll_customer_contact', 'contacts', x.id); await p.readBack(REC, 'cll_customer');\n" +
-            "  await p.bind(REC, 'cll_PrimaryContact', 'contacts', '00000000-0000-0000-0000-000000000001'); // refusal shape\n" +
-            'Paste every line this prints back, including the REJECTED ones.',
+            "  const REC = '990d527b-45ae-f111-aaac-6045bd06056e';\n" +
+            "  const [c] = await p.pick(['contact']);            // pick a DIFFERENT contact from the one shown\n" +
+            "  await p.bind(REC, 'cll_primarycontact', 'contacts', c.id);\n" +
+            "  await p.after(REC, 'cll_primarycontact');         // polls the latest context for 30 s\n" +
+            'Paste every line this prints back.',
     );
 }
