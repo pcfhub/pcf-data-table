@@ -1496,12 +1496,28 @@ being measured.
    `context.webAPI` an object with `updateRecord` and `retrieveRecord` as
    functions? Is `context.page.getClientUrl` there?
 
+   *Measured 2026-09-13, prompt still pending.* `context.webAPI` is an
+   object; `updateRecord` and `retrieveRecord` are functions, as are
+   `utils.getEntityMetadata` and `lookupObjects`. `page.getClientUrl` is a
+   function and answers `https://cll365.crm.dynamics.com`; the `Xrm` global
+   is present too. `mode.contextInfo` names the parent Account as in 0.4.0.
+
 2. **Bind key case.** Does
    `updateRecord('cll_account', id, { 'cll_primarycontact@odata.bind': '/contacts(guid)' })`
    — the column's *logical* name — resolve and persist? Does the schema-cased
    navigation property `cll_PrimaryContact@odata.bind`? If only the second,
    the control needs a metadata read for every lookup column before it can
    write, and (3) decides where that read goes.
+
+   *Measured, and the question was wrong-footed.* The logical name
+   `cll_primarycontact@odata.bind` **resolved in 240 ms** and the Web API read
+   back the new contact. `cll_PrimaryContact@odata.bind` was **rejected**,
+   400, `errorCode 2147781913`: "An undeclared property 'cll_PrimaryContact'
+   which only has property annotations in the payload but no property value".
+   The reason is not that the server is case-insensitive — it is that on this
+   table the navigation property *is* `cll_primarycontact` (3). So neither
+   spelling is a rule: the key is whatever `ManyToOneRelationships` says it
+   is, and the control reads it rather than deriving it.
 
 3. **Where the navigation property name lives.** Does the
    `getEntityMetadata` node for a lookup column carry `SchemaName`, at the top
@@ -1513,16 +1529,43 @@ being measured.
    schema name cannot be the key — there are two keys — so this query is the
    only route unless (2) accepts the logical name.
 
+   *Measured.* The `getEntityMetadata` node carries **no `SchemaName`** at
+   either level: its own keys are `_attributeType`, `_clientApiExecutor`,
+   `attributeDescriptor`, `_logicalName`, `_displayName`,
+   `_entityLogicalName`, `_isValidForGrid`, `_attributeTypeName` and (Simple
+   only) `_attributeTargets`; the descriptor has 48 keys, `Targets` among
+   them, `SchemaName` not. `ManyToOneRelationships` answered 200 in 84 ms
+   through a same-origin `fetch` with three rows for the view's two lookups:
+   `cll_primarycontact → contact → cll_primarycontact`,
+   `cll_customer → account → cll_customer_account`,
+   `cll_customer → contact → cll_customer_contact`. That is the read the
+   control makes, once per table, in `init`. A second route surfaced on the
+   read-back: `_x_value@Microsoft.Dynamics.CRM.associatednavigationproperty`
+   names the navigation property of the *current* value — useful for a
+   populated cell, absent for an empty one, and silent about a Customer
+   lookup's other target, so the relationship query stays the source.
+
 4. **Entity set name.** Does `getEntityMetadata('contact').EntitySetName`
    answer `contacts`, and `getEntityMetadata('account')` → `accounts`? The
    bind value is `/<set>(<guid>)`; `pcf-tag-list` rests on this key and has
    never been on a form.
+
+   *Measured.* `contacts`, `accounts`, and `cll_accounts` for the table
+   itself — so `pcf-tag-list`'s key holds. The node also answers
+   `PrimaryNameAttribute` (`fullname`, `name`), which is what a lookup filter
+   box would search on if one is ever built.
 
 5. **Customer write.** Does
    `{ 'cll_customer_contact@odata.bind': '/contacts(guid)' }` persist to
    `cll_customer`, and does the read-back's
    `_cll_customer_value@Microsoft.Dynamics.CRM.lookuplogicalname` say
    `contact`?
+
+   *Measured.* Resolved in 127 ms; the read-back is `_cll_customer_value`
+   = the contact's GUID, `lookuplogicalname: contact`,
+   `associatednavigationproperty: cll_customer_contact`, formatted value the
+   contact's name. The dialog's `entityType` on the pick (9) is what selects
+   the key.
 
 6. **Clear.** Does `updateRecord` with `{ 'cll_PrimaryContact@odata.bind': null }`
    resolve and clear the column, or reject — and with what? If it rejects,
@@ -1531,6 +1574,13 @@ being measured.
    whether the editor offers a clear at all depends on the first, and
    shipping the second is a decision to take on the answer, not a default.
 
+   *First run measured the wrong key* — `cll_PrimaryContact`, which (2) and
+   (3) had just shown is not a navigation property on this table, so both
+   halves refused for that reason alone: `updateRecord` with `null` → 400
+   "Invalid property 'cll_PrimaryContact' was found in entity"; the `$ref`
+   DELETE → 400 `0x80060888` "The URI segment '$ref' is invalid after the
+   segment 'cll_PrimaryContact'". Re-run with `cll_primarycontact` pending.
+
 7. **Shapes.** What does `updateRecord` resolve with — `{ id, entityType }`,
    with a `name`? What does a write to a GUID that does not exist reject with —
    `{ errorCode, message }`, and is `message` readable, unlike the `UciError`
@@ -1538,16 +1588,48 @@ being measured.
    `@OData.Community.Display.V1.FormattedValue` annotation, so the optimistic
    cell can be confirmed against the server's own name?
 
+   *Measured, bad-GUID half pending.* `updateRecord` resolves
+   `{ id: '990d527b-…', entityType: 'cll_account' }` — the record written,
+   unbraced lower-case, **no `name`** — so the optimistic cell's label comes
+   from the dialog's pick, not the write. A rejection is
+   `{ errorCode, message, code, title, raw }`: `errorCode` numeric
+   (`2147781913`), `message` a readable string that opens with the generic
+   "Error identified in Payload provided by the user" and carries the useful
+   sentence after `InnerException :`, `raw` the whole fault as JSON. Readable,
+   unlike `UciError`, but the control shows the inner sentence rather than
+   the first one. `retrieveRecord` with `?$select=_x_value` returns the value
+   **and three annotations** — `FormattedValue`, `lookuplogicalname`,
+   `associatednavigationproperty` — in ~80 ms. The non-existent-GUID write
+   was sent with the wrong key (6) and measured the same undeclared-property
+   error; re-run pending.
+
 8. **What the subgrid shows.** After a resolved `updateRecord`, does
    `record.getValue(lookupColumn)` still return the old reference until
    `dataset.refresh()`? How long does the refresh take this time, and does
    the row then carry the new name? This decides whether the optimistic value
    from 0.3.x's editor holds through the same stale window.
 
+   *0.4.2 could not answer it, and the reason is a probe finding.* After the
+   write in (2) the Web API held the new contact; the dataset record said the
+   old one before `refresh()` and still said it 15 s later with `loading`
+   false. But the probe read `records[id]` off the dataset object it had
+   parked on the **first** `updateView` — so the line cannot distinguish "the
+   subgrid did not re-read" from "that object is a dead snapshot and each
+   pass hands down a new one". 0.4.3 keeps the latest context, polls both
+   each second for 30 s and reports whether they are the same object.
+   Pending.
+
 9. **Customer dialog.** Does `lookupObjects({ entityTypes: ['account',
    'contact'] })` open with a table switcher, and does the resolved
    `entityType` name the table picked — the value the bind key in (5) is
    chosen by?
+
+   *Measured.* Opens (11.8 s to a pick, most of it the person choosing);
+   resolves `[{ id: '{8FE84297-…}', entityType: 'contact', name: 'Susanna
+   Stubberod (sample)' }]` — braced upper-case as in 0.4.0, and `entityType`
+   names the table, which is what picks `cll_customer_contact` over
+   `cll_customer_account`. Whether the dialog showed a table switcher was not
+   reported; the pick was a contact, which is the half that matters.
 
 Not asked, and listed here so they are not mistaken for answered: an
 `Owner` lookup (none in the view; `ownerid` binds through
