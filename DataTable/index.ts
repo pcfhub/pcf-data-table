@@ -1,7 +1,6 @@
 import * as React from 'react';
 import { IInputs, IOutputs } from './generated/ManifestTypes';
 import { DataTableControl, IProps } from './components/DataTableControl';
-import { probe } from './probe'; // TEMPORARY 0.4.2/0.4.3 — delete with probe.ts before 0.5.0
 import {
     ASCENDING,
     buildFilter,
@@ -357,7 +356,6 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
     }
 
     public updateView(context: ComponentFramework.Context<IInputs>): React.ReactElement {
-        probe(context); // TEMPORARY 0.4.2/0.4.3 — delete with probe.ts before 0.5.0
         const dataset = context.parameters.records;
         const mode = (context.parameters.selectionMode.raw ?? 'single') as SelectionMode;
 

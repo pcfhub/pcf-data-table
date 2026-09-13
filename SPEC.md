@@ -1644,6 +1644,30 @@ being measured.
    dead snapshot. Which object is live, and how many seconds the control's
    own `refresh()` takes to hand the new value down, is what 0.4.3 answers.
 
+   *Measured on 0.4.3.* **`context.parameters.records` is a new object on
+   every `updateView`** — `sameDatasetObject: false`,
+   `sameRecordsObject: false`, and the first-pass dataset's record read
+   `null` before, during and after the refresh while the latest context's
+   record went from `null` (the pre-write value, cleared in 6) to the new
+   contact. So a control must read the dataset off the context it was just
+   handed and never off one it kept; the 0.3.x editor already does, which is
+   why this never bit it. The write resolved in 139 ms; `refresh()` produced
+   one new pass and the new value was on it at **t+1 s** — one pass, ~1 s,
+   against the 3–14 s a filter refresh took in 0.4.0. The optimistic cell
+   therefore covers a window of about a second on this host, and the same
+   `refresh()`-after-write rule 0.3.3 established (*`refresh()` is part of
+   the write*) holds for a lookup.
+
+**What the measurements changed.** Nothing was cut. Two assumptions in the
+questions were wrong and both are now facts the control reads rather than
+derives: the bind key is whatever `ManyToOneRelationships` names, which on
+this table is the logical name and not the schema-cased one (2, 3); and a
+clear is a `null` bind through `updateRecord`, so the `$ref` DELETE the
+design had budgeted for is not needed (6). One probe fault found and fixed:
+reading a dataset off a parked context (8). One trade confirmed: the write
+resolves without a `name`, so the cell's label comes from the dialog's pick
+until the refresh lands (7).
+
 9. **Customer dialog.** Does `lookupObjects({ entityTypes: ['account',
    'contact'] })` open with a table switcher, and does the resolved
    `entityType` name the table picked — the value the bind key in (5) is
