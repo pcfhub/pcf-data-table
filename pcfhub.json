@@ -4,9 +4,9 @@
     "name": "Data Table",
     "tagline": "A sortable, filterable table over any Dataverse view, with inline editing, pinned columns and a New button.",
     "category": "data",
+    "hosts": ["canvas", "model-driven"],
     "tags": [
         "react",
-        "dataset",
         "table",
         "grid",
         "editing",
@@ -15,7 +15,7 @@
         "quick-create",
         "choice",
         "date-filter"
-    ],
+      ],
     "control": {
         "namespace": "PCFHub",
         "constructor": "DataTable",
