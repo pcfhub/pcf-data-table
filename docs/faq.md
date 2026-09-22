@@ -40,9 +40,54 @@ Yes. It does not survive a form reload.
 
 ## Can I sort by more than one column?
 
-Not in this release. Each header click replaces the sort rather than adding to
-it — the alternative is a three-deep sort after three clicks, which is rarely
-what anyone meant.
+Yes, once a maker turns on **Allow sorting by several columns**. It is off by
+default, so a plain click still replaces the whole order and every existing
+install behaves exactly as it did — the alternative is a three-deep sort after
+three clicks, which is rarely what anyone meant.
+
+With it on, **shift-click** a heading to add that column after the ones already
+in the order, and a small rank appears beside each arrow. A third shift-click
+removes a column from the order.
+
+Shift-click is the only way in, and it is not discoverable: there is no visible
+affordance for it, so a reader who does not know the gesture will not find it.
+That is accepted for this release rather than solved.
+
+## How do I group the rows?
+
+Set **Group by** to one or more logical column names. The table then draws one
+header per group — its label, its record count, and any measures you asked for
+under their own columns — and a caption underneath saying what was counted.
+
+**Read that caption.** *the whole view* means a single aggregate query answered
+over every record in the view. *the records loaded so far* means it could not,
+and the numbers describe only the pages currently in the browser.
+
+Add **Aggregates** as `function:column` pairs — `sum:revenue, avg:revenue` — to
+put measures in the group headers. Several over one column stack in that
+column, each labelled.
+
+## Why does my group header say "the records loaded so far"?
+
+Because the whole-view query was not available or was refused, so the control
+fell back to counting the rows it already had — and said so rather than
+presenting a page-sized total as a whole-view one.
+
+The usual reasons: the host has no Web API (every canvas app), the view's
+FetchXML could not be read, a runtime filter could not be translated into a
+server query, or the control is in a subgrid whose parent relationship it could
+not resolve. That last one is what **Parent lookup** is for.
+
+## My export only wrote the rows I had already paged through.
+
+That is the default. **Export covers** is *the rows loaded so far*; set it to
+*the whole view* and the control reads the rest first, one request per page, at
+the page size the view is already using.
+
+A subgrid often pages four rows at a time, which makes a 1,200-record export
+300 requests. Raise **Page size** if you export large views: at 100 a page the
+same view is 12 requests. There is a ceiling of 500 requests or 10,000 rows,
+whichever comes first, and the file says when it was reached.
 
 ## Why did the import ask for a permission?
 

@@ -23,8 +23,29 @@ model-driven app gets are not offered:
 - **Choice cells stay read-only** and **choice columns get no filter box** —
   the option list comes from `getEntityMetadata`, which canvas does not have,
   whatever the manifest declares.
-- **There is no New button**, whatever `enableCreate` is set to:
-  `navigation.openForm` is not on this host.
+- **There is no New button**, whatever `enableCreate` is set to. Canvas *does*
+  publish `navigation.openForm` — measured 2026-09-22, along with every other
+  surface asked about — and it refuses when called, so the control decides this
+  on whether the host answers with an organisation URL rather than on whether
+  the method exists. Until 0.6.16 this page claimed the method was absent, and
+  the button was drawn here.
+
+**Leave `Page size` blank, or set a real number.** Canvas shows an unset whole
+number as `0`, and `0` means "use whatever the data source is already paging
+with" — not "one row". Any number from 1 to 250 overrides it.
+
+**Grouping works, and always over the loaded rows.** The whole-view answer is
+one Web API aggregate query, and canvas has no Web API — so the caption reads
+*the records loaded so far* rather than *the whole view*, every time. The
+measures are real and correctly computed; they describe the pages the control
+has fetched. Page through the view and the numbers grow. If you need a total
+over everything, compute it in Power Fx from the data source, where you have
+one.
+
+The **CSV export** is the same story in a different shape. *The whole view*
+still walks the view page by page, because that is the dataset API rather than
+the Web API — but on a host without `loadExactPage` the reader cannot be put
+back on the page they started from afterwards, and lands on page one instead.
 
 The **date filter box** does appear, because it needs no metadata. It has been
 measured on a model-driven subgrid and not yet in a canvas app; if your data

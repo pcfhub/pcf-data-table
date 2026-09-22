@@ -4,7 +4,10 @@
     "name": "Data Table",
     "tagline": "A sortable, filterable table over any Dataverse view, with inline editing, pinned columns and a New button.",
     "category": "data",
-    "hosts": ["canvas", "model-driven"],
+    "hosts": [
+        "canvas",
+        "model-driven"
+    ],
     "tags": [
         "react",
         "table",
@@ -15,7 +18,7 @@
         "quick-create",
         "choice",
         "date-filter"
-      ],
+    ],
     "control": {
         "namespace": "PCFHub",
         "constructor": "DataTable",
@@ -35,6 +38,8 @@
         "logo": "media/logo.png",
         "screenshots": [
             "media/screenshot.png",
+            "media/screenshot-grouped.png",
+            "media/screenshot-sorted.png",
             "media/screenshot-pinned.png",
             "media/screenshot-editing.png",
             "media/screenshot-filters.png",
@@ -50,17 +55,17 @@
         ],
         "datasetFixture": "demo/records.json",
         "limitations": [
-            "Paging is inert. The demo harness puts every fixture row on a single page and reports hasNextPage and hasPreviousPage as false, so Next and Previous render disabled and loadNextPage() only re-renders the same rows. The page size property does nothing either, because the harness’s setPageSize() is an empty function.",
-            "Sorting a column moves the sort arrow but does not reorder the rows. The control writes into dataset.sorting and calls refresh(), which is what a real view needs because sorting is applied server-side across every page — but the harness rebuilds the dataset with an empty sorting array on each render and discards the request.",
+            "Paging is inert. The demo harness puts every fixture row on a single page and reports hasNextPage and hasPreviousPage as false, so Next and Previous render disabled and loadNextPage() only re-renders the same rows. The page size property does nothing either, because the harness\u2019s setPageSize() is an empty function.",
+            "Sorting a column moves the sort arrow but does not reorder the rows. The control writes into dataset.sorting and calls refresh(), which is what a real view needs because sorting is applied server-side across every page \u2014 but the harness rebuilds the dataset with an empty sorting array on each render and discards the request.",
             "Clicking a row calls dataset.openDatasetItem(), which the harness logs as a mock call: there is no Dataverse behind this origin and no form to open. The openedRecordId output still updates, so the value a form would react to is visible.",
-            "Rows tick and untick, but dataset.setSelectedRecordIds() does not survive a re-render for the same reason sorting does not. What you see is the control’s own copy of the selection. On a model-driven form that same call is what tells the command bar which records the ribbon acts on.",
-            "Typing in a filter box narrows nothing here, and that is structural rather than a gap in effort. Filtering is applied by the server across every page — the control calls dataset.filtering.setFilter() and then refresh() — and there is no server behind this origin. What the demo does show is the half worth seeing: the filter row renders per column type, so you can watch which columns get a box and which deliberately do not. The call log records the expression that a real view would have been filtered by.",
+            "Rows tick and untick, but dataset.setSelectedRecordIds() does not survive a re-render for the same reason sorting does not. What you see is the control\u2019s own copy of the selection. On a model-driven form that same call is what tells the command bar which records the ribbon acts on.",
+            "Typing in a filter box narrows nothing here, and that is structural rather than a gap in effort. Filtering is applied by the server across every page \u2014 the control calls dataset.filtering.setFilter() and then refresh() \u2014 and there is no server behind this origin. What the demo does show is the half worth seeing: the filter row renders per column type, so you can watch which columns get a box and which deliberately do not. The call log records the expression that a real view would have been filtered by.",
             "Export CSV is on in the second preset and does produce a real file, because building it needs nothing but the records already on the page. It is the one new feature here that is not a mock. What it cannot show is the limitation that matters on a real view: it exports the rows the control has loaded, and this fixture is a single page, so here that happens to be all of them.",
-            "Inline editing works here, and the write is real — against the fixture. The demo harness now carries the write half of a dataset record (setValue, save, isEditable), so an edit commits and the table shows it, but nothing leaves the browser: reload the page and the fixture is back as authored. Account number is marked read-only in the fixture on purpose, so you can see the half that matters — the control asks the platform whether each cell is writable, per column and per record, and renders a refused one as plain text rather than offering an editor it would then have to take back.",
-            "A refused write still cannot be demonstrated. The harness’s save() always succeeds, so the rollback never runs — on a real form a write the user has no privilege for is rejected, the cell returns to its old value, and the reason is named underneath it. That path is the reason this control catches at all, and the demo is the one place you cannot see it.",
-            "The hub harness has no utils and no navigation.openForm, so three 0.4.0 features are absent here rather than mocked: choice cells stay read-only, choice columns keep the dash in the filter row, and there is no New button whatever Allow adding rows is set to. The date filter box does render, and narrows nothing for the reason every other filter narrows nothing. Status in this fixture is a label string, where a real view hands over an integer — the dev rig in this repository carries the platform's shapes; the hub's fixture format cannot.",
-            "Pinned columns are the one thing on this page that is not simulated at all — pinning is layout, so it needs no server and no dataset call, and what the Pinned columns preset shows is exactly what a form shows. A pinned column is only visible once there is something to scroll, so the fixture carries eight columns: pinned, the table asks for 940px, which is wider than this page gives it at any size. Switch to the Pinned columns preset and drag the scrollbar under the rows — Account name stays at the left edge, Modified on at the right, and everything between them passes behind. The one thing to try deliberately is the phone preview: below about 440px the pinned pair would leave nothing to scroll between them, so the control unpins itself rather than trap you, and that clamp is real behaviour rather than a demo shortcut.",
-            "Lookup cells stay read-only here, for the same reason as choice cells and one more: the lookup editor needs utils.lookupObjects for the pick, webAPI.updateRecord for the write and page.getClientUrl for the relationship metadata the bind key is read from, and the hub harness has none of the three. On a model-driven form all three are there, and the cell opens as its current name with Choose… and Clear — media/screenshot-lookup.png is that state, captured from the dev rig in this repository."
+            "Inline editing works here, and the write is real \u2014 against the fixture. The demo harness now carries the write half of a dataset record (setValue, save, isEditable), so an edit commits and the table shows it, but nothing leaves the browser: reload the page and the fixture is back as authored. Account number is marked read-only in the fixture on purpose, so you can see the half that matters \u2014 the control asks the platform whether each cell is writable, per column and per record, and renders a refused one as plain text rather than offering an editor it would then have to take back.",
+            "A refused write still cannot be demonstrated. The harness\u2019s save() always succeeds, so the rollback never runs \u2014 on a real form a write the user has no privilege for is rejected, the cell returns to its old value, and the reason is named underneath it. That path is the reason this control catches at all, and the demo is the one place you cannot see it.",
+            "The hub harness has no utils and no navigation.openForm, so three 0.4.0 features are absent here rather than mocked: choice cells stay read-only, choice columns keep the dash in the filter row, and there is no New button whatever Allow adding rows is set to. The date filter box does render, and narrows nothing for the reason every other filter narrows nothing. Status in this fixture is a label string, where a real view hands over an integer \u2014 the dev rig in this repository carries the platform's shapes; the hub's fixture format cannot.",
+            "Pinned columns are the one thing on this page that is not simulated at all \u2014 pinning is layout, so it needs no server and no dataset call, and what the Pinned columns preset shows is exactly what a form shows. A pinned column is only visible once there is something to scroll, so the fixture carries eight columns: pinned, the table asks for 940px, which is wider than this page gives it at any size. Switch to the Pinned columns preset and drag the scrollbar under the rows \u2014 Account name stays at the left edge, Modified on at the right, and everything between them passes behind. The one thing to try deliberately is the phone preview: below about 440px the pinned pair would leave nothing to scroll between them, so the control unpins itself rather than trap you, and that clamp is real behaviour rather than a demo shortcut.",
+            "Lookup cells stay read-only here, for the same reason as choice cells and one more: the lookup editor needs utils.lookupObjects for the pick, webAPI.updateRecord for the write and page.getClientUrl for the relationship metadata the bind key is read from, and the hub harness has none of the three. On a model-driven form all three are there, and the cell opens as its current name with Choose\u2026 and Clear \u2014 media/screenshot-lookup.png is that state, captured from the dev rig in this repository."
         ],
         "presets": [
             {
@@ -93,7 +98,7 @@
             {
                 "slug": "inline-editing",
                 "name": "Inline editing",
-                "description": "Click any cell to edit it in place. Account number is marked read-only in the fixture, so it stays plain text — the control asks the platform which cells are writable rather than guessing from the column type.",
+                "description": "Click any cell to edit it in place. Account number is marked read-only in the fixture, so it stays plain text \u2014 the control asks the platform which cells are writable rather than guessing from the column type.",
                 "props": {
                     "pageSize": 25,
                     "enableEditing": true,
@@ -106,7 +111,7 @@
             {
                 "slug": "filter-and-export",
                 "name": "Filtering and export",
-                "description": "The filter row with a rows-per-page picker and CSV export, showing which column types get a box — text, number, and since 0.4.0 a date picker with an On / From / Until chip — and which do not.",
+                "description": "The filter row with a rows-per-page picker and CSV export, showing which column types get a box \u2014 text, number, and since 0.4.0 a date picker with an On / From / Until chip \u2014 and which do not.",
                 "props": {
                     "pageSize": 25,
                     "pageSizeOptions": "10,25,50",

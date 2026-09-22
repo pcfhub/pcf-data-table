@@ -164,7 +164,20 @@
             // A real width, because the pinning clamp reads it and a control
             // that never subscribed reads -1. The page is what sizes the
             // picture; this is what the control is told.
+            // `?host=canvas` runs the preview against the rig's canvas
+            // host, which publishes `page` and `utils` and refuses them —
+            // the measured platform behaviour. It is how the host probe is
+            // checked before it is trusted against a real app.
+            host: params.get('host') || 'model-driven',
             width: window.innerWidth - 32,
+            // `?sorted=a,b` opens on a view already ordered by those
+            // columns — how a sorted view actually arrives, and the only
+            // way to photograph a rank without racing the re-render.
+            sorting: (params.get('sorted') || '')
+                .split(',')
+                .map(function (name) { return name.trim(); })
+                .filter(Boolean),
+
             // Values as a platform would render them; see makeDisplay in host.js.
             format: true,
             height: 600,
@@ -184,6 +197,14 @@
                 enableEditing: params.get('edit') === '1',
                 editableColumns: params.get('editable'),
                 enableCreate: params.get('create') === '1',
+                // 0.6.0. All default to off or unset, so a capture without
+                // them shows the control an unconfigured install gets.
+                groupBy: params.get('groupBy'),
+                aggregates: params.get('aggregates'),
+                groupSort: params.get('groupSort') || 'label',
+                parentLookup: params.get('parentLookup'),
+                enableMultiSort: params.get('multiSort') === '1',
+                exportScope: params.get('exportScope') || 'loaded',
             },
             // A form subgrid's parent, so New seeds the relationship the way
             // the measured form did. The rig only logs it.
@@ -313,6 +334,54 @@
                 if (pane) {
                     pane.scrollLeft = scroll;
                 }
+            }
+
+            /*
+              A multi-column sort, for the rank indicator.
+
+              `?sort=a,b` sorts by a and then appends b, which is the
+              shift-click gesture — and the rank only renders once more
+              than one column is in play, so a single name photographs
+              nothing new. The clicks go through the heading buttons
+              rather than the dataset, so what is captured is the same
+              path a reader takes.
+            */
+            var sort = params.get('sort');
+
+            if (sort) {
+                /*
+                  One click at a time, with a render in between.
+
+                  A sort refreshes the dataset and rebuilds the header row,
+                  so clicking twice in one synchronous pass aims the second
+                  click at a button that is about to be replaced — it lands
+                  on a detached node and nothing happens. The first capture
+                  of this showed a single arrow and no rank, which is the
+                  feature looking exactly like it had not shipped.
+                */
+                var wanted = sort.split(',');
+
+                (function clickNext(position) {
+                    if (position >= wanted.length) {
+                        return;
+                    }
+
+                    var heads = Array.prototype.slice
+                        .call(document.querySelectorAll('thead tr:first-child th'));
+                    var head = heads.filter(function (th) {
+                        return th.textContent.indexOf(headingFor(wanted[position].trim())) === 0;
+                    })[0];
+                    var button = head && head.querySelector('button');
+
+                    if (button) {
+                        button.dispatchEvent(new MouseEvent('click', {
+                            bubbles: true,
+                            shiftKey: position > 0,
+                        }));
+                    }
+
+                    window.setTimeout(function () { clickNext(position + 1); }, 150);
+                }(0));
             }
 
             var open = params.get('open');
@@ -462,7 +531,25 @@
                 }, 100);
             }
 
-            document.title = 'ready';
+            /*
+              The rendered height, published where a headless capture can
+              read it with --dump-dom. Every screenshot in media/ is taken
+              at a fixed width and this height, so a picture is tight
+              against the control rather than padded with whatever the
+              window happened to be.
+            */
+            window.setTimeout(function () {
+                var rendered = document.querySelector('.DataTable');
+
+                if (rendered) {
+                    document.body.setAttribute(
+                        'data-measured-height',
+                        String(Math.ceil(rendered.getBoundingClientRect().height)),
+                    );
+                }
+
+                document.title = 'ready';
+            }, 600);
         }, 400);
     })();
 </script>

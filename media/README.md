@@ -31,18 +31,58 @@ one.
 
 ## What is here, and how each was taken
 
-Every screenshot is captured from `dev/preview.html` served by `npm run
-preview`, in headless Chrome, at the width named. The query parameters are the
-whole recipe, so a picture can be retaken after any change:
+**The recipes live in [`dev/shots.js`](../dev/shots.js), and that file retakes
+every picture.** Start the preview, then run it:
 
-| File | Width | Query |
-| --- | --- | --- |
-| `screenshot.png` | 960 | `?fixture=demo&export=1` |
-| `screenshot-pinned.png` | 640 | `?fixture=demo&pinStart=1&pinEnd=1&scroll=200` |
-| `screenshot-editing.png` | 960 | `?edit=1&open=industrycode` — the choice editor open on the first row |
-| `screenshot-filters.png` | 960 | `?date=2026-03-01&dateOp=from&create=1` — the date box with its chip, the choice dropdowns, and the New button |
-| `screenshot-narrow.png` | 320 | `?fixture=demo` |
-| `screenshot-lookup.png` | 1280×340 | `?lookups=1&edit=1&open=primarycontactid` — the lookup editor open on the first row: name, Choose…, Clear, cross |
+```bash
+npm run preview
+node dev/shots.js
+```
 
-`screenshot-form.png` is the exception: a real Accounts subgrid on 0.1.x,
-kept because only a real form has a command bar.
+Each shot is taken twice — once with `--dump-dom` to read back the height the
+control actually rendered at, then once at exactly that height — so a picture is
+tight against the control rather than padded out to whatever the window was, and
+it stays tight when the layout changes.
+
+| File | Width | Query | What it shows |
+| --- | --- | --- | --- |
+| `screenshot.png` | 960 | `?fixture=demo&export=1` | The table as an unconfigured install renders it |
+| `screenshot-grouped.png` | 1400 | `?groupBy=industrycode&aggregates=sum:revenue,avg:revenue` | 0.6.0: group headers, two measures over one column, and the caption naming the scope |
+| `screenshot-sorted.png` | 1280 | `?multiSort=1&sorted=industrycode,revenue` | 0.6.0: two columns in the sort order, rank beside each arrow |
+| `screenshot-pinned.png` | 640 | `?fixture=demo&pinStart=1&pinEnd=1&scroll=200` | Pinned columns, which only read as pinned once something has scrolled past |
+| `screenshot-editing.png` | 960 | `?edit=1&open=industrycode` | The choice editor open on the first row |
+| `screenshot-filters.png` | 960 | `?date=2026-03-01&dateOp=from&create=1` | The date box with its chip, the choice dropdowns, the New button |
+| `screenshot-narrow.png` | 320 | `?fixture=demo` | A phone-width subgrid: sideways scroll, wrapped pager |
+| `screenshot-lookup.png` | 1280 | `?lookups=1&edit=1&open=primarycontactid` | The lookup editor open: name, Choose…, Clear |
+
+Two of these are wider than the rest deliberately. Nine columns at 960 clip the
+headings, and a stacked sum and average need the room; a screenshot that crops
+the thing it is about is worth nothing.
+
+**`screenshot-sorted.png` seeds the sort rather than clicking it.** A click
+refreshes the dataset and rebuilds the header row, so a headless capture races
+the re-render and photographs one arrow of two. `?sorted=` opens on a view that
+is already ordered, which has no race and is also the more honest picture — it
+is what a reader sees on opening a sorted view.
+
+### `screenshot-form.png` is the exception
+
+A real Accounts subgrid, captured on 0.1.x. It is **not** retaken by
+`dev/shots.js` and cannot be: only a real form has a command bar, and nothing
+headless reproduces one. It is stale by version and kept on purpose, because the
+thing it shows has not changed and no generated picture can replace it.
+
+### What taking these found
+
+Three defects, none of which any assertion in this repository could reach,
+because each one was correct markup drawn wrongly:
+
+- **Two aggregates over one column rendered as one.** `sum:revenue, avg:revenue`
+  drew the sum and dropped the average silently.
+- **Measures on the browser route were computed and never labelled**, so a
+  grouped canvas table showed empty cells where the numbers should be.
+- **A sorted column could show no sort arrow at all.** A heading wider than its
+  column carried the arrow and the rank out past the cell's `overflow: hidden`.
+
+All three are now covered by assertions, and the screenshots are why they are
+known at all. This is the step that looks at the thing.

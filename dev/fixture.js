@@ -33,7 +33,7 @@
  *     node was measured carrying, so the rig's `getEntityMetadata` can serve
  *     one of each.
  *
- * Loaded by `harness.html` in a browser and by `smoke.js` in Node, so it
+ * Loaded by `preview.html` in a browser and by `smoke.js` in Node, so it
  * assigns both ways and depends on neither.
  */
 
@@ -354,5 +354,38 @@
             { id: 'a11', values: { name: '(pending) Woodgrove Bank', accountnumber: 'ACC-0007', primarycontactname: 'Ines Duarte', statecode: 1, ownerid: { id: { guid: 'b3f1a0c2-0000-4000-8000-000000000002' }, etn: 'systemuser', name: 'Jo Park' }, industrycode: 3, revenue: 0, modifiedon: '2025-08-19T00:00:00.000Z', lastcontacted: '2025-08-19T20:15:00.000Z' } },
             { id: 'a12', values: { name: 'école Numérique', accountnumber: 'ACC-1310', primarycontactname: 'LucRousseau', statecode: 0, ownerid: { id: { guid: 'b3f1a0c2-0000-4000-8000-000000000001' }, etn: 'systemuser', name: 'Sam Vaziri' }, industrycode: 4, revenue: 640000, modifiedon: '2026-03-27T00:00:00.000Z', lastcontacted: '2026-03-27T14:00:00.000Z' } },
         ],
+
+        /*
+         * The view definitions, keyed by table then by id, as
+         * `retrieveRecord('savedquery', id, '?$select=fetchxml')` answers them.
+         *
+         * **Copied from a real view on 2026-09-20** rather than written, and
+         * the reason is the ordering: the `<order>` and `<filter>` sit
+         * *between* the `<attribute>` elements, not after them, because the
+         * view designer emits them where the maker put them. A fixture with
+         * them tidily at the end would pass a rewriter that drops half a view.
+         *
+         * The `<link-entity>` is here for the same reason: `stripView` has to
+         * take a linked table's attributes out too, at depth, or the aggregate
+         * is refused — and it has to leave the link itself alone, because a
+         * filter through it is what the view meant.
+         *
+         * Only `savedquery` is served. A `userquery` id 404s, which is how a
+         * control learns to try the second table.
+         */
+        views: {
+            savedquery: {
+                '50901766-ba1b-46e0-850b-e1a3991ade2e':
+                    '<fetch version="1.0" mapping="logical" savedqueryid="50901766-BA1B-46E0-850B-E1A3991ADE2E">'
+                    + '<entity name="account">'
+                    + '<attribute name="accountid"/><attribute name="name"/>'
+                    + '<order attribute="name" descending="false"/>'
+                    + '<filter type="and"><condition attribute="statecode" operator="eq" value="0"/></filter>'
+                    + '<attribute name="industrycode"/><attribute name="revenue"/>'
+                    + '<link-entity name="systemuser" from="systemuserid" to="ownerid">'
+                    + '<attribute name="fullname"/></link-entity>'
+                    + '</entity></fetch>',
+            },
+        },
     };
 });

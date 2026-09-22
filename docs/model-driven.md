@@ -96,6 +96,50 @@ Clicking a column header writes into `dataset.sorting` and re-queries, so the
 sort applies across the whole result set and paging resets to page 1. A column
 the view marks non-sortable gets no sort control.
 
+## Grouping, and what makes the whole-view answer possible
+
+A model-driven app is where grouping answers about the **whole view** rather
+than the page. The control reads the view's own FetchXML, rewrites it as an
+aggregate query and asks the Web API once — so a caption reading *14 groups ·
+4,120 records · the whole view* is a statement about all 4,120 records, not
+about the twenty-five on screen.
+
+Three things have to be true for that, and the caption tells you when one is
+not:
+
+- **The Web API is available.** It is declared `required="false"`, so an
+  environment that declined it still groups — over the loaded rows, and says so.
+- **The view's FetchXML can be read.** The control tries `savedquery` and then
+  `userquery`; a personal view the user cannot read falls back.
+- **A subgrid's parent can be resolved.** See below, because this is the one
+  that produces a confidently wrong number if it is got wrong.
+
+### Parent lookup, in a subgrid
+
+A subgrid's relationship to the record it sits under is **invisible** to the
+control: `getFilter()` returns null and `getLinkedEntities()` is empty. So an
+aggregate over "the whole view" would count every row in the table, and a
+grouped subgrid of contacts under one account would claim 3,400 contacts above
+a grid holding six.
+
+The control resolves the lookup itself — matching the parent's table against
+the child's lookups — and **withholds the whole-view route entirely** when the
+answer is ambiguous. Set **Parent lookup** when the table has several lookups
+to the same table, or to `none` when the subgrid is genuinely unrelated.
+
+## Exporting the whole view
+
+**Export covers** set to *the whole view* walks the view a page at a time and
+writes one file. It pages exactly the way the pager does, at the size the view
+is already using — it does not change your page size, because changing it
+mid-session was measured to break paging on a real subgrid.
+
+The practical consequence is that the request count follows the view's page
+size. A subgrid paging four rows at a time turns 1,200 records into 300
+requests; setting **Page size** to 100 turns the same view into 12. While it
+runs, the table is replaced by a counter and a **Stop**, and wherever it stops
+you are put back on the page you started from.
+
 ## Editing choice cells
 
 With **Inline editing** on, a choice column's cells open as a dropdown of the

@@ -2,7 +2,7 @@
  * The platform, stood in for: a working `DataSet` with real paging and real
  * sorting, plus the switches for the ways a real one misbehaves.
  *
- * Loaded by both `harness.html` in a browser and `smoke.js` in Node, which is
+ * Loaded by both `preview.html` in a browser and `smoke.js` in Node, which is
  * why it attaches to `window` *and* assigns `module.exports` and requires
  * neither to exist.
  *
@@ -130,6 +130,9 @@
      * where it wants to prove a string came from the .resx at all.
      */
     var STRINGS = {
+        DataTable_CaptionAll: "{0} groups · {1} records · the whole view",
+        DataTable_CaptionLoaded: "{0} groups · the {1} records loaded so far",
+        DataTable_CaptionRefused: "{0} groups · the records loaded so far — the whole view could not be counted",
         DataTable_ClearFilter: "Clear the filter on {0}",
         DataTable_ClearFilters: "Clear filters",
         DataTable_CreateFailed: "The quick create form could not be opened.",
@@ -142,7 +145,12 @@
         DataTable_Empty: "No records.",
         DataTable_Error: "This view could not be loaded.",
         DataTable_Export: "Export CSV",
+        DataTable_ExportCancel: "Stop",
+        DataTable_ExportCapped: "The first {0} rows were exported; the view holds more.",
+        DataTable_ExportFailed: "The view could not be read past page {0}. {1} rows were collected.",
         DataTable_ExportHint: "Save the rows loaded so far as a CSV file. Pages you have not opened are not included.",
+        DataTable_ExportProgress: "Reading page {0} — {1} rows so far",
+        DataTable_ExportStopping: "Stopping after this page…",
         DataTable_FilterAny: "Any",
         DataTable_FilterColumn: "Filter by {0}",
         DataTable_FilterDateHint: "Filter by {0}. Pick a day; the button beside it chooses on, from or until that day.",
@@ -150,7 +158,17 @@
         DataTable_FilterNumberPlaceholder: "e.g. >1000",
         DataTable_FilterPlaceholder: "Filter",
         DataTable_GoToPage: "Go to page",
+        DataTable_GroupBlank: "(blank)",
+        DataTable_GroupCollapse: "Hide the records in {0}",
+        DataTable_GroupExpand: "Show the records in {0}",
+        DataTable_GroupRecord: "1 record",
+        DataTable_GroupRecords: "{0} records",
+        DataTable_GroupsEmpty: "No records to group.",
+        DataTable_GroupsLoading: "Counting the whole view…",
         DataTable_Loading: "Loading records…",
+        DataTable_LookupCancel: "Cancel",
+        DataTable_LookupChoose: "Choose…",
+        DataTable_LookupClear: "Clear",
         DataTable_New: "New",
         DataTable_NewHint: "Add a row using the quick create form.",
         DataTable_Next: "Next page",
@@ -158,9 +176,6 @@
         DataTable_NoColumns: "No columns are selected for this table.",
         DataTable_NoMatches: "No records match these filters.",
         DataTable_NoValue: "(none)",
-        DataTable_LookupChoose: "Choose…",
-        DataTable_LookupClear: "Clear",
-        DataTable_LookupCancel: "Cancel",
         DataTable_NotANumber: "That is not a number, so nothing was saved.",
         DataTable_OfPages: "of {0}",
         DataTable_OpenRecord: "Open {0}",
@@ -175,6 +190,7 @@
         DataTable_SelectAll: "Select all rows on this page",
         DataTable_SelectRow: "Select {0}",
         DataTable_SortBy: "Sort by {0}",
+        DataTable_SortRank: "Sorted by {0}, {1} of {2}",
         DataTable_Unfilterable: "{0} cannot be filtered here. Lookups are filtered by the view; a choice needs table metadata this host does not provide.",
         DataTable_Yes: "Yes",
     };
@@ -196,7 +212,10 @@
      */
     var FORM_FACTORS = { unknown: 0, desktop: 1, tablet: 2, phone: 3 };
 
-    var DEFAULTS = {
+    /** Queue marker: a render owed by a fetch, whose effect lives in `state.fetch`. */
+var FETCH = { fetch: true };
+
+var DEFAULTS = {
         host: 'model-driven',
         formFactor: 'desktop',
         /**
@@ -274,9 +293,22 @@
              * `loadNextPage(true)` returns the whole range from page one rather
              * than only the new page. Observed on a real form; defaulted on
              * because that is what a real form does.
+             *
+             * **This is a quirk of the *stepping* calls, not of paging.**
+             * Measured 2026-09-20: `loadExactPage` does **not** accumulate —
+             * eight pages, five rows each, a different first id every time.
+             * The two methods were measured separately and behave separately,
+             * so the rig applies this to `loadNextPage`/`loadPreviousPage`
+             * only. Applying it to both was the rig modelling one method's
+             * misbehaviour as the platform's.
              */
             accumulatePages: true,
-            /** `hasPreviousPage` never becomes true. Observed on a real form. */
+            /**
+             * `hasPreviousPage` never becomes true **after a stepping call**.
+             * Observed on a real form, and scoped for the same reason as
+             * `accumulatePages`: measured 2026-09-20, `loadExactPage(2)` sets
+             * it true and keeps it true, including on a backwards jump.
+             */
             previousPageStuck: true,
             /** `totalResultCount` is -1 — common on large views. */
             uncounted: false,
@@ -287,6 +319,136 @@
              * being able to break here.
              */
             hasLoadExactPage: true,
+
+            /**
+             * The id `getViewId()` answers, or `null`.
+             *
+             * Measured 2026-09-20 on a subgrid: a **bare, lower-case** GUID.
+             * `pcf-chart-view` measured `null` on a bound lookup's dataset, so
+             * both are real and the control has to cope with either — which is
+             * why this is a switch rather than a constant.
+             */
+            viewId: '50901766-ba1b-46e0-850b-e1a3991ade2e',
+
+            /**
+             * Whether the view's definition can be read back at all.
+             *
+             * Off, the control gets the 404 a missing row produces and has to
+             * fall back to the bare table — which is the honest answer for a
+             * view whose definition is unknown, not a reason to guess one.
+             */
+            viewsReadable: true,
+
+            /** Every aggregate is refused, whatever the row count. */
+            aggregateRefused: false,
+
+            /**
+             * Rows above which an aggregate is refused with
+             * `AggregateQueryRecordLimit`. The real ceiling is 50,000; set it
+             * low to reach the refusal on a small fixture, because **no probe
+             * environment here has a table big enough to reach the real one**
+             * — which is why that refusal stays reasoned rather than measured,
+             * and why this switch is the only way to exercise the fallback.
+             */
+            aggregateLimit: 50000,
+
+            /**
+             * Whether the platform honours more than one entry in
+             * `dataset.sorting`.
+             *
+             * **Measured 2026-09-20: it does** — two entries reordered the rows
+             * within the first column's ties, survived `paging.reset()` and a
+             * page turn, and four were retained. Defaulted on for that reason.
+             *
+             * Off models the host that collapses the array to its first entry,
+             * which is what the first (false-passing) measurement appeared to
+             * show and what a control shipping a rank indicator would be wrong
+             * about. A suite that never reaches this switch is asserting the
+             * good case only.
+             */
+            sortingHonoursMultiple: true,
+
+            /**
+             * The largest page the platform will actually return, or `null`
+             * for "whatever was asked for".
+             *
+             * See the note beside `state.pageSize`. Set it to model a view the
+             * platform pages more tightly than the control requested — which
+             * is the only way to make the export's loop run more than once
+             * against a small fixture.
+             */
+            maxPageSize: null,
+
+            /**
+             * Whether `setPageSize` alone earns an `updateView`, before any
+             * fetch has landed.
+             *
+             * **Measured by consequence, 2026-09-21.** A full-view export
+             * started from page 2 on a real form wrote 972 of 1,222 records,
+             * missing exactly one page out of the middle with the tail intact
+             * and no duplicates. `beginExport` makes two calls back to back —
+             * `setPageSize(250)` then `loadExactPage(1)` — and only two
+             * `updateView` passes where the control expected one explains that
+             * file: the second pass still held page one, contributed nothing,
+             * and advanced the page counter past page two.
+             *
+             * The rig could not reach it. `setPageSize` here recorded a request
+             * and said, in a comment, "nothing changes until a fetch" — which
+             * is true of the *rows* and false of the *lifecycle*. That is the
+             * sixth time this rig has been more generous than the platform, and
+             * the second time it hid a defect that shipped.
+             *
+             * Defaulted **on**, because it is what the platform did. Off models
+             * a host that stays quiet until rows arrive; the export must come
+             * out whole either way, which is the point of asserting both.
+             */
+            pageSizeNotifies: true,
+
+            /**
+             * Whether paging past the first page stops working once
+             * `setPageSize` has been called: the platform re-renders, keeps the
+             * rows it has, leaves `firstPageNumber` where it was, and does not
+             * fetch.
+             *
+             * **Measured on a real subgrid, 2026-09-21**, from the export's own
+             * tracing, across two builds. After `setPageSize(250)`:
+             * `loadExactPage(1)` was honoured — 250 rows, `pageSize` 250,
+             * `hasNextPage` true, `totalResultCount` 1222. `loadExactPage(2)`
+             * was ignored. `loadNextPage(true)` was worse: it threw into the
+             * platform's own global error handler, which then failed parsing an
+             * empty response. Both left `loading: false` and page one's rows.
+             *
+             * The same view pages perfectly from the control's own pager, which
+             * calls the identical methods — at the page size already in effect.
+             * The resize is the only difference, which is why this quirk is
+             * keyed on it rather than on the method.
+             *
+             * Defaulted off: the 2026-09-20 probe watched `loadExactPage(n)`
+             * land for n = 1..8 without a resize, and that reading stands. The
+             * export asserts with it on, because an export that only works on
+             * the forgiving host is not fixed.
+             */
+            pagingBreaksAfterResize: false,
+
+            /**
+             * Whether a fetch lands *after* the render it notified, as a real
+             * platform's does, rather than in the same tick as the call.
+             *
+             * **This is the gap the export fell through.** Every mutator here
+             * updated the rows synchronously, so no pass could ever observe the
+             * state the platform actually produces: a render owed, a request
+             * outstanding, and the *old* rows still in the dataset. The export
+             * is the one feature whose correctness depends entirely on that
+             * distinction, and the rig could not express it.
+             *
+             * Defaulted **off**, which is a continuity choice rather than a
+             * fidelity one: 168 assertions were written against synchronous
+             * fetches and re-baselining all of them would say nothing about the
+             * features they cover. The export turns it on, because the export
+             * is where it matters. SPEC.md records that the rest have not been
+             * re-verified under it.
+             */
+            asyncFetch: false,
 
             /**
              * Whether `dataset.sorting` exists at all.
@@ -616,12 +778,56 @@
          * 'canvas'` however the quirk is set, so a control cannot be told it
          * is on canvas and then handed a metadata call canvas does not have.
          */
-        var utilsPresent = !quirks.utilsAbsent && o.host !== 'canvas';
+        /*
+         * **Canvas publishes `utils` and refuses to run it.** This rig omitted
+         * the object there until 2026-09-21, which made it a friendlier host
+         * than the platform — and hid a crash, because a control that guards
+         * with `typeof … === 'function'` passes here and then meets a
+         * synchronous `Method not implemented.` in a real app.
+         *
+         * `quirks.utilsAbsent` still models a host with no object at all, which
+         * the hub's demo harness is.
+         */
+        var utilsPresent = !quirks.utilsAbsent;
+        var utilsRefuse = o.host === 'canvas';
         /* `openForm` is model-driven only, on the same rule as `openFile`. */
-        var openFormPresent = !quirks.openFormAbsent && o.host !== 'canvas';
-        /* `webAPI` and `page` are model-driven too; canvas has neither. */
-        var webApiPresent = !quirks.webApiAbsent && o.host !== 'canvas';
-        var pagePresent = !quirks.pageAbsent && o.host !== 'canvas';
+        /*
+         * **Present on canvas, and refusing** — measured with the host probe,
+         * 2026-09-22, where `navigation.openForm` came back `present: true`.
+         * It is documented model-driven-only, and "not available" turns out to
+         * be implemented as a published stub rather than an omission.
+         */
+        var openFormPresent = !quirks.openFormAbsent;
+        /*
+         * **Canvas publishes every surface and refuses on the call.** Measured
+         * with the host probe on a real canvas app, 2026-09-22: all fifteen
+         * surfaces asked about came back `present: true`, and `retrieveRecord`,
+         * `retrieveMultipleRecords`, `getEntityMetadata` and `getClientUrl`
+         * each threw `Method not implemented.` from the call itself.
+         *
+         * So `o.host !== 'canvas'` was the wrong model twice over. It made a
+         * `typeof context.webAPI?.updateRecord === 'function'` guard *fail*
+         * here and *pass* there — which is the exact inversion that lets a
+         * control offer a feature on canvas it can only fail at.
+         *
+         * `quirks.webApiAbsent` still models a host with no object at all,
+         * which the hub's demo harness is.
+         */
+        var webApiPresent = !quirks.webApiAbsent;
+        var canvasRefuses = o.host === 'canvas';
+        /*
+         * **Canvas publishes `page` and refuses to use it.** This rig said the
+         * object was absent there until 2026-09-21, which is a friendlier host
+         * than the real one: a control guarding with `typeof … === 'function'`
+         * passed here and threw in a canvas app, and the studio replaced the
+         * whole table with "Error loading control".
+         *
+         * So `page` exists on canvas and its `getClientUrl` throws exactly what
+         * the platform throws. `quirks.pageAbsent` still models a host that
+         * omits the object altogether, which the hub's demo harness does.
+         */
+        var pagePresent = !quirks.pageAbsent;
+        var pageRefuses = o.host === 'canvas';
 
         /*
          * **The metadata read a control cannot make through `context.webAPI`.**
@@ -671,9 +877,48 @@
             };
         })();
 
-        var state = {
+        /*
+     * The manifest's input properties and their types, so the host can build a
+     * parameter for each the way the platform does. Kept in step with
+     * `DataTable/ControlManifest.Input.xml` by hand — the rig reads no
+     * manifest, and a property added there and forgotten here is a control
+     * that throws in this suite and works on a form.
+     */
+    var DECLARED_INPUTS = {
+        pageSize: 'Whole.None',
+        pageSizeOptions: 'SingleLine.Text',
+        selectionMode: 'Enum',
+        enableSorting: 'TwoOptions',
+        enableFiltering: 'TwoOptions',
+        enableExport: 'TwoOptions',
+        openOnRowClick: 'TwoOptions',
+        pinnedStart: 'Whole.None',
+        pinnedEnd: 'Whole.None',
+        enableEditing: 'TwoOptions',
+        editableColumns: 'SingleLine.Text',
+        enableCreate: 'TwoOptions',
+        enableMultiSort: 'TwoOptions',
+        exportScope: 'Enum',
+        groupBy: 'SingleLine.Text',
+        aggregates: 'SingleLine.Text',
+        groupSort: 'Enum',
+        parentLookup: 'SingleLine.Text',
+    };
+
+    var state = {
             /** The page the platform believes it is on. */
             page: 1,
+            /**
+             * Whether the current page was reached by `loadExactPage` rather
+             * than by a stepping call.
+             *
+             * The two were measured separately on 2026-09-20 and behave
+             * separately: the exact call returns one page and sets
+             * `hasPreviousPage`, the stepping calls accumulate and strand it.
+             * Modelling both with one set of quirks was the rig treating one
+             * method's misbehaviour as the platform's.
+             */
+            exact: false,
             /**
              * The page size actually in force, which is not the one most
              * recently requested — `setPageSize` does nothing until the next
@@ -682,7 +927,13 @@
             pageSize: o.pageSize,
             requestedPageSize: o.pageSize,
             refreshes: 0,
-            renderOwed: false,
+            renderOwed: 0,
+            /** Whether setPageSize has been called; see `pagingBreaksAfterResize`. */
+            resized: false,
+            /** Effects the platform owes a render for; see `quirks.asyncFetch`. */
+            pending: [],
+            /** The one outstanding fetch, or null. A new fetch replaces it. */
+            fetch: null,
             /**
              * Whether the control has subscribed to container resize.
              *
@@ -707,7 +958,20 @@
             files: [],
         };
 
-        var sorting = [];
+        /*
+         * The view's `ORDER BY`, which a real subgrid arrives already carrying.
+         *
+         * Seedable, because a screenshot of a multi-column sort cannot be taken
+         * by clicking: each click refreshes the dataset and rebuilds the header,
+         * so a headless capture races the re-render and photographs one arrow of
+         * two. A view that *starts* sorted has no race and is also the more
+         * honest picture — it is what a reader sees on opening a sorted view.
+         */
+        var sorting = (o.sorting || []).map(function (entry) {
+            return typeof entry === 'string'
+                ? { name: entry, sortDirection: 0 }
+                : { name: entry.name, sortDirection: entry.sortDirection || 0 };
+        });
 
         /**
          * The filter the control asked for, and the filter in force.
@@ -911,28 +1175,60 @@
         }
 
         /** All matching records in the order the current sort puts them. */
+        /**
+         * The order actually applied, which is not always the order asked for.
+         *
+         * See `quirks.sortingHonoursMultiple`: a host that collapses the array
+         * sorts by the first entry alone, and the rows then agree with a
+         * one-column request while the array still holds four.
+         */
+        function appliedSorting() {
+            var asked = quirks.sortingAbsent ? [] : sorting;
+
+            return quirks.sortingHonoursMultiple ? asked : asked.slice(0, 1);
+        }
+
+        /*
+         * **Every entry, in order — and this used to honour only the first.**
+         *
+         * The comment that justified taking `sorting[0]` claimed a view's
+         * ORDER BY is what the array holds and that a control pushing instead
+         * of replacing would build a sort nobody asked for. Reasonable, and
+         * **wrong**: measured 2026-09-20, the platform honours a multi-entry
+         * array. Two entries reordered the rows within the first column's
+         * ties, the array survived `paging.reset()` and a page turn, and four
+         * were retained.
+         *
+         * A rig modelling the platform as somebody reasoned about it rather
+         * than as it was measured will pass a control that cannot work — which
+         * is the whole argument for the `quirks` defaults, applied here to a
+         * quirk that turned out not to exist.
+         *
+         * `quirks.sortingHonoursMultiple` off reaches the host that does
+         * collapse the array, which is what the first (false-passing)
+         * measurement appeared to show.
+         */
         function ordered() {
             var rows = matching().slice();
+            var order = appliedSorting();
 
-            if (sorting.length === 0) {
+            if (order.length === 0) {
                 return rows;
             }
 
-            /*
-             * Only the first entry is honoured, and that is not a shortcut: a
-             * view's ORDER BY is what `dataset.sorting` holds, and a control
-             * that pushes instead of replacing builds a three-deep sort nobody
-             * asked for. Sorting by one column here makes that visible as a
-             * wrong order rather than hiding it behind a stable tie-break.
-             */
-            var by = sorting[0];
-
             return rows.sort(function (a, b) {
-                var left = formatted(a.values[by.name]);
-                var right = formatted(b.values[by.name]);
-                var compared = left.localeCompare(right);
+                for (var i = 0; i < order.length; i += 1) {
+                    var by = order[i];
+                    var left = formatted(a.values[by.name]);
+                    var right = formatted(b.values[by.name]);
+                    var compared = left.localeCompare(right);
 
-                return by.sortDirection === DESCENDING ? -compared : compared;
+                    if (compared !== 0) {
+                        return by.sortDirection === DESCENDING ? -compared : compared;
+                    }
+                }
+
+                return 0;
             });
         }
 
@@ -943,10 +1239,261 @@
          * every id from page one to the current page, which is why a control
          * that renders the array directly stacks page two under page one.
          */
+        /* ------------------------------------------------- FetchXML, answered */
+
+        /** One attribute of an XML tag, entities unescaped. */
+        function xmlAttr(tag, name) {
+            var found = tag.match(new RegExp('\\b' + name + '=[\'"]([^\'"]*)[\'"]'));
+
+            return found
+                ? found[1].replace(/&apos;/g, "'").replace(/&quot;/g, '"')
+                    .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&')
+                : undefined;
+        }
+
+        /** A group key off a row's value, matching what the server sends. */
+        function groupKeyOf(raw) {
+            if (raw === undefined || raw === null || raw === '') {
+                return null;
+            }
+
+            // A lookup arrives from a record as `{ etn, id: { guid }, name }`
+            // and from the server as the bare GUID. Measured, both.
+            if (typeof raw === 'object' && raw.id && typeof raw.id.guid === 'string') {
+                return raw.id.guid.toLowerCase();
+            }
+
+            // A Choice is a string on a record here and an integer from the
+            // aggregate — the disagreement the control's seam exists to
+            // reconcile, so the rig reproduces it rather than smoothing it.
+            if (typeof raw === 'string' && /^-?\d+$/.test(raw)) {
+                return Number(raw);
+            }
+
+            return raw;
+        }
+
+        /** A group's label, as the FormattedValue annotation carries it. */
+        function groupLabelOf(name, raw) {
+            if (raw && typeof raw === 'object' && typeof raw.name === 'string') {
+                return raw.name;
+            }
+
+            var entry = (fixture.metadata || {})[name];
+            var options = (entry && entry.options) || [];
+            var match = options.filter(function (option) {
+                return String(option.value) === String(raw);
+            })[0];
+
+            return match ? match.label : (raw === null || raw === undefined ? undefined : String(raw));
+        }
+
+        /** The target table of a lookup value, for the third annotation. */
+        function lookupTableOf(raw) {
+            return raw && typeof raw === 'object' && typeof raw.etn === 'string' ? raw.etn : undefined;
+        }
+
+        /**
+         * Answer a `?fetchXml=` query from the fixture's rows.
+         *
+         * See the header on `retrieveMultipleRecords` for what was corrected
+         * against a real response and why. Link-entities and their conditions
+         * are dropped — the rig has no joined rows to judge them against, so a
+         * suite asserting a linked filter's effect would be asserting nothing.
+         */
+        function answerFetchXml(entityType, xml) {
+            var entityTag = xml.match(/<entity\b[^>]*>/);
+            var entity = entityTag ? xmlAttr(entityTag[0], 'name') : entityType;
+            var fetchTag = xml.match(/<fetch\b[^>]*>/);
+            var aggregate = fetchTag ? xmlAttr(fetchTag[0], 'aggregate') === 'true' : false;
+            var rootOnly = xml
+                .replace(/<link-entity\b[^>]*\/>/g, '')
+                .replace(/<link-entity\b[^>]*>[\s\S]*?<\/link-entity>/g, '');
+
+            var attributes = (rootOnly.match(/<attribute\b[^>]*\/>/g) || []).map(function (tag) {
+                return {
+                    name: xmlAttr(tag, 'name'),
+                    alias: xmlAttr(tag, 'alias'),
+                    groupby: xmlAttr(tag, 'groupby') === 'true',
+                    aggregate: xmlAttr(tag, 'aggregate'),
+                };
+            });
+
+            var rows = ordered();
+
+            log('webAPI.fetchXml', {
+                entity: entity,
+                aggregate: aggregate,
+                attributes: attributes.length,
+                rows: rows.length,
+            });
+
+            if (!aggregate) {
+                return Promise.resolve({
+                    entities: rows.map(function (row) {
+                        return row.values;
+                    }),
+                });
+            }
+
+            if (quirks.aggregateRefused || rows.length > quirks.aggregateLimit) {
+                /*
+                 * 0x8004E023 = 2147164195, the documented
+                 * `AggregateQueryRecordLimit` refusal. **Still unmeasured** —
+                 * no table in the probe environment reaches 50,000 rows, so
+                 * the code and message are Microsoft's and the object shape is
+                 * the one every other refusal here has. SPEC.md 0.6.0 records
+                 * it as reasoned rather than observed.
+                 */
+                return Promise.reject(webApiFault(
+                    2147164195,
+                    '',
+                    'AggregateQueryRecordLimit exceeded. Cannot perform this operation.',
+                ));
+            }
+
+            var groupAttributes = attributes.filter(function (a) {
+                return a.groupby;
+            });
+            var measureAttributes = attributes.filter(function (a) {
+                return !a.groupby && a.aggregate;
+            });
+            var groups = {};
+            var order = [];
+
+            rows.forEach(function (row) {
+                var keys = groupAttributes.map(function (a) {
+                    return groupKeyOf(row.values[a.name]);
+                });
+                var id = JSON.stringify(keys);
+
+                if (!groups[id]) {
+                    groups[id] = { keys: keys, rows: [] };
+                    order.push(id);
+                }
+
+                groups[id].rows.push(row);
+            });
+
+            return Promise.resolve({
+                entities: order.map(function (id) {
+                    var group = groups[id];
+                    var out = {};
+
+                    groupAttributes.forEach(function (a, index) {
+                        var key = group.keys[index];
+
+                        // Measured: a blank group's alias is omitted from the
+                        // row entirely — not present and null. So are its
+                        // annotations.
+                        if (key === null) {
+                            return;
+                        }
+
+                        var raw = group.rows[0].values[a.name];
+
+                        out[a.alias] = key;
+                        out[a.alias + '@OData.Community.Display.V1.AttributeName'] = a.name;
+
+                        var label = groupLabelOf(a.name, raw);
+
+                        if (label !== undefined) {
+                            out[a.alias + '@OData.Community.Display.V1.FormattedValue'] = label;
+                        }
+
+                        var target = lookupTableOf(raw);
+
+                        if (target !== undefined) {
+                            out[a.alias + '@Microsoft.Dynamics.CRM.lookuplogicalname'] = target;
+                        }
+                    });
+
+                    measureAttributes.forEach(function (a) {
+                        var values = group.rows.map(function (row) {
+                            return row.values[a.name];
+                        });
+                        var numbers = values.filter(function (v) {
+                            return typeof v === 'number' && isFinite(v);
+                        });
+                        // Measured: min/max work over a DateAndTime column and
+                        // come back as the ISO string.
+                        var dates = values.filter(function (v) {
+                            return typeof v === 'string' && !isNaN(Date.parse(v));
+                        });
+                        var result;
+
+                        switch (a.aggregate) {
+                            case 'count':
+                                result = group.rows.length;
+                                break;
+                            case 'countcolumn':
+                                result = values.filter(function (v) {
+                                    return v !== null && v !== undefined && v !== '';
+                                }).length;
+                                break;
+                            case 'sum':
+                                result = numbers.length === 0 ? undefined : numbers.reduce(function (s, v) {
+                                    return s + v;
+                                }, 0);
+                                break;
+                            case 'avg':
+                                result = numbers.length === 0 ? undefined : numbers.reduce(function (s, v) {
+                                    return s + v;
+                                }, 0) / numbers.length;
+                                break;
+                            case 'min':
+                            case 'max':
+                                if (numbers.length > 0) {
+                                    result = a.aggregate === 'min'
+                                        ? Math.min.apply(null, numbers)
+                                        : Math.max.apply(null, numbers);
+                                } else if (dates.length > 0) {
+                                    result = dates.slice().sort()[a.aggregate === 'min' ? 0 : dates.length - 1];
+                                } else {
+                                    result = undefined;
+                                }
+                                break;
+                            default:
+                                result = undefined;
+                        }
+
+                        // Measured: an aggregate over no values is omitted the
+                        // same way a blank group is, while `count` still
+                        // stands — because count counts rows, not values.
+                        if (result !== undefined) {
+                            out[a.alias] = result;
+                            out[a.alias + '@OData.Community.Display.V1.AttributeName'] = a.name;
+                            /*
+                             * Through the host's own formatter, and with the
+                             * *column's* name rather than the alias, so a
+                             * Currency measure formats as currency and a date
+                             * measure as a date.
+                             *
+                             * That distinction is the point of keeping the
+                             * formatted value at all: measured 2026-09-20, a
+                             * date aggregate comes back as UTC
+                             * (`2026-09-11T13:00:00Z`) while its
+                             * FormattedValue reads `9/11/2026 8:00 AM` — five
+                             * hours apart. A control rendering the raw is
+                             * wrong for every user outside UTC.
+                             */
+                            out[a.alias + '@OData.Community.Display.V1.FormattedValue'] = display(result, a.name);
+                        }
+                    });
+
+                    return out;
+                }),
+            });
+        }
+
+
         function visibleIds() {
             var rows = ordered();
             var end = state.page * state.pageSize;
-            var start = quirks.accumulatePages ? 0 : (state.page - 1) * state.pageSize;
+            // `state.exact` — the page was reached by loadExactPage, which was
+            // measured not to accumulate however the stepping calls behave.
+            var accumulate = quirks.accumulatePages && !state.exact;
+            var start = accumulate ? 0 : (state.page - 1) * state.pageSize;
 
             return rows.slice(start, end).map(function (row) {
                 return row.id;
@@ -1262,6 +1809,12 @@
                  * can go forward and never come back.
                  */
                 get hasPreviousPage() {
+                    if (state.exact) {
+                        // Measured: after loadExactPage this is true from page
+                        // two on, and stays true across a backwards jump.
+                        return state.page > 1;
+                    }
+
                     return quirks.previousPageStuck ? false : state.page > 1;
                 },
 
@@ -1277,34 +1830,73 @@
 
                 setPageSize: function (size) {
                     log('setPageSize', size);
-                    // Requested, not applied. Nothing changes until a fetch.
+                    // Requested, not applied: the *rows* do not change until a
+                    // fetch. The *lifecycle* does — see `quirks.pageSizeNotifies`.
                     state.requestedPageSize = size;
+                    state.resized = true;
+
+                    if (quirks.pageSizeNotifies) {
+                        // A render owed with *no* effect behind it: the rows do
+                        // not change, but the control is called anyway.
+                        state.pending.push(null);
+                        state.renderOwed += 1;
+                    }
                 },
 
                 loadNextPage: function (loadOnlyNewPage) {
                     log('loadNextPage', loadOnlyNewPage);
-                    state.page += 1;
-                    fetched();
+
+                    if (quirks.pagingBreaksAfterResize && state.resized) {
+                        state.pending.push(null);
+                        state.renderOwed += 1;
+
+                        return;
+                    }
+
+                    fetched(function () {
+                        state.page += 1;
+                        state.exact = false;
+                    });
                 },
 
                 loadPreviousPage: function (loadOnlyNewPage) {
                     log('loadPreviousPage', loadOnlyNewPage);
-                    state.page = Math.max(1, state.page - 1);
-                    fetched();
+                    fetched(function () {
+                        state.page = Math.max(1, state.page - 1);
+                        state.exact = false;
+                    });
                 },
 
                 loadExactPage: quirks.hasLoadExactPage
                     ? function (page) {
                         log('loadExactPage', page);
-                        state.page = Math.max(1, page);
-                        fetched();
+
+                        // Renders, does not fetch. See
+                        // `quirks.pagingBreaksAfterResize`.
+                        if (quirks.pagingBreaksAfterResize && state.resized && page > 1) {
+                            state.pending.push(null);
+                            state.renderOwed += 1;
+
+                            return;
+                        }
+
+                        // Measured 2026-09-20: it fetches on its own, returns
+                        // exactly that page, and moves backwards as readily as
+                        // forwards. See `quirks.accumulatePages`.
+                        fetched(function () {
+                            state.page = Math.max(1, page);
+                            state.exact = true;
+                        });
                     }
                     : undefined,
 
                 reset: function () {
                     log('paging.reset');
-                    state.page = 1;
-                    fetched();
+                    state.resized = false;
+                    fetched(function () {
+                        state.page = 1;
+                        state.exact = false;
+                    });
                 },
             },
 
@@ -1326,6 +1918,22 @@
 
             getTargetEntityType: function () {
                 return fixture.targetEntityType;
+            },
+
+            /**
+             * Which view this dataset is showing.
+             *
+             * Typed as returning a `string`, and that is a claim about the
+             * typings rather than about any host: measured **bare and
+             * lower-case** on a subgrid 2026-09-20, and measured **`null`** by
+             * `pcf-chart-view` on a bound lookup's dataset. Both are real, so
+             * `quirks.viewId` reaches either — and a control that does not
+             * guard this is worth being able to break here.
+             */
+            getViewId: function () {
+                log('getViewId');
+
+                return quirks.viewId;
             },
 
             refresh: function () {
@@ -1361,12 +1969,68 @@
          * Owed rather than performed, so that a control which refreshes from
          * inside `updateView` shows up as a count instead of a stack overflow.
          */
-        function fetched() {
-            state.pageSize = state.requestedPageSize;
-            // The request becomes the result set here, and nowhere earlier.
-            filter = requestedFilter;
-            state.refreshes += 1;
-            state.renderOwed = true;
+        function fetched(transition) {
+            /*
+             * **The platform may hand back fewer rows per page than asked
+             * for**, and `docs/limitations.md` has said so since 0.2.0 — "the
+             * control asks for what you configure, capped at 250; the platform
+             * may return fewer rows per page on a large view".
+             *
+             * The rig had no way to reach that, which mattered the moment the
+             * full-view export arrived: it asks for 250, the fixture holds
+             * twelve, so the whole export finished in one fetch and the state
+             * machine it exists for was never driven round a second time.
+             * `quirks.maxPageSize` is the clamp, and it is modelling documented
+             * behaviour rather than inventing a hostile host.
+             */
+            var apply = function () {
+                if (typeof transition === 'function') {
+                    transition();
+                }
+
+                state.pageSize = quirks.maxPageSize === null
+                    ? state.requestedPageSize
+                    : Math.min(state.requestedPageSize, quirks.maxPageSize);
+                // The request becomes the result set here, and nowhere earlier.
+                filter = requestedFilter;
+                state.refreshes += 1;
+            };
+
+            if (!quirks.asyncFetch) {
+                apply();
+                state.pending.push(null);
+                state.renderOwed += 1;
+
+                return;
+            }
+
+            /*
+             * **At most one fetch is outstanding, and a new one supersedes it.**
+             * The superseded page is never delivered and never notifies.
+             *
+             * This is the piece that made the rig unable to reproduce the
+             * export's lost page. Queueing every fetch and delivering them all
+             * in order gives a one-pass lag that silently *cancels* an
+             * off-by-one in the caller: ask for 1, 2, 3, 4 while pages 1, 2, 3
+             * arrive and every page still gets collected. A platform serving
+             * only the latest request does not forgive that — ask for page 3
+             * while page 2 is in flight and page 2 is simply gone.
+             *
+             * `loadExactPage` returns `void` and offers nothing to await, which
+             * is precisely why a control cannot tell the difference and why the
+             * export must not ask for a page it has not been answered about.
+             */
+            var outstanding = state.pending.indexOf(FETCH);
+
+            if (outstanding !== -1) {
+                state.fetch = apply;
+
+                return;
+            }
+
+            state.fetch = apply;
+            state.pending.push(FETCH);
+            state.renderOwed += 1;
         }
 
         function createContext() {
@@ -1391,6 +2055,29 @@
                     type: 'Whole.None',
                 },
             };
+
+            /*
+             * **Every property the manifest declares, whether or not a suite
+             * supplied one.** The platform builds a parameter object for each
+             * declared property and reports `raw: null` for one the maker left
+             * alone — so a control reading `context.parameters.x.raw` is safe
+             * on a form, and was not safe here.
+             *
+             * That gap bit on 2026-09-20: a suite that did not name the new
+             * grouping inputs made `updateView` throw *"Cannot read properties
+             * of undefined"*, the control rendered nothing, and several
+             * assertions passed against the empty markup because "contains no
+             * group rows" is true of nothing at all. The rig was more
+             * forgetful than the platform, which is the one direction a
+             * stand-in must never be wrong in.
+             */
+            for (var declared in DECLARED_INPUTS) {
+                if (Object.prototype.hasOwnProperty.call(DECLARED_INPUTS, declared)
+                    && !Object.prototype.hasOwnProperty.call(parameters, declared)
+                    && !Object.prototype.hasOwnProperty.call(o.inputs, declared)) {
+                    parameters[declared] = { raw: null, type: DECLARED_INPUTS[declared] };
+                }
+            }
 
             // The control's own inputs, wrapped the way the platform hands them
             // over. A raw `null` is a real value here — an input the maker left
@@ -1505,6 +2192,17 @@
                         getEntityMetadata: function (entityName, attributes) {
                             log('utils.getEntityMetadata', { entity: entityName, attributes: attributes });
 
+                            /*
+                             * **Thrown, not rejected.** Verbatim from a canvas
+                             * app, 2026-09-21. The distinction is the whole
+                             * defect: a rejection is something a caller can
+                             * catch, and a synchronous throw escapes the call
+                             * and the lifecycle with it.
+                             */
+                            if (utilsRefuse) {
+                                throw new Error('getEntityMetadata: Method not implemented.');
+                            }
+
                             if (quirks.metadataRejects) {
                                 return Promise.reject(new Error('Metadata for ' + entityName + ' could not be read.'));
                             }
@@ -1581,6 +2279,11 @@
                     ? {
                         updateRecord: function (entityName, id, data) {
                             log('webAPI.updateRecord', { entity: entityName, id: id, data: data });
+
+                            // Thrown, not rejected — see `canvasRefuses`.
+                            if (canvasRefuses) {
+                                throw new Error('updateRecord: Method not implemented.');
+                            }
 
                             if (quirks.webApiRejects) {
                                 return Promise.reject(webApiFault(2147781913, '', PAYLOAD_FAULT));
@@ -1669,6 +2372,102 @@
                             // pending label has to come from the pick.
                             return Promise.resolve({ id: id, entityType: entityName });
                         },
+
+                        /**
+                         * A view definition, read as an ordinary row.
+                         *
+                         * `savedquery` first and `userquery` on failure is the
+                         * order the control tries, and the rig makes the miss
+                         * cost what it costs on a real host: measured
+                         * 2026-09-20, an id that is not in the table answered
+                         * **404** with `errorCode 2147746327`, *"The requested
+                         * record was not found"*. That is how a control learns
+                         * to try the other table, and a rig that answered both
+                         * would never teach it.
+                         */
+                        retrieveRecord: function (entityName, id, query) {
+                            log('webAPI.retrieveRecord', { entity: entityName, id: id, query: query });
+                            /*
+                             * Thrown, not rejected — measured on a real
+                             * canvas app, 2026-09-22: every Web API method
+                             * is published and the reads answer
+                             * `Method not implemented.` from the call.
+                             */
+                            if (canvasRefuses) {
+                                throw new Error('retrieveRecord: Method not implemented.');
+                            }
+
+
+                            var views = fixture.views || {};
+                            var bare = String(id).replace(/[{}]/g, '').toLowerCase();
+                            var found = (views[entityName] || {})[bare];
+
+                            if (!quirks.viewsReadable || !found) {
+                                return Promise.reject(webApiFault(
+                                    2147746327,
+                                    'Record Is Unavailable',
+                                    'The requested record was not found.',
+                                ));
+                            }
+
+                            return Promise.resolve({ fetchxml: found });
+                        },
+
+                        /**
+                         * A `?fetchXml=` query, plain or aggregated.
+                         *
+                         * **Ported from `pcf-chart-view/dev/host.js` and then
+                         * corrected against what the server actually sent on
+                         * 2026-09-20.** Four differences, each one a shape a
+                         * control would otherwise get wrong on a real form
+                         * while passing here:
+                         *
+                         * 1. **Every alias carries an `AttributeName`
+                         *    annotation** naming its source column — groups,
+                         *    measures and the count alike. chart-view's rig
+                         *    emits none, so a control checking the response
+                         *    describes the query it sent could not be tested
+                         *    there at all.
+                         * 2. **The count alias carries a `FormattedValue`
+                         *    too** — `"2"` beside `2`.
+                         * 3. **A lookup group carries a third annotation**,
+                         *    `lookuplogicalname`, naming the target table.
+                         * 4. **`min`/`max` work over dates**, not only
+                         *    numbers, returning the ISO string — which is how
+                         *    the M-measure half of the alias plan was proven
+                         *    on a table with no numeric column.
+                         *
+                         * Kept from the donor because they are equally
+                         * measured: a **blank group's alias is omitted from
+                         * the row entirely**, an aggregate over no values is
+                         * omitted the same way while `count` still stands, and
+                         * a Choice group's value is its **integer** — which is
+                         * the opposite of what the same column reads as off a
+                         * record here, deliberately.
+                         */
+                        retrieveMultipleRecords: function (entityName, query) {
+                            /*
+                             * Thrown, not rejected — measured on a real
+                             * canvas app, 2026-09-22: every Web API method
+                             * is published and the reads answer
+                             * `Method not implemented.` from the call.
+                             */
+                            if (canvasRefuses) {
+                                throw new Error('retrieveMultipleRecords: Method not implemented.');
+                            }
+
+                            var xml = /[?&]fetchXml=/i.test(String(query || ''))
+                                ? decodeURIComponent(String(query).replace(/^[?&]?fetchXml=/i, ''))
+                                : null;
+
+                            if (xml === null) {
+                                log('webAPI.retrieveMultipleRecords', { entity: entityName, query: query });
+
+                                return Promise.resolve({ entities: [] });
+                            }
+
+                            return answerFetchXml(entityName, xml);
+                        },
                     }
                     : undefined,
 
@@ -1680,6 +2479,11 @@
                 page: pagePresent
                     ? {
                         getClientUrl: function () {
+                            if (pageRefuses) {
+                                // Verbatim from a canvas app, 2026-09-21.
+                                throw new Error('getClientUrl: Method not implemented.');
+                            }
+
                             return CLIENT_URL;
                         },
                     }
@@ -1705,6 +2509,24 @@
                     // resize itself comes from the `width` option.
                     trackContainerResize: function (value) {
                         log('trackContainerResize', value);
+
+                        /*
+                         * **This one does not refuse on canvas, and the rig said
+                         * it did for a day.**
+                         *
+                         * It was added on the assumption that canvas refuses
+                         * every optional surface. Two things say otherwise.
+                         * Microsoft's reference gives `Mode` an *Available for*
+                         * of "Model-driven apps, canvas apps, & portals" (read
+                         * 2026-09-22). And the control called this unguarded in
+                         * `init` through 0.6.11, where a canvas app errored on
+                         * `getClientUrl` — reached from `updateView`, which runs
+                         * *after* `init`, so `init` had completed.
+                         *
+                         * Modelling a refusal here would make the rig a harsher
+                         * host than the platform, which invents defects as
+                         * surely as a friendlier one hides them.
+                         */
                         state.resizeTracked = value !== false;
                     },
                     setFullScreen: function (value) {
@@ -1740,6 +2562,19 @@
                             return includeTime
                                 ? value.toLocaleString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })
                                 : value.toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' });
+                        },
+                        /*
+                          The platform formats numbers as well as dates, and a
+                          grouped table needs it: an aggregate belongs to no
+                          record, so there is no cell for `getFormattedValue`
+                          to answer about. Missing here until 2026-09-21, which
+                          is why the browser route's measures rendered blank.
+                        */
+                        formatCurrency: function (value) {
+                            return value.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
+                        },
+                        formatDecimal: function (value) {
+                            return value.toLocaleString('en-US', { maximumFractionDigits: 2 });
                         },
                         formatDateLong: function (value) {
                             return value.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
@@ -1784,12 +2619,36 @@
             state: state,
             quirks: quirks,
             options: o,
-            /** True while the control has asked for data it has not re-rendered against. */
+            /**
+             * True while the control has asked for data it has not re-rendered
+             * against.
+             *
+             * **A count, not a flag.** It was a boolean until 2026-09-21, which
+             * meant two owed passes collapsed into one and the rig could not
+             * express "the platform answered these two calls separately". That
+             * is exactly what `beginExport` does — `setPageSize` then
+             * `loadExactPage` — and exactly the pass the export lost a page to.
+             */
             renderOwed: function () {
-                return state.renderOwed;
+                return state.renderOwed > 0;
             },
             settled: function () {
-                state.renderOwed = false;
+                // One pass answers one call. The effect behind it — if there is
+                // one — lands now, which is what makes a deferred fetch
+                // observable as "notified, not yet arrived".
+                var effect = state.pending.shift();
+
+                if (effect === FETCH) {
+                    if (typeof state.fetch === 'function') {
+                        state.fetch();
+                    }
+
+                    state.fetch = null;
+                } else if (typeof effect === 'function') {
+                    effect();
+                }
+
+                state.renderOwed = Math.max(0, state.renderOwed - 1);
             },
             /**
              * The host re-reading after a write — a separate fetch from the
@@ -1812,7 +2671,8 @@
                     row.committed = null;
                 });
 
-                state.renderOwed = true;
+                state.pending.push(null);
+                state.renderOwed += 1;
             },
             /**
              * What the server holds for one cell, untouched by `getValue`'s

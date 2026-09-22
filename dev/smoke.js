@@ -1368,12 +1368,55 @@ check(
     `loadOptions ${noUtils.props().loadOptions === null ? 'null' : 'present'}`,
 );
 
+/*
+ * **Canvas is such a host, but it does not say so by omission.** It publishes
+ * `utils` and throws `Method not implemented.` from the call — measured in a
+ * real canvas app, 2026-09-21 — so `loadOptions` is offered and then refuses,
+ * rather than being absent. The column ends up exactly where the absent host
+ * leaves it: unfilterable, with the dash that says so.
+ *
+ * Asserted on the dash rather than on `loadOptions === null`, because the dash
+ * is what a reader sees and the null was only ever a means to it. A control
+ * that checks `typeof` and assumes the method works is the defect this
+ * measurement exposed.
+ */
 const canvasUtils = bind({ host: 'canvas', inputs: { enableCreate: true } });
 
 check(
-    'and canvas is such a host, whatever the manifest declares',
-    canvasUtils.props().loadOptions === null && canvasUtils.props().canCreate === false,
-    `loadOptions ${canvasUtils.props().loadOptions === null ? 'null' : 'present'}, canCreate ${canvasUtils.props().canCreate}`,
+    'and canvas ends in the same place, by refusing rather than by omitting',
+    (renderDeep(canvasUtils.driven.element).match(/class="DataTable-filterNone"/g) || []).length === 2
+        && canvasUtils.props().canCreate === false,
+    `dashes ${(renderDeep(canvasUtils.driven.element).match(/class="DataTable-filterNone"/g) || []).length}`
+    + `, canCreate ${canvasUtils.props().canCreate}`,
+);
+
+check(
+    'and the refusal is catchable rather than fatal',
+    typeof canvasUtils.props().loadOptions === 'function',
+    'loadOptions offered; a synchronous throw would have killed the control',
+);
+
+/*
+ * **The New button must not appear on canvas, and `typeof` cannot tell.**
+ *
+ * Measured with the host probe on a real canvas app, 2026-09-22: **all fifteen
+ * surfaces asked about came back `present: true`**, `navigation.openForm`
+ * among them. So the guard that was withholding this button — the method
+ * existing — passed there, and the control drew a New that could only refuse.
+ * `docs/canvas.md` had asserted since 0.4.0 that this was impossible because
+ * "`navigation.openForm` is not on this host". The second half of that
+ * sentence was simply wrong.
+ *
+ * This rig published `openForm` on canvas for the first time on the same day,
+ * and this assertion failed the moment it did. What fixes it is testing an
+ * *answer* — `getClientUrl` resolving to a string — rather than a method's
+ * existence. That is the shape every guard in this file should now be read
+ * against.
+ */
+check(
+    'no New button on canvas, where openForm exists and refuses',
+    canvasUtils.props().canCreate === false,
+    `canCreate ${canvasUtils.props().canCreate}`,
 );
 
 /* --------------------------------------------------------------- selection */
@@ -1742,6 +1785,34 @@ async function choiceChecks() {
             && metadataCalls[0] === 'utils.getEntityMetadata({"entity":"account","attributes":["industrycode"]})',
         metadataCalls.join(' ') || 'never asked',
     );
+
+    /*
+     * **A synchronous refusal has to arrive as a rejection.** Canvas throws
+     * `getEntityMetadata: Method not implemented.` from the call itself, not as
+     * a rejected promise — so there is nothing to `.catch`, the throw escapes
+     * `updateView`, and the studio replaces the table with *Error loading
+     * control*. Measured in a real canvas app, 2026-09-21.
+     *
+     * **This has to call `loadOptions`, not merely render.** `renderDeep` is
+     * `react-dom/server` and runs no effects, so a rendering assertion never
+     * invokes it and passes against the broken control — which is exactly what
+     * happened on the first attempt at this assertion.
+     */
+    const canvasOptions = bind({ host: 'canvas', inputs: { enableFiltering: true } });
+    let canvasThrew = false;
+    let canvasRejected = false;
+
+    try {
+        await canvasOptions.props().loadOptions('industrycode').catch(() => {
+            canvasRejected = true;
+        });
+    } catch {
+        canvasThrew = true;
+    }
+
+    check('a host that refuses metadata synchronously rejects instead of throwing',
+        !canvasThrew && canvasRejected,
+        canvasThrew ? 'threw out of the call — this kills the control' : 'rejected, catchable');
 
     /*
      * A refused metadata call reaches the component as a rejection, which it
@@ -2181,6 +2252,827 @@ async function lookupChecks() {
         noSet ? JSON.stringify(noSet.message) : 'resolved',
     );
 }
+
+/*
+ * Grouping, through the control.
+ *
+ * `dev/grouping.js` asserts the decisions; these assert that the control
+ * *calls* them, which is the half a pure suite cannot reach.
+ *
+ * **What this suite can and cannot see, stated rather than discovered.**
+ * `renderDeep` is `react-dom/server`, which **runs no effects** — and
+ * `dev/clock.js` installs a fake `setTimeout`, so nothing resolves by waiting
+ * either. `useGroups` starts the server route in an effect, so **the server
+ * route never runs here at all.** Every assertion below is therefore about the
+ * **browser route**, which is computed during render — which is what a reader
+ * sees while the aggregate is in flight, and on canvas, forever.
+ *
+ * That is not a gap to paper over. The server route's own arithmetic is
+ * asserted in `dev/grouping.js` against rows measured off a real response, and
+ * the two routes are asserted there to agree. What is left unproven is the
+ * wiring between them, and that belongs on a form and in SPEC.md's
+ * *Not verified*.
+ */
+function groupingChecks() {
+    // Ungrouped is the default and the shape every existing installation
+    // upgrades into: nothing about 0.6.0 may change it.
+    const plainMarkup = renderDeep(bind({}).driven.element);
+
+    check(
+        'with groupBy unset the table is unchanged — no group rows at all',
+        plainMarkup.indexOf('DataTable-groupRow') === -1,
+        'no group rows',
+    );
+
+    /*
+     * A page size big enough for the whole fixture, so the browser route sees
+     * every record. At the default five it sees page one — three industries
+     * out of four and no blank group — which is correct behaviour and a
+     * confusing thing to assert against.
+     */
+    const markup = renderDeep(bind({ pageSize: 25, inputs: { groupBy: 'industrycode' } }).driven.element);
+    const headers = (markup.match(/DataTable-groupRow/g) || []).length;
+
+    /*
+     * **The precondition, and it is not ceremony.** Every assertion below is
+     * an `indexOf` over this markup, and `indexOf` on an empty string answers
+     * -1 for everything — so a control that threw in `updateView` and rendered
+     * nothing passes "contains no group rows", "does not overclaim its scope"
+     * and every other negative. That happened on 2026-09-20 and four false
+     * passes hid one real defect. Assert the table is there first.
+     */
+    check('the grouped table rendered at all', markup.indexOf('<table') > -1, markup.length + ' chars');
+
+    // Four industries in the fixture and one record with none, so the blank
+    // group is real rather than contrived.
+    check('a grouped table draws one header per group, blank included', headers === 5, 'headers ' + headers);
+    check('the blank group is named rather than left empty',
+        markup.indexOf('resx:DataTable_GroupBlank') > -1, 'blank named');
+    check('a choice group is labelled, not numbered', markup.indexOf('Manufacturing') > -1, 'labels present');
+    check('the caption names its scope',
+        markup.indexOf('resx:DataTable_CaptionLoaded') > -1, 'browser-route caption');
+    check('and never overclaims it on the browser route',
+        markup.indexOf('resx:DataTable_CaptionAll') === -1, 'scope honest');
+
+    /*
+     * **The row pager is gone while the groups are collapsed.**
+     *
+     * Found on the first form walkthrough, 2026-09-20: it read "1–4 of 21"
+     * and "page 1 of 6" underneath five group headers — counting rows that
+     * were not on screen, in a vocabulary the table was not in. The caption
+     * answers the same question in the right one.
+     */
+    /*
+     * **The group caption does not wear the table caption's class.**
+     *
+     * `.DataTable-caption` has been the `<table><caption>`'s class since
+     * 0.2.0, and it is *visually hidden* — one pixel square with
+     * `clip: rect(0 0 0 0)`, so a screen reader reads the table's name and
+     * nobody sees it. Reusing the name put the group caption inside that clip:
+     * right text, right place in the DOM, invisible on the form. Found by a
+     * DOM query after two screenshots, because every assertion here is over
+     * markup and markup was not what was wrong.
+     */
+    check('the group caption does not reuse the hidden table-caption class',
+        markup.indexOf('DataTable-groupCaption') > -1
+        && markup.indexOf('DataTable-pager DataTable-caption') === -1,
+        'group caption class');
+
+    /*
+     * The open group's rows sit under its own header. Not assertable here —
+     * expanding needs a click and `renderToStaticMarkup` dispatches no events
+     * — so what is checked is the collapsed invariant either side of it: a
+     * grouped table with nothing open renders headers and no rows at all.
+     */
+    check('a collapsed grouped table renders no member rows',
+        markup.indexOf('DataTable-groupRow') > -1 && markup.indexOf('<tr class="DataTable-row') === -1,
+        'headers only');
+
+    check('the row pager is replaced by the caption, not shown beside it',
+        markup.indexOf('DataTable-pagerStatus') > -1
+        && markup.indexOf('resx:DataTable_Page') === -1
+        && (markup.match(/class="DataTable-pager[ "]/g) || []).length === 1,
+        'pagers: ' + (markup.match(/class="DataTable-pager[ "]/g) || []).length);
+
+    /*
+     * A column the view does not have renders an **ungrouped** table and names
+     * the columns that do exist — never a half-grouped one. To the console,
+     * because only the maker can act on it.
+     */
+    const warnings = [];
+    const realWarn = console.warn;
+
+    console.warn = (message) => warnings.push(String(message));
+
+    /*
+      **Two aggregates over one column both render.**
+
+      This shipped broken through 0.6.0's whole development and was found by
+      taking a screenshot, not by an assertion: the group row placed one cell
+      per column and picked the measure for it with `findIndex`, so
+      `sum:revenue, avg:revenue` drew the sum and dropped the average without a
+      word. A configured aggregate disappearing silently is the same failure
+      class as the export's missing page — the output looks perfectly correct.
+
+      `aliasPlan` has supported M measures over one column since the first
+      commit; only the rendering could not.
+    */
+    const twoMeasures = renderDeep(bind({
+        pageSize: 25,
+        inputs: { groupBy: 'industrycode', aggregates: 'sum:revenue, avg:revenue' },
+    }).driven.element);
+
+    check('a grouped table with two measures rendered at all',
+        twoMeasures.indexOf('DataTable-groupMeasure') > -1, twoMeasures.slice(0, 120));
+    check('both aggregates over one column are drawn',
+        (twoMeasures.match(/DataTable-groupValue/g) || []).length >= 8,
+        (twoMeasures.match(/DataTable-groupValue/g) || []).length + ' measure values');
+    check('and each is named, since two numbers in one cell are otherwise ambiguous',
+        twoMeasures.indexOf('DataTable-groupAggregate') > -1
+        && twoMeasures.indexOf('>sum<') > -1 && twoMeasures.indexOf('>avg<') > -1,
+        'sum ' + twoMeasures.indexOf('>sum<') + ', avg ' + twoMeasures.indexOf('>avg<'));
+
+    /* One measure keeps the bare value it always had. */
+    const oneMeasure = renderDeep(bind({
+        pageSize: 25,
+        inputs: { groupBy: 'industrycode', aggregates: 'sum:revenue' },
+    }).driven.element);
+
+    check('a single measure is not labelled',
+        oneMeasure.indexOf('DataTable-groupMeasure') > -1
+        && oneMeasure.indexOf('DataTable-groupAggregate') === -1,
+        oneMeasure.indexOf('DataTable-groupAggregate') === -1 ? 'bare' : 'labelled');
+
+    const missingMarkup = renderDeep(bind({ inputs: { groupBy: 'revenu' } }).driven.element);
+
+    console.warn = realWarn;
+
+    check('a groupBy naming a missing column renders ungrouped',
+        missingMarkup.indexOf('DataTable-groupRow') === -1 && missingMarkup.indexOf('<table') > -1,
+        'ungrouped table');
+    check('and names the columns that do exist, in the console',
+        warnings.some((w) => w.indexOf('not a column on this view') > -1),
+        warnings.join(' | ').slice(0, 140));
+
+    const lookupMarkup = renderDeep(bind({ pageSize: 25, inputs: { groupBy: 'ownerid' } }).driven.element);
+
+    check('a lookup groups by its name rather than its GUID',
+        lookupMarkup.indexOf('Sam Vaziri') > -1 && lookupMarkup.indexOf('b3f1a0c2') === -1,
+        'lookup label');
+
+    // Canvas has no webAPI, so the browser route is all there is.
+    /*
+      **Measures have to survive the browser route**, which is the only route
+      canvas has. `groupRecords` computed every one of them correctly and left
+      `measureLabels` as the empty strings it initialised them to, so a grouped
+      canvas table with `aggregates` set drew blank cells — right answers,
+      invisible. It looked fine on a model-driven form only because the server
+      route brings formatted values back with the FetchXML answer.
+
+      An aggregate belongs to no record, so there is no cell for
+      `getFormattedValue` to answer about; the formatter is handed in from
+      `context.formatting`.
+    */
+    /*
+      **A canvas app publishes `page.getClientUrl` and throws when it is
+      called.** Reported from a real canvas app, 2026-09-21: the studio showed
+      `getClientUrl: Method not implemented.` and replaced the whole table with
+      "Error loading control".
+
+      `lookupHost` runs on every `updateView` pass, so the throw escaped the
+      lifecycle and took the control with it — over a probe for the lookup
+      editor, a feature canvas was never offered in the first place. A method
+      existing is not a promise that it works, and `typeof … === 'function'`
+      tests the wrong thing.
+
+      This rig said `page` was simply absent on canvas until the same day,
+      which is why nothing caught it. `renderDeep` is what makes the assertion
+      meaningful: `updateView` only builds an element, so a throw inside the
+      component is invisible to a props-only read.
+    */
+    /*
+      **A canvas app shows an unset whole number as `0`.** Seen in a real
+      studio, 2026-09-21: `Page size` read `0` on a control nobody had
+      configured. `applyPageSize` clamped that with `Math.max(raw, 1)` and gave
+      the reader a **one-row page** — twenty rows fetched and one drawn, which
+      reads as a control that cannot page.
+
+      Zero means "the host did not say", which is what the comment beside
+      `paging.pageSize` had claimed all along; the property's clamp disagreed
+      with it.
+    */
+    // The host pages five at a time; the *property* is the thing left at zero.
+    const drawnBy = (input) => {
+        const view = bind({ host: 'canvas', pageSize: 5, inputs: { pageSize: input } });
+
+        return view.props().pageIds ? view.props().pageIds.length : 0;
+    };
+
+    check('a page size of zero adopts the host rather than drawing one row',
+        drawnBy(0) === 5, drawnBy(0) + ' rows drawn, host pages 5');
+    check('and a negative is the same statement',
+        drawnBy(-5) === 5, drawnBy(-5) + ' rows drawn, host pages 5');
+    check('while a real page size still overrides the host',
+        drawnBy(3) === 3, drawnBy(3) + ' rows drawn, property asked for 3');
+
+    const refusing = bind({ host: 'canvas', pageSize: 25 });
+
+    check('a canvas host that refuses getClientUrl still renders',
+        renderDeep(refusing.driven.element).indexOf('<table') > -1,
+        renderDeep(refusing.driven.element).length + ' chars');
+    check('and lookup cells are simply read-only there',
+        renderDeep(refusing.driven.element).indexOf('DataTable-lookupEditor') === -1,
+        'no lookup editor offered');
+
+    const canvasMeasures = renderDeep(bind({
+        host: 'canvas',
+        pageSize: 25,
+        inputs: { groupBy: 'industrycode', aggregates: 'sum:revenue' },
+    }).driven.element);
+
+    check('a grouped canvas table rendered at all',
+        canvasMeasures.indexOf('<table') > -1, canvasMeasures.length + ' chars');
+    check('and its measures are visible, not merely computed',
+        (canvasMeasures.match(/DataTable-groupValue/g) || []).length >= 4,
+        (canvasMeasures.match(/DataTable-groupValue/g) || []).length + ' measure values');
+
+    const canvasMarkup = renderDeep(bind({ host: 'canvas', pageSize: 25, inputs: { groupBy: 'industrycode' } }).driven.element);
+
+    check('grouping renders on canvas too, from the loaded rows',
+        (canvasMarkup.match(/DataTable-groupRow/g) || []).length > 0, 'group rows present');
+}
+
+function sortChecks() {
+    console.log('');
+    console.log('  --- multi-column sort');
+
+    const order = (view) => (view.handle.dataset.sorting || [])
+        .map((status) => status.name + ':' + status.sortDirection);
+    const names = (view) => (view.handle.dataset.sortedRecordIds || [])
+        .map((id) => view.handle.dataset.records[id].getFormattedValue('name'));
+
+    // Off by default: every existing installation clicks a header as before.
+    const single = bind({});
+
+    single.props().onSort('name', true);
+    single.settle();
+
+    check('shift-click does nothing while the maker has not allowed it',
+        order(single), ['name:0']);
+
+    const multi = bind({ inputs: { enableMultiSort: true } });
+
+    multi.props().onSort('name', false);
+    multi.settle();
+    check('a plain click still replaces the order', order(multi), ['name:0']);
+
+    multi.props().onSort('industrycode', true);
+    multi.settle();
+    check('shift-click appends rather than replacing', order(multi), ['name:0', 'industrycode:0']);
+
+    multi.props().onSort('industrycode', true);
+    multi.settle();
+    check('the second activation flips only that column', order(multi), ['name:0', 'industrycode:1']);
+
+    /*
+     * The third removes it. With a rank on screen there is a meaningful "not
+     * sorted by this" state and no other way to reach it — a column added by
+     * mistake would otherwise be stuck in the order forever. A single-column
+     * sort has no such state, which is why a plain click still cycles.
+     */
+    multi.props().onSort('industrycode', true);
+    multi.settle();
+    check('the third removes it rather than cycling back', order(multi), ['name:0']);
+
+    /*
+     * **The tie case, and it is what the first measurement got wrong.**
+     *
+     * Sorting by a column whose every value is distinct never produces a tie,
+     * so the second entry has nothing to break and the rows agree with the
+     * request either way — which reads exactly like a platform honouring it.
+     * `industrycode` holds four values across twelve rows, so the ties are
+     * real and flipping only the *second* entry has to reverse them.
+     */
+    const tied = bind({ pageSize: 25, inputs: { enableMultiSort: true } });
+
+    tied.props().onSort('industrycode', false);
+    tied.settle();
+    tied.props().onSort('name', true);
+    tied.settle();
+    const ascending = names(tied);
+
+    tied.props().onSort('name', true);
+    tied.settle();
+    const descending = names(tied);
+
+    check('a second entry reorders within the first column\'s ties',
+        JSON.stringify(ascending) !== JSON.stringify(descending),
+        ascending.slice(0, 3).join(' | ') + '   vs   ' + descending.slice(0, 3).join(' | '));
+
+    check('and the first column still leads', order(tied), ['industrycode:0', 'name:1']);
+
+    /*
+     * The host that collapses the array to its first entry — what the
+     * false-passing measurement appeared to show, and what a rank indicator
+     * would be wrong about. Nothing in the catalogue has met one; the switch
+     * exists so the control's behaviour there is a decision rather than a
+     * discovery.
+     */
+    const collapsed = bind({
+        pageSize: 25,
+        inputs: { enableMultiSort: true },
+        quirks: { sortingHonoursMultiple: false },
+    });
+
+    collapsed.props().onSort('industrycode', false);
+    collapsed.settle();
+    collapsed.props().onSort('name', true);
+    collapsed.settle();
+    const before = names(collapsed);
+
+    collapsed.props().onSort('name', true);
+    collapsed.settle();
+
+    check('on a host that collapses the array the rows do not move',
+        JSON.stringify(names(collapsed)), JSON.stringify(before));
+
+    check('a single sort shows no rank at all, exactly as 0.5.0 did',
+        renderDeep(bind({ inputs: { enableMultiSort: true } }).driven.element)
+            .indexOf('DataTable-sortRank') === -1,
+        'no rank');
+
+    /*
+     * The rank appears only once there is more than one column in the order,
+     * so a single sort is byte-identical to 0.5.0 and every existing
+     * installation looks unchanged.
+     *
+     * `tied` still holds two; the assertion above left `multi` holding one,
+     * which is why this uses the other view — the first version of this check
+     * read `multi`, found no rank, and passed while claiming the opposite.
+     */
+    check('two sorted columns each show their rank',
+        (renderDeep(tied.driven.element).match(/DataTable-sortRank/g) || []).length, 2);
+}
+
+function exportChecks() {
+    console.log('');
+    console.log('  --- the full-view export');
+
+    /*
+     * **The only feature that re-enters `updateView` deliberately**, so
+     * driving the rig repeatedly *is* the test: each `settle()` is one pass —
+     * harvest what landed, ask for the next page.
+     *
+     * Twelve records at a page size of five is three pages, which is enough to
+     * make the loop run. Note `check(label, ok, detail)` here, not
+     * `(label, actual, expected)` as in `dev/grouping.js` — the first version
+     * of this section used the other signature and every assertion reported a
+     * truthy row count as a pass.
+     */
+    // The CSV line ending, named rather than written inline so no editing
+    // pass can turn the escape into a real newline.
+    const NEWLINE = String.fromCharCode(13) + String.fromCharCode(10);
+
+    const written = (view) => view.handle.state.files;
+
+    /*
+     * **One pass, not ten.**  drives until the control stops asking
+     * for anything, up to ten passes — which runs the whole export inside a
+     * single call and makes the loop unobservable. Driving one pass at a time
+     * is what actually exercises the re-entry this feature is built on.
+     */
+    const step = (view) => host.drive(view.instance, view.handle, 1).element.props;
+
+    /*
+     * One pass, rendered. `updateView` only *builds* an element, so whether the
+     * control drew a table or the export panel is invisible to a props-only
+     * read — the choice is made inside the component. See `renderDeep`.
+     */
+    const stepMarkup = (view) => renderDeep(host.drive(view.instance, view.handle, 1).element);
+    const rowsIn = (file) => file.content.split('\r\n').filter(Boolean).length - 1;
+
+    // The default scope is 0.5.0's behaviour: no loop, no page movement.
+    const loaded = bind({ pageSize: 5 });
+
+    loaded.props().onExport();
+
+    check('the default scope writes at once, without looping',
+        written(loaded).length === 1, written(loaded).length + ' file(s)');
+    check('and covers only the loaded page',
+        written(loaded).length === 1 && rowsIn(written(loaded)[0]) === 5,
+        written(loaded).length ? rowsIn(written(loaded)[0]) + ' rows' : 'none');
+
+    /* The whole view. */
+    // maxPageSize 5 clamps the export's 250 to five, so twelve records are
+    // three pages and the loop actually loops. See quirks.maxPageSize.
+    const whole = bind({ pageSize: 5, quirks: { maxPageSize: 5 }, inputs: { exportScope: 'view' } });
+
+    whole.props().onExport();
+
+    /*
+     * `step` has side effects — it is one `updateView` — so each observation
+     * is captured once. The first version called it twice inside a single
+     * assertion and the export had finished before the loop below started.
+     */
+    const afterStart = step(whole);
+
+    check('starting shows progress rather than a frozen button',
+        Boolean(afterStart.exporting), JSON.stringify(afterStart.exporting));
+    check('and writes nothing until it has everything',
+        written(whole).length === 0, written(whole).length + ' file(s)');
+
+    let passes = 0;
+    let live = afterStart;
+
+    while (live.exporting && passes < 20) {
+        live = step(whole);
+        passes += 1;
+    }
+
+    check('the loop terminates', passes > 0 && passes < 20, passes + ' passes');
+    check('and writes exactly one file at the end',
+        written(whole).length === 1, written(whole).length + ' file(s)');
+
+    /*
+     * Every row in the view, not the page. The fixture holds twelve and the
+     * page size was five, so a `loaded` export would have had five.
+     */
+    check('the file holds every row in the view',
+        written(whole).length === 1 && rowsIn(written(whole)[0]) === 12,
+        written(whole).length ? rowsIn(written(whole)[0]) + ' rows' : 'none');
+
+    /*
+     * **The 250 rows this feature lost on a real form**, 2026-09-21: a
+     * full-view export over 1,222 records wrote 972. The gap was one whole
+     * page out of the middle — records ~251 to ~500 — with the tail intact and
+     * no duplicates, which rules out the ceiling, the cancel and `hasNextPage`.
+     *
+     * `beginExport` makes two calls back to back, `setPageSize(250)` then
+     * `loadExactPage(1)`, and the platform answers each with an `updateView`.
+     * The first arrives **before the fetch has landed**, carrying whatever was
+     * already on screen. The old machine harvested it, counted it as page one
+     * and asked for page two; the real page one then arrived and was counted as
+     * page two, so page two was never requested.
+     *
+     * The rig could not produce that pass: every mutator updated the rows in
+     * the same tick as the call. `asyncFetch` and `pageSizeNotifies` together
+     * are that platform, and this is the assertion that would have caught it.
+     */
+    // The reader's page size is deliberately *not* the export's. With them
+    // equal the stale page happens to be the export page that gets skipped, so
+    // nothing is lost and the defect hides. Two against five is the real shape:
+    // the rows on screen sit inside export page one, and export page two is
+    // then stepped over and covered by nothing.
+    const racy = bind({
+        pageSize: 2,
+        quirks: { maxPageSize: 5, asyncFetch: true, pageSizeNotifies: true },
+        inputs: { exportScope: 'view' },
+    });
+
+    // Start from page 2, as the reader did: the stale pass then carries rows
+    // that are genuinely new to the export, which is what makes "it brought
+    // nothing new" insufficient on its own.
+    racy.props().onNextPage();
+    host.drive(racy.instance, racy.handle, 10);
+
+    racy.props().onExport();
+
+    let racyPasses = 0;
+    let racyLive = step(racy);
+
+    while (racyLive.exporting && racyPasses < 40) {
+        racyLive = step(racy);
+        racyPasses += 1;
+    }
+
+    check('an export racing its own page-size change still terminates',
+        racyPasses > 0 && racyPasses < 40, racyPasses + ' passes');
+
+    /*
+      **The Stop button has to stay where a reader can reach it.** Reported
+      from a real form, 2026-09-21: *"I cannot stop it mid-run, because the
+      table grows vertically too fast and the button scrolls out of sight."*
+      The export raises the page size to 250 and the pager — which is where the
+      progress and Stop live — renders *below* the table, so the export pushes
+      its own cancel off the screen.
+
+      A running export therefore draws no table at all.
+    */
+    const midExport = bind({
+        pageSize: 2,
+        quirks: { maxPageSize: 5, asyncFetch: true, pageSizeNotifies: true },
+        inputs: { exportScope: 'view' },
+    });
+
+    midExport.props().onExport();
+
+    const midMarkup = stepMarkup(midExport);
+
+    /*
+     * The precondition. Every assertion below is an `indexOf`, and `indexOf` on
+     * empty markup returns -1 for everything — so "no table" would pass against
+     * a control that rendered nothing at all. This repo has shipped that
+     * mistake once already.
+     */
+    check('the export panel rendered at all',
+        midMarkup.length > 0, midMarkup.length + ' chars');
+    check('a running export shows its progress panel',
+        midMarkup.indexOf('DataTable-exporting') > -1, midMarkup.slice(0, 160));
+    check('and draws no table to push the Stop button off screen',
+        midMarkup.indexOf('<table') === -1, midMarkup.slice(0, 160));
+    check('with Stop inside that panel',
+        midMarkup.indexOf('DataTable-exportCancel') > -1, midMarkup.slice(0, 160));
+
+    const racyFile = written(racy);
+
+    check('and writes one file',
+        racyFile.length === 1, racyFile.length + ' file(s)');
+
+    /*
+     * The assertion that matters: **every row, exactly once**. A skipped page
+     * is the worst shape this feature can fail in, because the file looks
+     * perfectly well-formed — which is precisely why the defect reached a user.
+     */
+    check('holding every row in the view, none skipped',
+        racyFile.length === 1 && rowsIn(racyFile[0]) === 12,
+        racyFile.length ? rowsIn(racyFile[0]) + ' of 12 rows' : 'none');
+
+    if (racyFile.length === 1) {
+        const bodies = racyFile[0].content.split(NEWLINE).filter(Boolean).slice(1);
+
+        check('and no row twice',
+            new Set(bodies).size === bodies.length,
+            bodies.length + ' rows, ' + new Set(bodies).size + ' distinct');
+    }
+
+    check('and the reader gets their page size back',
+        whole.handle.dataset.paging.pageSize === 5,
+        'pageSize ' + whole.handle.dataset.paging.pageSize);
+
+    /*
+      **Stop has to stop now, not on the next page.** Reported from a real
+      subgrid, 2026-09-21: an export stalled and clicking Stop did nothing at
+      all — because the only thing that acted on `cancelled` was the arrival of
+      a page that was never coming.
+
+      There is nothing to wait for. The file is written from what has been
+      collected the moment Stop is pressed; the page still in flight arrives to
+      an idle machine and `shouldHarvest` ignores it.
+    */
+    const stopNow = bind({ pageSize: 5, quirks: { maxPageSize: 5 }, inputs: { exportScope: 'view' } });
+
+    stopNow.props().onExport();
+    step(stopNow);
+    step(stopNow);
+
+    const filesBeforeStop = written(stopNow).length;
+
+    stopNow.props().onCancelExport();
+
+    check('Stop writes the file without waiting for another pass',
+        filesBeforeStop === 0 && written(stopNow).length === 1,
+        filesBeforeStop + ' file(s) before, ' + written(stopNow).length + ' after');
+
+    /*
+      **The host that ignores `loadExactPage` past the first jump.**
+
+      Measured on a real subgrid, 2026-09-21, from the export's own tracing:
+      `loadExactPage(1)` was honoured and returned 250 rows; `loadExactPage(2)`
+      was not — same `firstId`, `firstPageNumber` still 1, `loading: false`. The
+      export sat waiting for a page nobody was fetching.
+
+      That one fact explains both of this feature's failures. The stall is the
+      obvious one; the earlier short file (972 of 1,222, holding pages one,
+      three, four and five) is the same thing before the guards existed, with
+      ignored requests harvested as though they had answered.
+
+      So the walk steps with `loadNextPage` rather than jumping, and only the
+      first page and the restore use `loadExactPage`. The export has to come out
+      whole on this host, because this host is the one it failed on.
+    */
+    const stubborn = bind({
+        pageSize: 5,
+        quirks: { maxPageSize: 5, pagingBreaksAfterResize: true },
+        inputs: { exportScope: 'view' },
+    });
+
+    stubborn.props().onExport();
+
+    let stubbornPasses = 0;
+    let stubbornLive = step(stubborn);
+
+    while (stubbornLive.exporting && stubbornPasses < 40) {
+        stubbornLive = step(stubborn);
+        stubbornPasses += 1;
+    }
+
+    check('an export completes on a host where a resize breaks paging',
+        stubbornPasses > 0 && stubbornPasses < 40, stubbornPasses + ' passes');
+    check('and writes one file',
+        written(stubborn).length === 1, written(stubborn).length + ' file(s)');
+    check('holding every row in the view',
+        written(stubborn).length === 1 && rowsIn(written(stubborn)[0]) === 12,
+        written(stubborn).length ? rowsIn(written(stubborn)[0]) + ' of 12 rows' : 'none');
+
+    if (written(stubborn).length === 1) {
+        const stubbornRows = written(stubborn)[0].content.split(NEWLINE).filter(Boolean).slice(1);
+
+        check('with no row twice, despite the accumulating steps',
+            new Set(stubbornRows).size === stubbornRows.length,
+            stubbornRows.length + ' rows, ' + new Set(stubbornRows).size + ' distinct');
+    }
+
+    /* The walk is a step, not a jump — which is the whole fix. */
+    const walkCalls = stubborn.calls()
+        .filter((call) => call.indexOf('loadNextPage') === 0 || call.indexOf('loadExactPage') === 0);
+
+    /*
+     * **The invariant, stated directly: the export never jumps to a page other
+     * than one.** That is the whole fix — a jump to page N is the call this
+     * host ignores, and the call whose silent refusal produced both a stall and
+     * a short file. Page one is a jump because it has to be, and because it was
+     * measured honoured; everything after it steps.
+     *
+     * Asserted as "no `loadExactPage(n)` for n > 1" rather than as an exact
+     * sequence, because the page-one jump may legitimately be repeated — the
+     * page-size gate re-asks once where the host clamps the export's request —
+     * and re-asking for page one is idempotent and harmless.
+     */
+    check('and never resized the view to do it',
+        stubborn.calls().every((call) => call.indexOf('setPageSize') !== 0),
+        stubborn.calls().filter((call) => call.indexOf('setPageSize') === 0).join(' ') || 'no setPageSize');
+    check('paging the view the way the reader does',
+        walkCalls.length >= 2, walkCalls.join(' '));
+
+    /*
+      **A pass that is not the answer must not reset the watchdog.**
+
+      Observed on a real subgrid, 2026-09-21: an export reached page two and
+      then sat there indefinitely — the reader had to press Stop to get a file.
+      `driveExport` cleared the watchdog at the top of every pass and re-armed
+      it on every `repeat`, so any host that kept re-rendering while a page
+      failed to land pushed the thirty seconds out forever and starved the only
+      failure signal this feature has.
+
+      The watchdog belongs to the request. Here the clock is advanced past it in
+      two steps with an unanswered pass in between: if that pass re-armed it,
+      nothing would have been written yet.
+    */
+    const starve = bind({
+        pageSize: 5,
+        quirks: { maxPageSize: 5, asyncFetch: true, pageSizeNotifies: true },
+        inputs: { exportScope: 'view' },
+    });
+
+    starve.props().onExport();
+    step(starve);
+
+    const starveMid = step(starve);
+
+    check('the starvation case starts from a running export with rows',
+        Boolean(starveMid.exporting) && starveMid.exporting.rows > 0,
+        JSON.stringify(starveMid.exporting));
+
+    time.advance(20000);
+
+    // A pass with no fetch behind it: the dataset is unchanged, so the export
+    // sees rows it already holds. This is the pass that used to re-arm.
+    starve.instance.updateView(starve.handle.nextContext());
+
+    time.advance(20000);
+
+    check('an unanswered pass does not push the watchdog back',
+        written(starve).length === 1,
+        written(starve).length + ' file(s) 40s after the request');
+
+    /*
+      **A stalled export ends itself.** The watchdog is the only failure signal
+      a page that never lands can produce — `loadExactPage` returns `void` and
+      offers nothing to reject. Until 0.6.6 it set `phase: 'failed'` and called
+      `notifyOutputChanged()`, which announces *outputs* changed and gives the
+      platform no reason to call `updateView`: the failure was recorded, nothing
+      rendered it, and no file was written. The control simply sat there.
+
+      Time is advanced here with no pass in between, which is exactly what a
+      page that never lands looks like.
+    */
+    const stalled = bind({ pageSize: 5, quirks: { maxPageSize: 5 }, inputs: { exportScope: 'view' } });
+
+    stalled.props().onExport();
+    step(stalled);
+
+    // `props()` reports the last *settled* render, which `step` does not
+    // update — so the live state has to come from the pass itself.
+    const midStall = step(stalled);
+
+    check('a stalled export is still running before the watchdog',
+        Boolean(midStall.exporting), JSON.stringify(midStall.exporting));
+
+    time.advance(60000);
+
+    check('and writes what had been collected rather than hanging',
+        written(stalled).length === 1,
+        written(stalled).length + ' file(s)');
+
+    /*
+     * Putting the reader's page size back is itself a fetch, so the platform
+     * calls `updateView` again — which is what carries the note onto the
+     * screen. That is the whole reason the watchdog has to *finish* the export
+     * instead of recording that it failed.
+     */
+    const afterStall = stalled.settle().element.props;
+
+    check('the watchdog ends a stalled export rather than leaving it hanging',
+        !afterStall.exporting, JSON.stringify(afterStall.exporting));
+    check('and says which page never came',
+        typeof afterStall.exportNote === 'string' && afterStall.exportNote !== '',
+        JSON.stringify(afterStall.exportNote));
+
+    /*
+     * Cancelling cannot abort the fetch in flight — the platform offers no way
+     * — so the page already asked for still arrives and is discarded. The
+     * button reports *stopping* rather than *stopped* for exactly that reason.
+     */
+    const stopped = bind({ pageSize: 5, quirks: { maxPageSize: 5 }, inputs: { exportScope: 'view' } });
+
+    stopped.props().onExport();
+    // Two passes, not one: the first is spent on the page-size change's own
+    // pass, so a cancel after a single pass would have nothing to write.
+    step(stopped);
+    step(stopped);
+    stopped.props().onCancelExport();
+
+    const afterCancel = step(stopped);
+
+
+
+    let stopPasses = 0;
+    let stopping = afterCancel;
+
+    while (stopping.exporting && stopPasses < 20) {
+        stopping = step(stopped);
+        stopPasses += 1;
+    }
+
+    /*
+     * **The "stopping" label is not observable here, and that is honest
+     * rather than a gap in the suite.** Cancelling cannot abort the fetch in
+     * flight, so it takes effect on the next pass — and in this rig a fetch
+     * resolves synchronously, so there is no pass between the cancel and the
+     * finish for the label to render in. On a form, where a page takes
+     * seconds, it is the whole point: a control that said it had stopped and
+     * then sat there for another round trip would read as broken.
+     *
+     * What *is* observable is that the cancel is obeyed: the export ends on
+     * the next page rather than walking the rest of the view.
+     */
+    check('cancelling is obeyed on the very next pass',
+        stopPasses === 0,
+        stopPasses + ' further pass(es) — afterCancel was the pass that obeyed it');
+
+    check('and the file holds what had been collected, not the whole view',
+        written(stopped).length === 1 && rowsIn(written(stopped)[0]) < 12,
+        written(stopped).length ? rowsIn(written(stopped)[0]) + ' rows' : 'none');
+
+    check('a cancelled export finishes rather than hanging',
+        !stopped.props().exporting, stopPasses + ' passes');
+    check('and still puts the page size back',
+        stopped.handle.dataset.paging.pageSize === 5,
+        'pageSize ' + stopped.handle.dataset.paging.pageSize);
+
+    /*
+     * The host with no `loadExactPage`. This loop only ever steps forward by
+     * one, which is exactly what `loadNextPage(true)` does — and on the
+     * accumulating platform it hands back the whole range, which the dedupe
+     * absorbs.
+     */
+    const stepping = bind({
+        pageSize: 5,
+        inputs: { exportScope: 'view' },
+        quirks: { hasLoadExactPage: false, maxPageSize: 5 },
+    });
+
+    stepping.props().onExport();
+
+    let stepPasses = 0;
+    let stepping_live = step(stepping);
+
+    while (stepping_live.exporting && stepPasses < 20) {
+        stepping_live = step(stepping);
+        stepPasses += 1;
+    }
+
+    check('it completes on a host with no loadExactPage',
+        written(stepping).length === 1, written(stepping).length + ' file(s)');
+    check('and the accumulating pages are not double-counted',
+        written(stepping).length === 1 && rowsIn(written(stepping)[0]) === 12,
+        written(stepping).length ? rowsIn(written(stepping)[0]) + ' rows' : 'none');
+}
+
+sortChecks();
+exportChecks();
+
+groupingChecks();
 
 editingChecks()
     .then(choiceChecks)

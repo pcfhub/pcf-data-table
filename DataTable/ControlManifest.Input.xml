@@ -7,7 +7,7 @@
   -->
   <control namespace="PCFHub"
            constructor="DataTable"
-           version="0.5.0"
+           version="0.6.19"
            display-name-key="DataTable_Name"
            description-key="DataTable_Desc"
            control-type="virtual">
@@ -287,6 +287,146 @@
               default-value="false" />
 
     <!--
+      Grouping. Five properties, and the first one being unset is what makes
+      0.6.0 render exactly what 0.5.0 rendered.
+
+      Text boxes rather than property-set roles, and grouping is the feature a
+      reviewer points at to ask why. Three reasons, the second specific to a
+      table:
+
+        1. N group columns is precisely the "however many the view has" arity
+           a fixed-arity declaration cannot express. A groupField1/groupField2
+           pair caps grouping at two and then the manifest carries two
+           configuration languages at once.
+        2. **A role is a bound column, and this control renders bound
+           columns.** The platform adds a property-set to the query and to
+           dataset.columns, so a grouping role would appear as an extra column
+           in the table unless the control filtered it out - and filtering it
+           out is hidden state the view designer cannot see. pcf-chart-view has
+           no such problem because it renders no columns at all.
+        3. You group by something the table already shows. The picker buys
+           nothing the view designer has not already decided.
+
+      What a role would have bought free is validation, so that is done at
+      runtime instead: every name is checked against dataset.columns and a miss
+      renders an ungrouped table and names the columns that do exist, in the
+      console. See DataTable/group/spec.ts.
+    -->
+    <!--
+      Which rows Export CSV covers.
+
+      "loaded" is the default so that every existing installation exports
+      exactly what it exported before. It is also the honest name for what the
+      0.5.0 button did, which the docs had to spell out because "Export CSV"
+      does not suggest "the pages you happen to have opened".
+
+      "view" loops the whole result set. It is worth having and worth being a
+      choice: measured 2026-09-20, setPageSize(250) is honoured, so a view of
+      250 rows or fewer is one fetch - but past that it is one round trip per
+      page, at a latency nobody has isolated, up to a 10,000 row ceiling. The
+      progress counter and the Cancel exist because that cost is real and
+      unknown rather than small.
+    -->
+    <property name="exportScope"
+              display-name-key="ExportScope_Name"
+              description-key="ExportScope_Desc"
+              of-type="Enum"
+              usage="input"
+              required="false"
+              default-value="loaded">
+      <value name="loaded" display-name-key="ExportScope_Loaded">loaded</value>
+      <value name="view" display-name-key="ExportScope_View">view</value>
+    </property>
+
+    <property name="groupBy"
+              display-name-key="GroupBy_Name"
+              description-key="GroupBy_Desc"
+              of-type="SingleLine.Text"
+              usage="input"
+              required="false" />
+
+    <!--
+      Measures, as "sum:revenue, avg:revenue". A count is always included and
+      is not written here.
+
+      Refused locally rather than sent, because a refusal is whole-query:
+      measured 2026-09-20, sum over a primary key took the group counts down
+      with it. One unusable measure must cost its own column, not every row.
+    -->
+    <property name="aggregates"
+              display-name-key="Aggregates_Name"
+              description-key="Aggregates_Desc"
+              of-type="SingleLine.Text"
+              usage="input"
+              required="false" />
+
+    <!--
+      There is deliberately no "by option value" here, and that is measured
+      rather than aesthetic. Sorting a view by a Choice column puts
+      Manufacturing (option value 2) before Retail (option value 1): the
+      platform sorts a Choice by its **label**. The aggregate hands the group
+      back as the integer, so headers ordered by that integer would read
+      Retail, Manufacturing while the rows underneath read Manufacturing,
+      Retail - the headers contradicting the rows, on the same column, in the
+      same table. A switch whose only effect is that is not a switch worth
+      having.
+    -->
+    <property name="groupSort"
+              display-name-key="GroupSort_Name"
+              description-key="GroupSort_Desc"
+              of-type="Enum"
+              usage="input"
+              required="false"
+              default-value="label">
+      <value name="label" display-name-key="GroupSort_Label">label</value>
+      <value name="count" display-name-key="GroupSort_Count">count</value>
+    </property>
+
+    <!--
+      The lookup that points at the record a subgrid sits on, or the literal
+      "none" for a subgrid that is not related to it.
+
+      Not optional in the way it looks. Measured 2026-09-20:
+      filtering.getFilter() returns null on a subgrid **whether or not** it is
+      set to show related records only, so the control cannot see the
+      relationship under any configuration. Left unresolved, an aggregate built
+      from the view alone counted 56 above a grid holding 38.
+
+      Usually unset is right: the control reads the table's ManyToOne
+      relationships and, where exactly one targets the form's table, uses it.
+      This is for the case where several do.
+    -->
+    <!--
+      Adding a second column to the sort rather than replacing the first.
+
+      Off by default, and the property exists at all only because the platform
+      was measured honouring it: two entries in dataset.sorting reordered the
+      rows within the first column's ties, survived paging.reset() and a page
+      turn, and four entries were retained with no ceiling found.
+
+      That measurement took two attempts. The first sorted by a column whose
+      every value was distinct, so the primary sort never produced a tie and
+      the secondary had nothing to break - rows agreeing with the request is
+      not evidence the request was honoured. Shipping on that reading would
+      have put a rank indicator over an order the platform had quietly
+      collapsed, which is a wrong answer that looks completely right.
+    -->
+    <property name="enableMultiSort"
+              display-name-key="EnableMultiSort_Name"
+              description-key="EnableMultiSort_Desc"
+              of-type="TwoOptions"
+              usage="input"
+              required="false"
+              default-value="false" />
+
+    <property name="parentLookup"
+              display-name-key="ParentLookup_Name"
+              description-key="ParentLookup_Desc"
+              of-type="SingleLine.Text"
+              usage="input"
+              required="false" />
+
+    <!--
       Two outputs rather than one. "Which rows are ticked" and "which row was
       opened" are different questions, and a form reacts to them differently.
 
@@ -337,6 +477,10 @@
       <code path="index.ts" order="1" />
       <css path="css/DataTable.css" order="1" />
       <resx path="strings/DataTable.1033.resx" version="1.0.0" />
+      <resx path="strings/DataTable.1031.resx" version="1.0.0" />
+      <resx path="strings/DataTable.1036.resx" version="1.0.0" />
+      <resx path="strings/DataTable.1041.resx" version="1.0.0" />
+      <resx path="strings/DataTable.3082.resx" version="1.0.0" />
       <platform-library name="React" version="16.14.0" />
       <platform-library name="Fluent" version="9.46.2" />
     </resources>

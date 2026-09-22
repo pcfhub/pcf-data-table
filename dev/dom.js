@@ -18,7 +18,7 @@
  *
  * What it does not have, it does not pretend to have: nothing here can tell you
  * that a control *looks* right, that a stylesheet applies, or that focus and
- * keyboard order work. Those need `npm start`, `dev/harness.html`, or a real
+ * keyboard order work. Those need `npm start`, `dev/preview.html`, or a real
  * form.
  */
 

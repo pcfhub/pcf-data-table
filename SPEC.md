@@ -23,8 +23,9 @@ Commands run on Windows 11, Node 22.13.1, against
 | `npm run refreshTypes` | Succeeded. `IInputs.records` typed as `ComponentFramework.PropertyTypes.DataSet`; four inputs and two outputs generated as declared. |
 | `npm run lint` | Clean, no output. |
 | `npm run check` | "Template adopted, pcfhub.json readable, control shape agrees with the manifest, docs named correctly, media present." |
-| `npm run build` | `out/controls/DataTable/bundle.js`, **33,263 bytes** (32.1 KiB). Webpack externals `Reactv16` and `FluentUIReactv940`. |
-| `msbuild /t:build /restore /p:configuration=Release` | **9,020 bytes** packed. `Solution.zip` 10,330 bytes, `Solution_managed.zip` 10,331 bytes. |
+| `npm run smoke` | 130 assertions, all passing. |
+| `npm run build` | `out/controls/DataTable/bundle.js`, **177,021 bytes** (173 KiB), development mode. Webpack externals `Reactv16` and `FluentUIReactv940`. |
+| `msbuild /t:build /restore /p:configuration=Release /p:PcfAlwaysNpmRunBuild=true` | **41,347 bytes** packed — 0.8% of the 5 MB web-resource ceiling. `Solution.zip` 29,304 bytes, `Solution_managed.zip` 29,305 bytes. |
 
 The two bundle figures are different builds, not the same one measured twice —
 only the msbuild pack compiles in production mode. The production bundle opens
@@ -242,6 +243,503 @@ has been corrected.
 
 ## Still open
 
+### The canvas host, measured
+
+Every surface below was asked about on a **real canvas app, 2026-09-22**, with
+each method called through its owner. This replaces every inference this file
+previously carried about canvas.
+
+| Surface | Present | Called |
+| --- | --- | --- |
+| `page.getClientUrl` | yes | **throws** `Method not implemented.` |
+| `utils.getEntityMetadata` | yes | **throws** `Method not implemented.` |
+| `utils.lookupObjects` | yes | not called — would open a dialog |
+| `webAPI.retrieveRecord` | yes | **throws** `Method not implemented.` |
+| `webAPI.retrieveMultipleRecords` | yes | **throws** `Method not implemented.` |
+| `webAPI.createRecord` / `updateRecord` / `deleteRecord` | yes | not called — would change data |
+| `navigation.openForm` / `openFile` / `openAlertDialog` | yes | not called — would take the screen |
+| `mode.trackContainerResize` | yes | works |
+| `formatting.formatDateShort` / `formatCurrency` | yes | **works** |
+| `dataset.getViewId` | yes | works, and answers **`undefined`** |
+
+**Fifteen of fifteen are published.** `typeof x.method === 'function'` is true
+of every one of them, so it is not a capability test on this host — it is a test
+that always passes. Every gate in this estate built on it is wrong on canvas,
+in the direction that offers a feature which can only fail.
+
+What does work is **testing an answer rather than a method**. `getClientUrl`
+refuses by *throwing*, and a thrown refusal is an answer once it is caught;
+`clientUrlOf` is that test and `formOpener` now uses it. `lookupHost` was
+accidentally safe from the same defect all along, because it needed a client-URL
+*string*.
+
+`dataset.getViewId` answering `undefined` is why the grouping route withholds
+its server half here without any host check: no view id, no FetchXML to rewrite.
+
+### Corrections this measurement forced
+
+- **`Formatting` works on canvas**, as documented. The first probe run reported
+  it throwing `Cannot read properties of undefined (reading '_formattingData')`
+  — that was the probe calling the method **unbound**, so `this` was undefined
+  inside the platform's own code. A probe that changes what it measures is
+  worse than no probe. The `Method not implemented.` verdicts were unaffected
+  only because those stubs throw before touching `this`, which is luck.
+- **`dataset.getViewId` works**, for the same reason.
+- **The rig had canvas backwards.** It modelled these surfaces as *absent*,
+  which inverts the guard: a `typeof` test failed locally and passed on the
+  platform. It now publishes and refuses, and the New-button defect surfaced on
+  the first run after that landed.
+
+### Still unmeasured
+
+`createRecord`, `updateRecord`, `deleteRecord`, `openForm`, `openFile`,
+`openAlertDialog` and `lookupObjects` are **published on canvas but were not
+called**, because calling them would write data or take over the screen. Whether
+they throw or do something worse is unknown, and a probe that damages the thing
+it measures is not a measurement. Presence is enough to condemn any `typeof`
+gate built on them.
+
+### The estate
+
+`pcf-chart-view`, `pcf-calendar-view`, `pcf-kanban-board`,
+`pcf-attachment-list`, `pcf-geo-stamp` and `pcf-row-commands` all still model
+canvas as absent in their rigs, and all gate features on `typeof`. Given
+`canCreate` was wrong here, expect the same in at least `pcf-row-commands`
+(Delete, gated on `webAPI`) and `pcf-geo-stamp` (the photo button, gated on
+`webAPI.createRecord` **and** `utils.getEntityMetadata` — both published here).
+
+- **Canvas publishes every surface and refuses on the call.** Measured with the
+  host probe on a real canvas app, 2026-09-22. **All fifteen surfaces asked
+  about came back `present: true`** — `webAPI.retrieveRecord`,
+  `webAPI.updateRecord`, `navigation.openForm`, `utils.lookupObjects`, the lot —
+  and the ones safe to call threw `Method not implemented.` from the call
+  itself.
+
+  **So `typeof x.method === 'function'` is not a capability test on canvas.** It
+  is true of everything. Every gate in this estate built on it is wrong there,
+  and wrong in the direction that offers a feature which can only fail.
+
+  The one discriminator that does work is **an answer, not a method**:
+  `page.getClientUrl` refuses by *throwing*, and a thrown refusal is an answer
+  once it is caught. `clientUrlOf` is that test, and `formOpener` now uses it.
+
+- **The New button was drawn on canvas.** `canCreate` gated on
+  `typeof navigation.openForm === 'function'`, which passes there, so the
+  control offered a quick create that could only refuse.
+  `docs/canvas.md` had asserted since 0.4.0 that this could not happen because
+  "`navigation.openForm` is not on this host" — and the second half of that
+  sentence was never true. Fixed and mutation-tested.
+
+  `lookupHost` was accidentally safe from the same defect, because it needed a
+  **client URL string** rather than a method. That accident is now the pattern.
+
+- **Two of the probe's first verdicts were the probe's own bug.** It captured
+  `formatting.formatDateShort` into a variable and called it unbound, so the
+  platform answered `Cannot read properties of undefined (reading
+  '_formattingData')` — which reads exactly like a refusal and is nothing of
+  the kind. `Formatting` works on canvas, as documented. Every call in the
+  probe now goes through its owner; the `Method not implemented.` verdicts were
+  unaffected because those stubs throw before touching `this`, which is luck
+  rather than design.
+
+- **The rig modelled canvas by omitting these surfaces**, which inverted the
+  guard: a `typeof` test *failed* locally and *passed* on the platform. It now
+  publishes and refuses. That correction is what surfaced the New button, on
+  the first run after it landed.
+
+- **The other repositories' rigs still omit them.** `pcf-chart-view`,
+  `pcf-calendar-view`, `pcf-kanban-board`, `pcf-attachment-list`,
+  `pcf-geo-stamp` and `pcf-row-commands` all model canvas as absent, so any
+  `typeof`-gated feature in them is unasserted in the direction that matters.
+  **This is the next sweep**, and it is now a measurement rather than a theory.
+
+- **The host-surface probe exists, and it already corrected the rig.**
+  `DataTable/probe.ts`, parked on `window.__pcfDataTableProbe`:
+
+      await __pcfDataTableProbe.hosts()
+
+  It reports, per surface, what the documentation claims and what the host
+  actually does — `WORKS`, `ABSENT`, `REJECTS` or **`THROWS (synchronously)`**.
+  Only the last gets past a `typeof x === 'function'` guard, which is the whole
+  reason it exists.
+
+  **It reads and never writes.** `createRecord`, `updateRecord` and
+  `deleteRecord` would change data in the environment it runs in, and
+  `openForm`, `openFile` and `lookupObjects` would take over the screen — none
+  are called, and the report says *PRESENT, NOT CALLED* with the reason rather
+  than leaving a blank that reads like a pass. The safe reads are genuinely
+  attempted, because "it exists" and "it works" are the two answers this exists
+  to tell apart.
+
+  Run against the rig's canvas host (`?host=canvas` in the preview) it came
+  back with `mode.trackContainerResize: THROWS` — **a refusal this rig had
+  invented**. It was added on the assumption that canvas refuses every optional
+  surface; Microsoft's reference gives `Mode` an *Available for* of
+  "Model-driven apps, canvas apps, & portals", and the control called it
+  unguarded in `init` through 0.6.11 on a canvas app that then errored in
+  `updateView` — so `init` had completed. The rig now models it working. **A
+  harsher rig invents defects as surely as a friendlier one hides them**, and
+  this is the first time this estate has made that mistake in that direction.
+
+  Consequence worth stating: the `ask()` around `trackContainerResize` is
+  cheap insurance rather than a fix, and its earlier mutation test no longer
+  demonstrates anything. `formatDateShort` is the same — documented available.
+
+- **`WebAPI` and `Navigation` remain unmeasured on canvas.** The rigs model
+  them absent; the probe will say which. That is the last open question of this
+  class, and it is one run away.
+
+- **`probe.ts` and its import in `index.ts` come out before the tag.**
+
+- **What the documentation actually says, read 2026-09-22.** Every API
+  reference page carries an *Available for* section, and it is authoritative
+  about **whether** a surface works. It says nothing about **how it fails**,
+  which is the half that broke this control.
+
+  | Surface | Available for | Canvas |
+  | --- | --- | --- |
+  | `WebAPI` (`retrieveRecord`, `updateRecord`, …) | Model-driven apps & portals | no |
+  | `Utility` (`getEntityMetadata`, `lookupObjects`) | Model-driven apps | no |
+  | `Navigation` (`openForm`, `openFile`) | Model-driven apps | no |
+  | `Mode` (`trackContainerResize`) | Model-driven, canvas & portals | **yes** |
+  | `Formatting` (`formatDateShort`, `formatCurrency`) | Model-driven and canvas | **yes** |
+
+  `page.getClientUrl` appears nowhere in the reference — it is undocumented,
+  which is its own warning.
+
+  Two corrections follow. **`trackContainerResize` is documented available on
+  canvas**, which confirms the deduction made from the lifecycle ordering rather
+  than resting on it. And **`formatDateShort` is documented available**, so the
+  fallback added to it is belt-and-braces rather than a fix; it is kept because
+  it costs nothing and preserves behaviour where the platform answers.
+
+- **"Not available for canvas" is implemented as publish-and-refuse, not as
+  absent.** Measured: `utils.getEntityMetadata` and `page.getClientUrl` both
+  *exist* on canvas and throw `Method not implemented.` from the call.
+
+  That generalises further than this control has assumed. **Every
+  model-driven-only surface in the table above is a candidate**, which makes
+  `typeof x.method === 'function'` an unreliable capability test for all of
+  them — not just the two that were caught. A control gating a feature on
+  `typeof context.webAPI?.updateRecord === 'function'` would *offer* that
+  feature on canvas and fail on use.
+
+  **`WebAPI` and `Navigation` have not been measured this way.** Both are
+  documented model-driven-only; whether canvas omits them or publishes them
+  refusing is unknown, and the rigs across the estate model them as absent —
+  which is the friendlier of the two and therefore the one that hides defects.
+  This is the next thing to measure, and it should be measured rather than
+  reasoned about.
+
+- **Canvas publishes platform methods and refuses to run them, and the refusal
+  is synchronous.** Two seen in two builds, 2026-09-21 —
+  `getClientUrl: Method not implemented.` and then, one build later,
+  `getEntityMetadata: Method not implemented.` Fixing the first did not fix the
+  second; it revealed it.
+
+  **`typeof … === 'function'` is a test of the wrong thing.** A method existing
+  is not a promise that it works, and a *synchronous* throw is not a rejected
+  promise anybody can catch — it escapes the call, escapes `updateView`, and the
+  studio renders *Error loading control* in place of the table.
+
+  Every eager call is now hardened: `page.getClientUrl` and
+  `mode.trackContainerResize` through `ask()`, `dataset.getViewId` the same, and
+  `utils.getEntityMetadata` through a Promise executor that turns a synchronous
+  throw into the rejection its callers were already written for. The rejection
+  is **not** swallowed — a refused read must stay distinguishable from a column
+  with no options, which `dev/smoke.js` asserts.
+
+  `formatting.formatDateShort` is hardened defensively rather than on a
+  measurement: it runs inside render, and it now falls back to the browser's own
+  formatting. Whether canvas actually refuses it is **unmeasured**.
+
+  The rig modelled canvas by *omitting* `page` and `utils`, which is a friendlier
+  host than the platform and is why none of this was caught. Both are now
+  published and refusing.
+
+- **The rendering suite cannot see this class of defect on its own.**
+  `renderDeep` is `react-dom/server` and runs no effects, so the first
+  assertion written for the metadata refusal rendered the control, never called
+  `loadOptions`, and passed against the broken build. The assertion that works
+  calls it and checks the refusal arrives as a rejection rather than a throw.
+
+- **Worth a sweep across the estate.** Any control guarding an optional platform
+  method by `typeof` alone has this defect shape, and on canvas it is fatal
+  rather than degrading.
+
+- **A canvas app published `page.getClientUrl` and threw when it was called**,
+  which took the whole control down with *Error loading control*. Reported from
+  a real studio, 2026-09-21. `lookupHost` probes for it on every `updateView`
+  pass, and the guard was `typeof … === 'function'` — a test of the wrong
+  thing, because **a method existing is not a promise that it works**. The probe
+  now takes a refusal for an answer, and canvas gets the read-only lookup cell
+  it was always documented to get.
+
+  `dev/host.js` said `page` was simply *absent* on canvas, which is why nothing
+  caught it — the rig was a friendlier host than the platform for the seventh
+  time. It now publishes the object and throws the platform's own message.
+  Mutation-tested: without the fix the suite dies with
+  `getClientUrl: Method not implemented.`
+
+  **Worth a sweep across the estate.** Any control guarding an optional
+  platform method by `typeof` alone has this defect shape, and it is fatal
+  rather than degrading.
+
+- **A zero page size drew one row.** Canvas shows an unset whole number as `0`,
+  `applyPageSize` clamped it with `Math.max(raw, 1)`, and the reader got twenty
+  rows fetched and one drawn. The comment beside `paging.pageSize` had said
+  `0` means "the host did not say" since 0.2.0; the property's clamp disagreed
+  with it. Zero and negatives now adopt the host.
+
+- **`pcf-chart-view` does *not* carry the defects this repository attributed to
+  it, and that claim was made twice.** Checked line by line, 2026-09-21: its
+  call site guards `rowsConfirm` against an unfetched column
+  (`columns.has(column) ? … : null`), and its consumer withholds the server
+  route on any unresolved parent while letting `by: 'unrelated'` through — which
+  is exactly what `withholdsRoute` encodes here. What produced the false alarm
+  was a doc comment on `rowsConfirm` claiming a guarantee the *caller* provides;
+  that comment is now accurate.
+
+  The one real difference stands and is a robustness point rather than a bug:
+  this control takes the fetched-column list as a parameter, so the guard cannot
+  be forgotten by a future caller. Chart-view's call site is correct, and a
+  shipped control is not worth churning for symmetry.
+
+- **Taking the 0.6.0 screenshots found three defects no assertion could
+  reach**, each one correct markup drawn wrongly:
+
+  1. **Two aggregates over one column rendered as one.** The group row picked
+     its measure with `findIndex`, so `sum:revenue, avg:revenue` drew the sum
+     and dropped the average silently. `aliasPlan` had supported M measures over
+     one column since the first commit; only the rendering could not.
+  2. **Measures on the browser route were computed and never labelled.**
+     `groupRecords` initialised `measureLabels` to empty strings and nothing
+     filled them, so a grouped **canvas** table — where that is the only route —
+     showed right answers in blank cells. It looked fine on a model-driven form
+     because the server route brings formatted values back with the FetchXML.
+  3. **A sorted column could show no sort arrow at all.** The heading button is
+     a flex container and `text-overflow: ellipsis` does nothing to flex
+     *children*, so a heading wider than its column carried the arrow and rank
+     out past the cell's `overflow: hidden`. Measured: "Annual revenue" in a
+     107px column put its arrow at x=717 inside a cell ending at 708. Markup,
+     `aria-sort` and accessible name were all correct throughout.
+
+  All three now have assertions; the third is guarded in `dev/styles.js`,
+  because nothing that reads the DOM can see a clipped element. **This is the
+  argument for the screenshot step**, and it is the same argument the export
+  made for tracing: some classes of defect are only visible by looking.
+
+- **`dev/host.js`'s string table had drifted and nothing noticed.** Every 0.6.0
+  key was missing, so the first grouped capture rendered `DataTable_GroupExpand`
+  where the words should be. The file's own comment had predicted that failure
+  in those words. It is now generated from the `.resx` and guarded both ways —
+  a key the source asks for that the rig cannot resolve, and a value that has
+  drifted from what ships.
+
+  The first version of that guard had a hole the exact shape of the bug: it
+  matched only literals sitting directly inside `getString(`, and the component
+  asks for those two keys through a ternary.
+
+- **Screenshots are reproducible now.** `npm run shots` retakes all eight from
+  `dev/preview.html`, measuring each one's rendered height first so the picture
+  is tight. `media/screenshot-form.png` is deliberately excluded: only a real
+  form has a command bar, so it is stale by version and kept on purpose.
+
+- **The multi-sort capture seeds the sort rather than clicking it.** A click
+  refreshes the dataset and rebuilds the header row, so a headless capture
+  raced the re-render and photographed one arrow of two — through three
+  attempts at fixing the timing. `?sorted=` opens on an already-ordered view,
+  which has no race and is the more honest picture anyway.
+
+- **The export works, and costs one request per page at the view's page size.**
+  Confirmed on a real subgrid, 2026-09-21: 1,222 of 1,222 records. The subgrid
+  pages at **four**, so it took **306 requests**. Correct, bounded and slow.
+
+  `EXPORT_MAX_PAGES = 500` now bounds the round trips, because the 10,000-row
+  ceiling stopped bounding cost the moment the export stopped resizing — at four
+  rows a page it would have permitted 2,500.
+
+- **Whether a page size applied at load is safe has not been measured.** The
+  resize that broke paging was applied *mid-session*, after the reader had
+  already paged. `applyPageSize` calls `setPageSize` when the `pageSize`
+  property is set, at first render and before any paging has happened, and the
+  page-size picker calls it later. Neither has been watched on the form where
+  the mid-session resize failed. If a load-time page size is safe, setting
+  `pageSize` to 100 turns 306 requests into 13 and is the whole answer to the
+  cost; if it is not, the picker has the same defect as the export had.
+
+  **This is the one remaining question, and it should be measured rather than
+  reasoned about.**
+
+- **A view too large to read a page at a time wants a different route
+  entirely.** `data/GroupData.ts` already reads a view's FetchXML and calls
+  `retrieveMultipleRecords`; a 5,000-row page through the Web API would be one
+  request rather than 306. It needs `WebAPI`, the parent resolver and a
+  model-driven host, so it is a 0.7.0 shape rather than a patch.
+
+- **The export raised the page size, and that was the whole bug.** Traced on a
+  real subgrid, 2026-09-21, across two builds. After `setPageSize(250)`:
+  `loadExactPage(1)` was honoured — 250 rows, `pageSize` 250, `hasNextPage`
+  true, `totalResultCount` 1222 — and everything after it failed.
+  `loadExactPage(2)` was ignored; `loadNextPage(true)` threw into the
+  platform's own global error handler, which then failed parsing an empty
+  response. Both left page one's rows and `loading: false`.
+
+  The same view pages perfectly from the control's own pager, and `goToPage`
+  calls the identical methods. **The resize was the only difference.** So the
+  export no longer resizes: it walks the view at the page size already in
+  effect, through the same call the reader's pager uses, and restores only the
+  page.
+
+  `quirks.pagingBreaksAfterResize` models it. Mutation-tested, and the mutation
+  reproduces *both* historical failures from the one cause — putting the resize
+  back gives **9 of 12 rows** on one host and **40 passes, 0 files** on the
+  other, which are the short file and the stall respectively.
+
+- **The cost is round trips, and it is now the reader's page size that sets
+  them.** 1,222 records at 25 a page is 49 requests rather than 5. Bounded by
+  `EXPORT_MAX_ROWS`, the page counter and Stop; mitigated by a maker offering a
+  larger page through `pageSizeOptions`. No measurement of how that feels on a
+  slow connection.
+
+- **Four fixes were shipped on inference before anyone instrumented.**
+  `firstPageNumber`, then page size, then the stale-pass theory, then stepping
+  instead of jumping — each one reasoned from a CSV and a network tab, each one
+  wrong, and the third built on a premise (`skipped: false`, `pageSize: 250` on
+  the first pass) that one trace line disproved outright. Where a feature's
+  correctness depends on what the platform does *between* lifecycle calls, the
+  rig cannot be asked and reasoning does not substitute. Instrument first.
+
+- **`goToPage` may carry the same weakness.** It jumps with `loadExactPage`,
+  which is fine at the reader's own page size — but the page-size picker calls
+  `setPageSize`, and nothing has watched a multi-page jump after one.
+
+- **`traceExport` and its `console.log`s are scaffolding and come out before the
+  tag.**
+
+- **`loadExactPage` was the cause all along, and two fixes were shipped before
+  anyone looked.** Traced on a real subgrid, 2026-09-21: `loadExactPage(1)` was
+  honoured — 250 rows, `pageSize` 250, `hasNextPage` true, `totalResultCount`
+  1222 — and `loadExactPage(2)` was not. The platform re-rendered holding page
+  one, left `firstPageNumber` at 1 and reported `loading: false`. It was not
+  fetching and nothing more came.
+
+  That one fact explains both failures. The stall is direct. The earlier short
+  file — 972 of 1,222, holding pages one, three, four and five — is the same
+  refusal before the guards existed: an ignored request was harvested as though
+  it had answered, the counter advanced past a page nobody asked for again, and
+  whichever later jumps happened to land left the gaps. **No spurious
+  page-size pass was ever involved**; the trace shows `skipped: false` and
+  `pageSize: 250` on the very first pass, so the theory two fixes were built on
+  was wrong in its premise.
+
+  The walk now steps with `loadNextPage` and only page one and the restore use
+  `loadExactPage`. `quirks.exactPageIgnored` models the measured host;
+  mutation-tested, restoring the jump gives 40 passes and 0 files, which is
+  exactly what the reader saw.
+
+  **The lesson is the expensive one.** Three fixes were shipped on inference
+  about what the platform hands back between passes, and each was wrong. One
+  line of tracing per pass settled it in a single run. Where a feature's
+  correctness depends on platform behaviour between lifecycle calls, instrument
+  first — the rig cannot be asked about behaviour nobody has watched.
+
+- **The two measurements of `loadExactPage` disagree and nobody knows why.**
+  The 2026-09-20 probe watched it land for n = 1..8; the 2026-09-21 trace
+  watched it ignored at n = 2. Page size, record count and view all differ
+  between them. The export no longer depends on the answer, but `goToPage` still
+  does.
+
+- **`traceExport` and its `console.log`s are scaffolding and come out before the
+  tag.**
+
+- **The export reaches page one and stops, and nobody knows why yet.** Measured
+  on a real subgrid, 2026-09-21: 0.6.6 collected page one cleanly — 250 rows,
+  contiguous, no contamination from the page-size pass — then waited for page
+  two and never got it. Two fixes have now been shipped on inference about what
+  the platform hands back between passes (`firstPageNumber`, then page size) and
+  **both were wrong**. 0.6.7 stops guessing and logs one line per pass instead:
+  ids, first and last id, page size, `firstPageNumber`, `hasNextPage`,
+  `totalResultCount`, `loading`, and the decision taken. `traceExport` comes out
+  before the tag.
+
+- **A repeat pass starved the watchdog, which is why the stall was silent.**
+  `driveExport` cleared the watchdog at the top of every pass and re-armed it on
+  every `repeat`, so a host that kept re-rendering while a page failed to land
+  pushed the thirty seconds out indefinitely. The watchdog now belongs to the
+  request: only `askForExportPage` and `finishExport` touch it. Mutation-tested
+  — restoring the re-arm leaves 0 files 40 seconds after the request.
+
+  This is why the previous round read as "nothing happens": the stall had no
+  bound at all, so the failure path that would have written a partial file and
+  named the page was never reached.
+
+- **0.6.5's export fix was wrong, and shipped.** It gated the harvest on
+  `paging.firstPageNumber` — a declared platform property that had never been
+  measured, and which SPEC.md said so about in the same breath as relying on
+  it. On a real subgrid, 2026-09-21, the export stalled on page two: when pages
+  accumulate the platform keeps reporting the *first* page held, so every page
+  after the first failed the check. `dev/host.js`'s own comment beside that
+  getter had said exactly this for weeks.
+
+  Two further defects only became visible because of it. The watchdog set
+  `phase: 'failed'` and called `notifyOutputChanged()` — which announces
+  *outputs* changed and gives the platform no reason to call `updateView` — so
+  a stalled export recorded its failure, rendered nothing and wrote no file.
+  `cancelExport` had the same shape, which is why Stop did nothing at all.
+  Both now finish the export where they stand. This is the `pcf-kanban-board`
+  loader lesson, reached a second time from the other direction: **anything set
+  outside `updateView` must carry itself to completion.**
+
+  The gate is now the page size, a fact the export sets itself, and it is
+  bounded — **at most one pass may be discarded**, and the request is re-issued
+  when it is, so it cannot strand an export on a host that sent no spurious
+  pass. All three fixes are mutation-tested: removing them gives, respectively,
+  9 of 12 rows, 0 files, and 0 files.
+
+- **The remaining unmeasured assumption is that only one pass is ambiguous.**
+  It rests on the export asking for the next page only after folding in the
+  current one, so exactly one request is ever outstanding. That is true of this
+  code; whether a platform can interleave two answers to one request is not
+  something anyone has watched.
+
+- **The export lost a page, and the rig could not have caught it.** Measured on
+  a real form, 2026-09-21: a full-view export over 1,222 records wrote 972 — one
+  whole page missing from the middle, tail intact, no duplicates. `beginExport`
+  calls `setPageSize` then `loadExactPage(1)`, the platform answers each with an
+  `updateView`, and the first arrives before any fetch has landed. The machine
+  counted it as page one and asked for page two; the real page one then arrived
+  and was counted as page two, so **page three was requested while page two was
+  still in flight — and the platform serves only the latest request**, so page
+  two was never delivered.
+
+  Two things now stand between that and a short file. `harvest` refuses to
+  advance on a pass that brings nothing new, and — the one that actually catches
+  this shape — it checks `paging.firstPageNumber` against the page it asked for,
+  so a pass carrying *genuinely new* rows from the wrong page is still refused.
+  Both are mutation-tested; removing either turns the rig's twelve rows into
+  nine.
+
+  The rig needed three separate corrections before it could reproduce any of
+  it: `setPageSize` emitted no `updateView` at all, `renderOwed` was a flag so
+  two owed passes collapsed into one, and fetches were queued and all delivered
+  in order — which gives a one-pass lag that *cancels* an off-by-one in the
+  caller. `quirks.asyncFetch` models the real thing: one fetch outstanding, a
+  new one supersedes it, and the superseded page never arrives.
+
+- **`asyncFetch` is off by default, so the other features have not been
+  re-verified under it.** 168 assertions were written against synchronous
+  fetches. The export turns it on because the export is the only feature whose
+  correctness depends on fetch timing — but "no other feature depends on it" is
+  reasoning, not a measurement.
+
+- **Whether `firstPageNumber` is trustworthy mid-export is unmeasured.** It is
+  declared by the platform and the control now relies on it for the export
+  only. A host reporting it wrongly would stall the export into a named
+  watchdog failure rather than a short file, which is the right way round, but
+  nobody has watched one do it.
+
+
 - **Paging past page 1 is unobserved *in this control*.** The behaviour is now
   known — the flag is ignored, `hasPreviousPage` stays false, `firstPageNumber`
   is unusable — and the fix is written against it, but it was verified in
@@ -350,10 +848,15 @@ which is correct behaviour and a screenshot missing a feature.
   Fields flyout, that widths are absent, and that `openDatasetItem` is a no-op.
   All three are reasoned rather than observed. `addColumn` is typed as optional
   (`addColumn?:`), which is why nothing calls it.
-- **English only.** One `.resx` (1033); the other four locales the sibling
-  controls carry are a follow-up.
-- **No multi-column sort.** Sorting replaces the order rather than appending,
-  which is what `dataset.sorting` holds as the view's `ORDER BY`.
+- **Five locales, four of them unreviewed by a speaker.** 0.6.0 adds 1031,
+  1036, 1041 and 3082 beside 1033, all 117 keys, generated in one pass rather
+  than translated by a person. `check-template.mjs` proves the *shape* — every
+  key present, every `{0}` set matching — and proves nothing about the wording.
+  Power Platform has settled house terms in each of these languages (a
+  *Datensatz*, an *enregistrement*, a *registro*) which the strings follow where
+  known; the sentences around them are the part worth a native read before
+  anyone quotes them as localised. A wrong string here is cosmetic and
+  correctable in a patch, which is why it ships rather than waits.
 - **Nothing in 0.2.0 has been seen on a real form.** Filtering, the jump box and
   the page-size picker all land on the paging path above, which is the one thing
   here that measurement has already corrected three times. Until that happens,
@@ -1760,3 +2263,1076 @@ offered no *Clear*; Escape and the cross closed without writing. Released as
   answered on the probe form, so the fallback has never been the path taken.
 - **On-premises**, where the organisation sits in a path and the
   `clientUrl` preference is the thing that matters.
+
+## 0.6.0 — the whole view, rather than the page
+
+### What it is for
+
+Picked outward again, the way 0.2.0, 0.4.0 and 0.5.0 were. `docs/limitations.md`
+has said **"No grouping and no aggregate row"** since 0.2.0, and grouping is
+what every featured grid in the PCF gallery has that this one does not — *Smart
+Grid*, *Dynamic Group Grid*, *Power Apps Grid Extensions*. It is the first thing
+a comparison notices after the lookups 0.5.0 closed.
+
+It ships beside full-view CSV export, and the pairing is not a coincidence:
+**both are answers about the whole view rather than the page currently loaded.**
+One idea, one caption vocabulary, one honesty rule — a page-sized number shown
+as the whole is the bug the caption exists to prevent, and it is the same bug in
+both features. Multi-column sort rides along because `docs/limitations.md` names
+it in the same list and the code is four lines; whether it ships at all is a
+measurement, not a decision (S1–S7 below).
+
+### What must be measured first
+
+Probe build **0.5.1** — throwaway, `DataTable/probe.ts`, `window.__pcfDataTableProbe`
+— asks these on the `cll_account` subgrid. Same rule as 0.4.2 and 0.5.0's probe:
+every answer goes here as *Measured* before a line of the feature exists, and an
+answer that goes the wrong way **removes the feature that depends on it** rather
+than being worked around.
+
+Two of these are not new questions but new *hosts* for questions
+`pcf-chart-view` answered on 2026-09-17 and 2026-09-19. Repeating them is
+deliberate — that control renders no columns and binds a different dataset, and
+"a sibling measured it" is not the same as "this control measured it", which is
+the mistake the *Still open* note about paging already records.
+
+1. **G1 — the view, and its definition.** Does `getViewId()` answer on this
+   subgrid? Does `retrieveRecord('savedquery', id, '?$select=fetchxml')`, and
+   does `userquery` answer for a personal view? chart-view measured `getViewId()`
+   as `null` on a bound lookup's dataset; a view whose definition cannot be read
+   sends no aggregate at all, so this gates the whole server route.
+
+   ***Measured 2026-09-20, on the `cll_account` subgrid.*** `getViewId()`
+   answered `"50901766-ba1b-46e0-850b-e1a3991ade2e"` — a `string`, **bare and
+   lower-case**. So both this and chart-view's `null` are true; it is the host
+   that differs, and the read has to cope with either.
+
+   `retrieveRecord('savedquery', id, '?$select=fetchxml')` **resolved**, 664
+   characters, containing `<fetch`. Four things in what came back matter more
+   than the fact that it did:
+
+   ```xml
+   <fetch version="1.0" mapping="logical" savedqueryid="50901766-BA1B-46E0-850B-E1A3991ADE2E">
+     <entity name="cll_account">
+       <attribute name="cll_accountid"/>
+       <attribute name="cll_accountname"/>
+       <order attribute="cll_accountname" descending="false"/>
+       <filter type="and"><condition attribute="statecode" operator="eq" value="0"/></filter>
+       <attribute name="createdon"/>
+       …nine more attributes…
+     </entity>
+   </fetch>
+   ```
+
+   - **`<order>` and `<filter>` sit *between* `<attribute>` elements, not after
+     them.** The view designer emits them wherever the maker added them, so
+     there is no positional structure to rely on: a rewriter that took
+     "everything after the last `<attribute>`" would drop nine columns'
+     worth of nothing and both the sort and the filter. `stripView`'s global
+     regexes are not defensive coding, they are the only thing that works.
+   - **`savedqueryid` in the XML is upper-case; `getViewId()` is lower-case.**
+     Never compare the two without normalising. Nothing does yet, and nothing
+     should start without this line in front of it.
+   - **The root `<fetch>` carries `version` and `mapping`.** The aggregate is
+     built as a fresh `<fetch aggregate='true'>`, so both are dropped;
+     `mapping="logical"` is the default and `version` is decorative, so that is
+     safe — recorded because it is safe *by luck* rather than by design.
+   - **The view's own `<filter>` is inside `<entity>`**, so it rides along in
+     the carried-over content, and the dataset's runtime filter is appended
+     after it as a **second sibling `<filter>`**. FetchXML ANDs siblings, which
+     is the wanted answer — but it is two filters, not one merged, and a reader
+     of the generated query should expect that.
+
+   `retrieveRecord('userquery', …)` **refused, 404**, in the payload-fault
+   shape the control already knows:
+
+   ```
+   errorCode 2147746327, code 2147746327, title "Record Is Unavailable"
+   message  "The requested record was not found."
+   inner    "Entity 'userquery' With Id = 5090… Does Not Exist"
+   ```
+
+   **And the platform logs that 404 to the console itself, before the control
+   sees it.** That is unavoidable — it happens inside the platform's own OData
+   layer, above any `catch` here. In the probe it is noise, because the probe
+   asks both tables unconditionally to find out what each does. In the shipped
+   control the order is savedquery first and userquery only on failure, so a
+   **system** view costs no 404 at all — but a **personal** view costs exactly
+   one logged 404 per view read, with a red stack trace, on a form that is
+   working correctly. That belongs in `docs/limitations.md` before the first
+   person reports it as a bug.
+
+2. **G2 — N groups and M measures.** The assumption most likely to be wrong, and
+   the one the alias plan rests on. chart-view aggregates **one** group column
+   with **one** measure and reads its label off
+   `<alias>@OData.Community.Display.V1.FormattedValue`. Three separate things
+   could fail here and they fail differently: Dataverse could refuse more than
+   one `groupby`; a Choice group could arrive as an integer under one alias and
+   a string under another (it is already known to be either on a dataset
+   record); and **the formatted-value annotation could come for the first group
+   alias only**, which would leave every group after the first labelled with a
+   raw option-set number.
+
+   ***Attempted 2026-09-20, and refused before it could answer.*** The first
+   run passed `cll_accountid` — the primary key — as the measure, and the
+   server declined the whole query rather than the one attribute:
+
+   ```
+   HTTP 400, 0x8004112f, errorCode 2147750191
+   "Aggregate AVG or SUM is not supported for attribute of type primarykey."
+   ```
+
+   Three things worth keeping from a failed measurement:
+
+   - **A refusal is whole-query, not per-attribute.** One unusable measure
+     costs the group counts too. So `parseAggregates` refusing what it cannot
+     spell is not tidiness — it is the difference between a table with no
+     `avg` column and a table with no rows.
+   - **`count` over the primary key is fine; `sum` and `avg` are not.** The
+     alias plan asks for `count` on the PK unconditionally, which is correct
+     and now known to be correct. Only the *measure* list has to exclude it.
+   - **This is a G5 answer arriving early**, and a better-shaped one than G5
+     was going to produce: a refusal naming the attribute *type* rather than
+     the attribute, in the same payload-fault shape as every other server
+     fault this control already reads. `messageOf` will render it as a
+     sentence a maker can act on without changing.
+
+   **And the platform's own console log scrubs the message.** The same refusal
+   appears twice in the console, from two sources, saying different things:
+
+   ```
+   [storage] Error Messages:
+   1: Aggregate _scrubbedSensitiveData_          ← the platform's log
+   ```
+   ```
+   "Aggregate AVG or SUM is not supported for
+    attribute of type primarykey."               ← the caught rejection
+   ```
+
+   This is the strongest argument yet for a design decision the control had
+   already made for weaker reasons. **The caught error is the only place the
+   real message exists** — the platform's log redacts it to a single word, so
+   "check the console" is advice that leads a maker to less information than
+   the control is already holding. Every refusal this feature can produce has
+   to be rendered *in the control*, through `messageOf`, or it is effectively
+   unreportable.
+
+   It also means a support conversation that starts from a screenshot of the
+   console is starting from `_scrubbedSensitiveData_`. Worth one line in
+   `docs/faq.md`.
+
+   **The view has no numeric column at all** — its twelve are a primary key, a
+   name, three dates, two choices, a tag field, two lookups, `statecode` and
+   `statuscode`. So the M-measure half of G2 cannot be asked from this view
+   without either a numeric column on `cll_account` or a different table, and
+   the N-group half is being asked separately with `count` alone.
+
+   ***Measured 2026-09-20, count-only, on the same subgrid.*** All three parts
+   answered, and the one most expected to fail was wrong in the useful
+   direction.
+
+   ```json
+   {"n@…AttributeName":"cll_accountid","n@…FormattedValue":"2","n":2,
+    "g0@…AttributeName":"cll_industry","g0@…FormattedValue":"Retail","g0":1,
+    "g1@…AttributeName":"cll_priority","g1@…FormattedValue":"Low","g1":1}
+   ```
+
+   - **Two `groupby` attributes are accepted.** Five rows, one per present
+     combination. The alias plan generalises; nothing about N is special-cased.
+   - **A Choice group arrives as an `number`** — `"g0":1`, not `"1"`. **This is
+     the opposite of the dataset route**, where a Choice read off a record can
+     be the string `"1"` (measured on `pcf-chart-view`, and this control's own
+     `parseOptions` already copes). So the two routes disagree about the type
+     of the same value, and the `GroupReading` seam is the only place that can
+     be reconciled. **Normalise to a number at both boundaries** — an assertion
+     that the browser route and the server route produce the same keys over the
+     same rows is what stops this drifting apart later.
+   - **`FormattedValue` comes back for *every* alias**, not just the first —
+     `g0` "Retail", `g1` "Low", and `n` "2". The label for every group column is
+     free. That removes an entire dependency the design had budgeted for: the
+     **server route needs no `getEntityMetadata` call to label groups.** It is
+     still wanted for option *colour* and authored *order*, and the browser
+     route still needs it — but a metadata read that fails no longer costs the
+     group headers their names.
+   - **`@OData.Community.Display.V1.AttributeName` comes back for every alias
+     too**, naming the column each one came from. The response is
+     self-describing, which buys a free integrity check: assert the returned
+     `AttributeName` matches what the alias plan asked for, and a mis-built
+     query becomes a caught error rather than a mislabelled column.
+
+   **And `dataset.columns` does not contain the primary key.** G0 listed ten
+   columns — text, four Choices, a multi-select, two lookups and two dates —
+   while the view's own FetchXML selects `cll_accountid` and `createdon` as
+   well. So `dataset.columns` is the grid's *layout*, not the view's selected
+   attributes, and **the PK cannot be read from it**. The count attribute's
+   name has to be derived or read from metadata; `{entity}id` was right here
+   and is wrong for every activity table, which is why `pcf-chart-view` carries
+   an `ACTIVITIES` set. Port it rather than deriving.
+
+3. **G3 — the blank group.** chart-view assumes a null group value arrives with
+   the alias **omitted from the row entirely** rather than present and null. The
+   reader branches on that, and the browser route has to agree with it or the
+   two routes disagree about which records are blank — which is the one
+   disagreement a caption cannot explain away.
+
+   ***Measured 2026-09-20, grouping by `cll_primarycontact`.*** Six rows, and
+   the blank group came back **first**:
+
+   ```json
+   {"n@…AttributeName":"cll_accountid","n@…FormattedValue":"2","n":2}
+   ```
+
+   **The alias is omitted from the row entirely** — no `g0`, and no `g0@…`
+   annotations either. chart-view's assumption holds exactly, so the reader
+   branches on `hasOwnProperty` rather than on a null.
+
+   **A lookup group carries a third annotation, and it is the useful one:**
+
+   ```json
+   "g0@…FormattedValue": "Susanna Stubberod (sample)",
+   "g0@Microsoft.Dynamics.CRM.lookuplogicalname": "contact",
+   "g0": "8fe84297-9486-ec11-93b0-000d3a5c8441"
+   ```
+
+   The value is a **bare lower-case GUID as a string**, the label is free as
+   everywhere else, and `lookuplogicalname` names the *target table*. That was
+   not asked for and is worth having: it is what an expand-as-filter condition
+   would otherwise read from `ManyToOneRelationships`.
+
+   So **the annotation count per alias is two or three depending on type**, and
+   a reader assuming exactly two is wrong on every lookup.
+
+4. **G4 — two functions over one column.** Asked separately from G2 so that a
+   G2 failure has one fewer candidate reason. If the server refuses a duplicate
+   attribute name, `aggregates` caps at one function per column and
+   `parseAggregates` has to refuse the second rather than send it.
+
+   ***Measured 2026-09-20, `min` and `max` over `cll_lastcontacted`*** — this
+   table has no numeric column, and min/max over a date asks the same question.
+   **Accepted.** Four rows, `m0` and `m1` both present with distinct values. The
+   M-measure half of the alias plan stands: one attribute may appear twice under
+   two aliases with two functions.
+
+   And a second finding min/max produced for free, which `sum`/`avg` never
+   would have: **a date aggregate comes back as a UTC ISO string, with the
+   formatted value in the Dataverse user's zone.**
+
+   ```json
+   "m0": "2026-09-11T13:00:00Z",  "m0@…FormattedValue": "9/11/2026 8:00 AM"
+   ```
+
+   Five hours apart, consistently, across every row. So a measure is not simply
+   a number to print — **rendering `m0` raw would be five hours wrong for this
+   user and right for nobody.** Show `FormattedValue`, or convert through
+   `offsetReader`; the date rules this repository already carries apply to
+   aggregate results exactly as they do to record values.
+
+5. **G5 — the two refusals.** The `AggregateQueryRecordLimit` refusal
+   (`0x8004E023`, 50,000 records) and a column FetchXML will not group at all.
+   The first **closes `pcf-chart-view`'s open P7** — nothing in this estate has
+   seen it. Reaching it needs a table over 50,000 rows; if there is none, that
+   is a finding to record rather than a number to guess, and the fallback stays
+   reasoned.
+
+   ***The multi-select half measured 2026-09-20; the record-limit half is
+   still unreachable*** — no table here is over 50,000 rows, so
+   `AggregateQueryRecordLimit` and `pcf-chart-view`'s open P7 both stay open.
+   Recorded as unmeasured rather than guessed.
+
+   Grouping by `cll_tags`, a `MultiSelectPicklist`, refused with HTTP 400 and
+   `errorCode 2147811876`. **And the two sources disagreed about how useful the
+   message was — the opposite way round from G2.**
+
+   ```
+   platform log:  groupby cannot be specified for attribute type
+                  MultiSelectPickList. NodeXml: <attribute name="cll_tags"
+                  groupby="true" alias="g0" />
+   caught error:  The specified XML file "{0}" is not valid as attribute of
+                  type multiselect optionset is not allowed as groupby attribute.
+   ```
+
+   **The caught message carries an unsubstituted `{0}`.** The server sent a
+   message template with its parameter never filled in, so a control that
+   renders the caught text verbatim — which is what `messageOf` does, and what
+   the G2 finding argued *for* — shows a maker a sentence with a formatting
+   placeholder in it. That reads as a bug in this control.
+
+   So the two refusals measured so far point in opposite directions, and
+   neither source can be trusted alone: **G2's log was scrubbed to one word
+   while its caught error was perfect; G5's log names the attribute and the
+   exact XML while its caught error is a broken template.** There is no rule
+   here of the form "prefer the rejection" — which is what the first draft of
+   this section was about to conclude.
+
+   **The design answer is therefore not to render this refusal at all.**
+   `MultiSelectPicklist` is visible in `dataset.columns` before any query is
+   sent, so `parseGroupColumns` refuses it **client-side**, the same way
+   `filterKindFor` already vetoes types it cannot filter, and the maker gets a
+   sentence this repository wrote. The group-column allow-list is by
+   `dataType`, decided locally, and the server is never asked a question whose
+   refusal cannot be shown to anybody.
+
+   That leaves server refusals for the cases a client cannot predict — the
+   record limit, a privilege, a malformed view — where `messageOf` is still
+   right and the `{0}` risk is worth one guard: **if a rendered message still
+   contains `{\d}`, fall back to a sentence naming the operation rather than
+   showing the template.**
+
+6. **S1–S7 — multi-column sort.** `dataset.sorting` is typed `SortStatus[]`, and
+   this repository's own rule is that a required member is a claim about the
+   **type definitions** rather than about any host. So: does the platform honour
+   a multi-entry array at all (S1); does it still hold both entries after the
+   refresh (S2); does it survive `paging.reset()` and a page turn (S3); does it
+   replace the view's `<order>` or prepend to it (S4); is there a ceiling (S5);
+   does a `disableSorting` column poison the whole array (S6); and canvas (S7).
+
+   **If S1 or S2 come back badly, `enableMultiSort` is deleted whole** — the
+   decision 0.4.0 made about the Lookup editor. Nothing else in 0.6.0 depends on
+   it, and a rank indicator over an order the platform quietly collapsed is a
+   wrong answer that looks completely right.
+
+   ***Partly measured 2026-09-20, and the headline result is a false pass.***
+
+   | | |
+   | --- | --- |
+   | **S2** — does `sorting` still hold both entries after `refresh()`? | **Yes.** Both survived unchanged. |
+   | **S3** — does it survive `paging.reset()` and a page turn? | **Yes.** Both still there. |
+   | **S5** — is there a ceiling? | **Not in the array.** Four entries pushed, four retained. |
+   | **S4** — replace or prepend? | `sorting` arrived holding **one** entry, `cll_accountname` ascending — which is the view's own `<order>`. So the platform seeds the array from the view, and clearing it before pushing **replaces** that order rather than adding to it. |
+   | **S6** | Skipped — no `disableSorting` column in this view. |
+   | **S1** — **does the platform honour the second entry?** | **Unanswered.** |
+
+   **S1 is why this is recorded as a false pass.** The probe sorted by
+   `cll_accountname` then `cll_lastcontacted`, and the rows came back in name
+   order — which is exactly what a platform ignoring the second entry would
+   also produce. Every `cll_accountname` in this view is distinct, so **the
+   primary sort never produced a tie, and the secondary sort never had anything
+   to break.** The rows agreeing with the request is not evidence the request
+   was honoured.
+
+   That is the same class of error as the historic `img.src` bug in
+   `dev/dom.js`: *a check that cannot observe the thing it is checking reports
+   its own blindness as proof.* It would have been very easy to read the three
+   green rows above, conclude multi-sort works, and ship a rank indicator over
+   an order the server had quietly collapsed — which is the exact failure S1
+   exists to prevent.
+
+   **The corrected measurement needs ties**: sort by a low-cardinality column
+   first — `cll_industry` has four values across eight rows — then flip only
+   the *second* entry's direction and compare. If the order within each industry
+   reverses, the second entry is honoured; if the two runs are identical, it is
+   ignored and `enableMultiSort` is deleted.
+
+   ***The corrected tie-breaking test was run 2026-09-20, printed
+   `IDENTICAL — the second entry is ignored`, and that verdict is withdrawn.***
+
+   ```
+   industry ASC, name ASC : Services/1  Retail/2  Retail/3  Technology/4  Manufacturing/5
+   industry ASC, name DESC: Services/1  Retail/2  Retail/3  Technology/4  Manufacturing/5
+   ```
+
+   **Look at the industry column: 3, 1, 1, 4, 2.** That is not ascending. The
+   *first* sort entry was not honoured either — so this is not "the second
+   entry is ignored", it is *nothing was applied at all*. What the rows are in
+   is `cll_accountname` ascending, which is the view's own `<order>`.
+
+   Two explanations fit, and the test cannot separate them:
+
+   - the platform ignores a mutated `dataset.sorting` on this host, in which
+     case **v0.5.0's single-column sort does not work either** and that is a
+     bug in a shipped release, not a finding about 0.6.0; or
+   - the snippet captured `const d = ...held.host.dataset` once and mutated
+     `d.sorting` across two refreshes — **the same stale-object defect as
+     `E()`** — so the second run wrote to an array the platform had already
+     replaced.
+
+   The second is likelier, because the first run should still have worked. But
+   "likelier" is not a measurement, and the question now reaches further than
+   `enableMultiSort`: **it asks whether sorting works at all.** `docs/limitations.md`
+   has claimed server-side sorting since 0.2.0 and this file's *Still open*
+   already says nothing from 0.2.0 has been seen on a real form.
+
+   Also void: the earlier `S()` run used the probe's defaults, `name` and
+   `createdon`, neither of which is a column on `cll_account` — every row read
+   back `null` for both. The array-retention observations (S2, S3, S5) survive,
+   since they only assert what a JS array holds. Nothing about row order does.
+
+   ***Re-measured 2026-09-20 against a dataset re-read on every pass. S1 is
+   answered: the platform honours a multi-entry `sorting` array.***
+
+   **Single-column sort works**, which clears v0.5.0 — there was no shipped
+   bug, only a probe reading a stale snapshot:
+
+   ```
+   name ASC   Services/1  Retail/2  Retail/3  Technology/4  Manufacturing/5
+   name DESC  Retail/ZZ Probe B 012  Technology/B 011  Services/B 010  …
+   ```
+
+   **And the second entry is honoured.** Grouping the sort by `cll_industry`
+   produced ties, and flipping only the *second* entry reversed the order
+   inside them:
+
+   ```
+   ind ASC / name ASC   Manufacturing/5  …/7  …/8  …/A 001  …/A 005
+   ind ASC / name DESC  Manufacturing/B 009  …/B 005  …/B 001  …/A 033  …/A 029
+   ```
+
+   So **`enableMultiSort` ships.** S1 through S5 are all answered green; S6 has
+   no `disableSorting` column here to try; S7 (canvas) is untouched.
+
+   **One finding nobody asked for, and it decides a default.** Ascending by
+   `cll_industry` put **Manufacturing first** — and Manufacturing is option
+   value **2**, while Retail is **1**. So the platform sorts an OptionSet
+   column by its **label**, alphabetically, not by its option value.
+
+   That matters directly to grouping: the aggregate hands back `g0` as the
+   *integer*, so a control ordering its group headers by that integer would
+   produce Retail, Manufacturing, Services, Technology — while the rows
+   underneath, sorted by the same column, come back Manufacturing, Retail,
+   Services, Technology. **The headers and the rows would disagree about
+   order, on the same column, in the same table.**
+
+   `groupSort` defaulting to `label` was already the plan; it now has a
+   measured reason rather than an aesthetic one, and `groupSort: 'value'`
+   should probably not exist at all.
+
+7. **E1 — `loadExactPage` in a loop.** The export machine steps forward up to
+   forty times. `goToPage`'s own comment records that nothing has watched this
+   past page two. Eight pages, timed, watching whether the row count climbs
+   (the host accumulates) or holds.
+
+   ***Run 2026-09-20 against 56 seeded rows — and the run is void.*** Recorded
+   in full because what it got wrong is more useful than what it measured.
+
+   ```
+   hasLoadExactPage                true
+   totalResultCount                56
+   E2  pageSize after asking 250   5      ← unchanged
+   E2  rows arrived                5
+   E1  pages 1–8                  rows 5, hasNextPage true, and the SAME
+                                   firstId 41f39f1a… on every one of the eight
+   ```
+
+   Read at face value this says `loadExactPage` is a no-op and `setPageSize` is
+   ignored. **It says neither, because the probe drove all eight pages against
+   a dataset object it captured once.**
+
+   `E()` opens with `const dataset = need().dataset`, and
+   **`context.parameters.records` is a new object on every pass** — measured on
+   0.4.3, recorded in this file, and stated in the skill as *never write against
+   a dataset you kept*. So after the first fetch the probe was calling
+   `loadExactPage` on a stale object and reading `sortedRecordIds` off a frozen
+   snapshot. An identical `firstId` across eight pages is exactly what a frozen
+   snapshot looks like, and it is also exactly what a broken `loadExactPage`
+   looks like. **The measurement cannot tell those apart.**
+
+   The same defect is in `S()`, `P1()` and `G0()` — every function here opens
+   the same way. It matters for `E()` and `S()` because they fetch; the others
+   read once and are unaffected.
+
+   **This is the third time in this release the same shape has appeared**: the
+   stale bundle after a lint failure, the sibling version that passed by
+   coincidence, and now a probe reading a snapshot of the thing it is
+   mutating. *A check that cannot observe the thing it is checking reports its
+   own blindness as proof.*
+
+   ***Re-measured 2026-09-20 against a dataset re-read on every pass. Both
+   answered, and both in the control's favour.***
+
+   **E2 — `setPageSize` is honoured, not clamped and not ignored.** This closes
+   the *genuinely unknown* that has sat in *Still open* since 0.2.0:
+
+   ```
+   baseline                 pageSize 5    rows 5    hasNext true
+   setPageSize(250)         pageSize 250  rows 56   hasNext false
+   setPageSize(5)           pageSize 5    rows 5    hasNext true
+   ```
+
+   The platform echoes the requested size back and returns that many rows. At
+   56 records a request for 250 returned **all of them in one page**, which is
+   the case the export cares about most.
+
+   **E1 — `loadExactPage` moves, deterministically, in both directions.**
+
+   ```
+   loadExactPage(1)  first 41f39f1a  rows 5  hasPrev false
+   loadExactPage(2)  first 990d527b  rows 5  hasPrev true
+   loadExactPage(3)  first 42dbce26  rows 5
+   loadExactPage(4)  first 47dbce26  rows 5
+   loadExactPage(5)  first 4cdbce26  rows 5
+   loadExactPage(2)  first 990d527b  rows 5   ← backwards, same page as before
+   ```
+
+   Four things, three of which the design had assumed the other way:
+
+   - **It fetches on its own.** No `refresh()` after it; `goToPage` has always
+     been right about that.
+   - **It does not accumulate.** `rows` stays at 5 on every page. The export's
+     dedupe-by-record-id was designed for a host that returns pages 1..N.
+   - **`hasPreviousPage` becomes true after moving forward**, and stays true.
+   - **A backwards jump lands on the same page it landed on before.** The
+     export's restore step — `loadExactPage(capturedPage)` — is now proven
+     rather than assumed.
+
+   **This does not contradict `dev/host.js`'s defaults, and the distinction
+   matters.** The rig defaults `accumulatePages` and `previousPageStuck` to
+   **true** because that is what was measured — but it was measured on
+   `loadNextPage(true)` in `pcf-compact-list`, and **this is `loadExactPage`,
+   a different method.** Both can be true at once: the stepping call
+   accumulates and strands `hasPreviousPage`, the exact-page call does neither.
+   The rig should model them separately rather than applying one set of quirks
+   to both, and the dedupe stays — it is what the `loadNextPage(true)` fallback
+   needs on a host with no `loadExactPage`.
+
+   **What this simplifies in the export.** With `setPageSize(250)` honoured,
+   a view of 250 rows or fewer is **one fetch and no loop at all**, and the
+   40-page ceiling only applies past 10,000 rows. The state machine still has
+   to exist for the long case, but the common case stops being a state machine.
+
+   **What it still does not say: how long a page actually takes.** Every
+   reading above is `ms ≈ 7007`, which is the probe's own 7-second settle, not
+   the fetch. Real latency is somewhere at or under that and was never
+   isolated. A forty-page export's cost is therefore still unknown, which is
+   precisely why the progress UI carries a page counter and a Cancel.
+
+8. **E2 — is `setPageSize` clamped, and echoed back?** Already sitting in *Still
+   open* as genuinely unknown. The export raises the page size to 250 and has to
+   know what it actually got.
+
+   *Answered together with E1 above: honoured, echoed back, not clamped.*
+
+9. **P1 — the subgrid's parent.** Confirms here what chart-view measured on
+   2026-09-19: `filtering.getFilter()` `null` and `linking.getLinkedEntities()`
+   empty, so a subgrid's relationship to its parent is invisible. If it holds, a
+   grouped subgrid needs `parentLookup` or it counts the whole table directly
+   above six visible rows — a confidently wrong number, in the one place the
+   reader can see it is wrong.
+
+   ***Measured 2026-09-20.*** chart-view's 2026-09-19 finding reproduces here
+   exactly:
+
+   ```
+   filtering.getFilter()          null
+   linking.getLinkedEntities()    []
+   mode.contextInfo               { entityTypeName: "account",
+                                    entityId: "7de84297-…",
+                                    entityRecordName: "Adventure Works (sample)" }
+   target entity                  cll_account
+   loaded rows 5, totalResultCount 8
+   ```
+
+   The relationship is invisible and the parent record is not, so the four-step
+   resolver in `data/parent.ts` is required rather than inherited.
+
+   **`canDisableRelationshipFilter` is a *function*, not a boolean.** It read
+   back as `()=>!1` — minified `() => false`. So
+   `if (filtering.canDisableRelationshipFilter)` is **always true**, on every
+   host, because a function object is truthy. Nothing here tests it yet and
+   nothing should start without calling it.
+
+   **And the numbers coincide on this data, which is the part worth writing
+   down.** The subgrid reports `totalResultCount: 8`, and the G2 aggregate —
+   sent with **no parent condition and no view filter at all** — returned
+   groups summing to 8 as well (2+2+1+1+2), as did G3's six groups. So on this
+   environment, right now, **an aggregate that ignores the parent produces
+   exactly the number a correct one would**, and the bug `parentLookup` exists
+   to prevent is invisible.
+
+   That is the dangerous shape: a defect that testing cannot see. It does not
+   weaken the finding — `getFilter()` returning `null` is the finding, and it
+   is unambiguous — but it does mean **this environment cannot demonstrate the
+   fix working**. Proving `parentLookup` needs a second `account` with
+   `cll_account` rows of its own, so that the whole-table count and the
+   subgrid's count differ. Until that exists, the parent resolver is written
+   against a measured mechanism and an unmeasured consequence, and
+   `docs/limitations.md` should not claim otherwise.
+
+   ***Confirmed 2026-09-20:*** an unfiltered count over the whole table
+   answered **8**, against the subgrid's `totalResultCount` of **8**. The table
+   holds eight rows and all eight belong to *Adventure Works (sample)*. So the
+   coincidence is not a coincidence — there is only one parent in the data, and
+   no query on this environment can currently distinguish a correct aggregate
+   from one that ignores the parent entirely.
+
+### What the probe environment cannot answer
+
+Two questions are blocked by the size and shape of the data rather than by the
+platform, and they are blocked for the same reason: **eight rows under one
+parent.** Recorded here rather than left to look like oversights.
+
+| Question | Needs | Why it matters |
+| --- | --- | --- |
+| **P1's consequence** — does an aggregate without a parent condition actually report the wrong number? | A second `account` with `cll_account` rows of its own | It is the whole justification for `parentLookup`, and for a grouped subgrid being withheld without one |
+| **E1** — does `loadExactPage` behave past page two, and does the host accumulate? | ~40 rows, so eight pages exist at page size 5 | The full-view CSV export loops it up to forty times; at eight rows there are two pages and the loop never runs |
+| **G5's record limit** | 50,000 rows | Not reasonable to create. Stays unmeasured; `pcf-chart-view`'s P7 stays open |
+
+The first two are a few minutes of seeded data. The third is not, and the
+fallback for it stays reasoned rather than measured — which is the honest
+state, and is what `docs/limitations.md` will say.
+
+**S1–S7 are not blocked**: sorting needs two pages, not forty, and eight rows
+at page size five gives exactly that.
+
+***After seeding, 2026-09-20:*** the table holds **56** rows and the subgrid
+reports `totalResultCount` **56** — still equal, although twelve of the seeded
+rows were bound to a *second* account. So the two numbers were never going to
+diverge, and the reason is not the data:
+
+**this subgrid is not parent-filtered at all.** It lists every `cll_account`
+row regardless of which `account` it points at. That is consistent with
+everything P1 read — `getFilter()` `null`, `getLinkedEntities()` `[]` — and it
+is `pcf-chart-view`'s measured W3 case: *a subgrid configured without "Show
+related records only" lists the whole table under a record.*
+
+So this environment demonstrates the resolver's **`by: 'unrelated'`** branch
+rather than its parent-filtered one — the step where every candidate lookup is
+denied by the loaded rows and **no condition is added**, which here is the
+correct answer. That branch is now measured, and it is the one most likely to
+be got wrong by a resolver that assumes a subgrid is always related.
+
+***Measured 2026-09-20, with the subgrid switched to "Show related records
+only".*** The consequence is now proven, and the mechanism turns out to be
+worse than chart-view recorded.
+
+```
+getFilter()                   null          ← still
+getLinkedEntities()           []            ← still
+canDisableRelationshipFilter  false         ← called, not read
+whole table 56  |  subgrid 38               ← they differ
+candidates -> account         ["cll_customer"]
+cll_customer = parent -> 38                 ← matches the subgrid exactly
+```
+
+**`getFilter()` returns `null` whether or not the subgrid is related-records-only.**
+That is the finding, and it is a stronger claim than the one inherited: the
+relationship is invisible to the control **regardless of how the subgrid is
+configured**, so there is no setting a maker can change that would let the
+control see it. `pcf-chart-view`'s W3 note reads as though an unrelated subgrid
+were the special case; both cases look identical from inside the control, and
+only the *rows* can tell them apart.
+
+**The consequence is real and now has numbers.** 56 against 38 — an aggregate
+built from the view alone would print *56* directly above a grid holding 38
+rows. That is the wrong number in the one place a reader can see it is wrong,
+which is why the server route is withheld rather than approximated when the
+parent cannot be resolved.
+
+**All three resolver steps are measured, and the happy path is exact.**
+`ManyToOneRelationships` returned **one** candidate, `cll_customer`, so step 2
+resolves without ambiguity; the condition
+`<condition attribute='cll_customer' operator='eq' value='7de84297…'/>`
+reproduced **38**, the platform's own count, to the record. And the loaded rows
+carry the column, so step 3 is available as a fallback rather than three-valued
+`null` here:
+
+```json
+{"etn":"account","id":{"guid":"7de84297-9486-ec11-93b0-000d3a5c8441"},
+ "name":"Adventure Works (sample)"}
+```
+
+**The GUID is nested at `.id.guid`, not a bare string**, and arrives unbraced
+and lower-case. `rowsConfirm` reads that path; comparing `getValue()` directly
+against an id would fail on every row.
+
+**One caveat on the 38, stated so it is not read as more than it is.** The
+probe's count carried no `statecode` condition while the view's own FetchXML
+filters to active records — it matched anyway because every row here is active,
+so the two agree by luck on this data. The shipped path does not rely on that:
+`stripView` keeps the view's `<filter>`, so the view's own conditions ride along
+and the parent condition is appended beside them.
+
+### The ambiguous case, and the bug it found
+
+***Measured 2026-09-20 on `cll_sitevisit`***, a **custom activity table** made
+for the purpose — two lookups to `account`, `regardingobjectid` (inherited) and
+`cll_site` (added). It answered three things at once.
+
+**1. The primary key is not derivable.**
+
+```
+table        : cll_sitevisit   IsActivity: true
+primary key  : activityid      the guess would be: cll_sitevisitid
+primary name : subject
+```
+
+`guessPrimaryId` derives `{entity}id` with a hard-coded set of the seventeen
+*system* activity tables as the exception, which is what `pcf-chart-view` does.
+**No such list can cover a custom activity table**, and a maker can create one
+in five minutes. So the guess is a fallback and `PrimaryIdAttribute` from
+metadata is the mechanism. Recorded as a known gap in `index.ts` until the read
+lands; until then a custom activity table's aggregate is refused by the server
+rather than answered wrongly, which is the safe failure.
+
+**2. The ambiguous branch resolves.** Two candidates, and the rows separated
+them — `by: 'rows'`, `column: cll_site`. That branch is no longer unmeasured.
+
+**3. And `rowsConfirm` was wrong, in the dangerous direction.**
+
+```
+regardingobjectid  in layout: false   getValue → null   rows said: false
+cll_notacolumn     (does not exist)   getValue → null
+server for that row: regardingobjectid_account → Adventure Works (sample)
+```
+
+**`getValue` answers `null` for a column absent from the view's layout, for a
+column that does not exist on the table at all, and for one that is genuinely
+empty.** There is no `undefined`. So the `undefined` branch — inherited from
+`pcf-chart-view` and carried over here unexamined — was **dead code that could
+never fire on a real host**, and every unfetched candidate was being *denied*
+rather than left open.
+
+The contradiction that exposed it: the rows said `regardingobjectid` was
+`false` while a conditioned aggregate over it counted every row in the subgrid.
+Both cannot be true, and the server was right.
+
+It failed safe here only by luck — `cll_site` confirmed on its own merits, so
+one candidate won. Invert the case, and the **correct** lookup is the one
+missing from the layout: every candidate is denied, `open.length` is 0, the
+resolver answers `unrelated`, no condition is added, and the aggregate counts
+the whole table. The wrong number, reached through the branch that exists to
+prevent it.
+
+**The fix is the signal, not the shape.** The three-valued answer was right;
+`getValue` simply cannot supply it. "Was this column loaded" is now asked of
+`dataset.columns`, which is the only thing that knows, and `getValue` is asked
+only about columns that were.
+
+**4. And with `cll_site` pulled out of the view, the two readers diverge —
+which is the finding stated as a difference rather than an argument.**
+
+```
+layout: subject, cll_visittype, cll_outcome, cll_durationhours,
+        cll_cost, cll_visitdate, cll_engineer      (no cll_site)
+candidates: regardingobjectid, cll_site
+
+fixed  null,  null   -> unresolved -> route WITHHELD, caption "loaded so far"
+old    false, false  -> unrelated  -> no condition  -> counts the WHOLE TABLE
+```
+
+Same configuration, and **both answer `column: null`**. The entire difference
+is the `by` value, and `loadGroups` branches on `by !== 'unrelated'` to choose
+between declining and proceeding. One word in one condition, standing between
+an honest refusal and a number larger than the grid beneath it.
+
+That was too load-bearing to be reachable only through a call needing a
+`webAPI`, so the decision is now `withholdsRoute(resolution)` — pure, asserted
+five ways, and mutation-tested: making it fire on `unrelated` too fails the
+suite.
+
+`unrelated` is a **positive** finding — the rows were asked and said this grid
+is not narrowed to the record — so no condition is correct. `unresolved` is an
+*absence* of knowledge, and guessing between two lookups is precisely what
+produces a confidently wrong count.
+
+**5. The guess failed live, and the metadata read replaced it.**
+
+The probe's own `G2` derives `{entity}id`, so it sent `cll_sitevisitid`:
+
+```
+0x80041103, errorCode 2147750147, title "Query Builder Error"
+"'cll_sitevisit' entity doesn't contain attribute with Name =
+ 'cll_sitevisitid' and NameMapping = 'Logical'"
+```
+
+**Exactly the predicted failure, and it is the safe one** — the server refused
+the whole query and nothing wrong was reported. But a refusal is whole-query,
+so it took the group counts with it: **grouping simply does not work on a
+custom activity table while the key is guessed.** That moved
+`primaryIdFor` from a known gap to a blocking defect, and it is now a cached
+`EntityDefinitions` read on the same same-origin route the relationships use,
+resolved in parallel with the parent inside `loadGroups` — so on every pass
+after the first it costs nothing. `guessPrimaryId` is the fallback for a host
+that refuses the read, which is the right way round: derive when you cannot
+ask, rather than ask only when the derivation looks doubtful.
+
+The refusal is also **renderable** — no `{0}` — so `messageOf` would show it
+as written, unlike the multi-select case.
+
+### `sum` and `avg`, measured at last
+
+Sent with the real key over 41 records in 16 groups (the subgrid showing 21 —
+**the counts finally diverge**, so the parent condition's consequence is
+demonstrable on this table).
+
+- **`avg` is `sum` ÷ the group's row count.** 26.25/4 = 6.5625, 17/3 =
+  5.6666666666, 9.5/2 = 4.75 — every group. The browser route's `avg` must
+  therefore divide by the same denominator, and it does; what the two cannot
+  agree on is when the browser route holds only part of a group, which is what
+  the caption is for.
+- **The raw is truncated to ten decimal places** (`5.6666666666`) while the
+  `FormattedValue` respects the column's precision (`"5.67"`). A measure
+  rendered from the raw would show ten decimals of a two-decimal column.
+- **A group whose every row has a null measure omits `m0` and `m1` entirely
+  while `n` still stands.** Three Training groups, `n` of 4, 1 and 2, no
+  measure aliases at all. That was asserted from `pcf-chart-view`'s behaviour
+  and is now **measured** — `count` counts rows, an aggregate counts values.
+- **Both group aliases can be absent from the same row.** The first row was
+  `{n: 3}` and nothing else: no visit type *and* no outcome. The reader asks
+  `hasOwnProperty` per alias rather than testing for a blank row, which is
+  what makes that work.
+- **Property order varies between rows.** One row arrived `m0, m1, n, g1` and
+  another `n, g1, g0, m1, m0`. Nothing may depend on key order; the reader
+  looks each alias up by name.
+
+### The parent condition, proven on numbers
+
+```
+whole table 41  |  subgrid 21  |  with cll_site = the form's account: 21
+```
+
+**41 is what a grouped subgrid would have printed above 21 rows** without the
+resolver — twice the truth, in the one place a reader can see it is wrong. With
+the condition, 21 against 21, to the record.
+
+That closes the parent resolver. Every branch is now exercised, and three of
+them against measured numbers rather than a fixture:
+
+| Branch | How it was reached |
+| --- | --- |
+| `explicit` / `none` | asserted |
+| `only-candidate` | `cll_account`, one lookup — 38 against 38 |
+| `rows` | `cll_sitevisit`, two lookups separated by the rows — 21 against 21 |
+| `unresolved` | `cll_sitevisit` with neither lookup loaded — route withheld |
+| `unrelated` | `cll_account` before the subgrid was set to related records |
+| `no-candidates` | asserted |
+
+The only thing left unmeasured in grouping is the `AggregateQueryRecordLimit`
+refusal, which needs 50,000 rows and stays reasoned. `pcf-chart-view`'s P7
+stays open with it.
+
+### Verified on a real form
+
+Walked on the Site Visits subgrid of an Account, 2026-09-20, with the 0.6.0
+build — **the first time grouping has rendered anywhere but
+`renderToStaticMarkup`**, which runs no effects, so `useGroups`, the server
+route and expand-as-filter had no runtime coverage at all before this.
+
+Configured `groupBy: cll_visittype`,
+`aggregates: sum:cll_durationhours, avg:cll_durationhours`, `parentLookup`
+empty.
+
+**What the counts prove on their own.** Five headers — Inspection 4,
+Installation 4, Maintenance 4, Training 3, (blank) 6 — summing to **21**, and
+the subgrid holds 21 of the table's 41. The browser route sees the loaded page,
+which was four records; **only the server route can produce 21**, and only with
+the parent condition applied can it produce 21 rather than 41. So the aggregate
+ran, the parent resolved through the rows, and the condition landed — three
+things inferable from one row of numbers.
+
+Everything else held: measures aligned under *Duration hours* rather than in a
+run of text; **Training showed its count and no measures at all** (every row
+null — rendered blank, not `0.00`); `(blank)` was named; the blank group sorted
+last; expanding scoped the pager to *1–4 of 4* and the members summed to the
+header's 21.75 exactly.
+
+**One defect, and it was the pager.** A collapsed grouped table still rendered
+the row pager — *"1–4 of 21"*, *"page 1 of 6"* — underneath five group headers,
+counting rows that were not on screen in a vocabulary the table was not in. The
+caption was written to replace it and nothing suppressed it. Fixed, asserted,
+and mutation-tested.
+
+**And the assertion written for that fix was broken in a way worth recording.**
+It reported `pagers: 0` against markup that contained one, because the regex was
+built in Python with `` in a non-raw string — which emits an actual backspace
+character, not a word boundary. It failed *closed*, so the bug it hid was a
+false failure rather than a false pass, but a suite that cannot count what it is
+looking at is the same class of defect as `dev/dom.js`'s historic `img.src`. The
+pattern now needs no escape at all.
+
+**Not verified in 0.6.0, still:** whether the caption reads *"the whole view"*
+on the form. The counts prove the server route answered; the sentence itself has
+not been read off a screen.
+
+### Two things the form said that no suite could
+
+**The caption was invisible, and the markup was correct.** It carried
+`className="DataTable-pager DataTable-caption"`, and `.DataTable-caption` has
+been the `<table><caption>`'s class since 0.2.0 — *visually hidden*, one pixel
+square, `clip: rect(0 0 0 0)`. So the group caption rendered with the right
+text, in the right place, clipped to nothing. 246 assertions passed over it,
+because every assertion in this repository is over **markup** and markup was not
+what was wrong. Found by a DOM query after two screenshots.
+
+Renamed to `DataTable-groupCaption`, and `dev/styles.js` now refuses **any
+element carrying a visually-hidden class beside another of ours** — a pairing
+that is always either a collision or a contradiction. The hidden classes are
+found by signature rather than by name, so a third one added later is covered
+without anybody remembering. Writing it turned up a false positive worth
+keeping: `.DataTable-table .is-pinnedEdge::after` is a one-pixel absolute
+divider that matches the signature perfectly and says nothing about
+`.DataTable-table`, so only *bare* class selectors count.
+
+**Expanding a group threw away every other group.** Reported from the form:
+open one, the other four headers vanish, the pager appears, and getting back
+needs a second click to collapse.
+
+A design error rather than a bug, and the cause was one line: `groupRoute` read
+its filter from `dataset.filtering`, which `applyFilter` had already composed
+with the expansion's conditions. So expanding changed the aggregate's filter,
+changed the route key, re-ran the query, and got back — correctly — only the
+expanded group.
+
+**The expansion narrows the rows; it must never narrow the group list.** The
+group list answers *what is in this view*, and expanding does not change that.
+The aggregate's filter is now built from the filter row alone, so the headers
+stay on screen, the open group's rows nest under their own header, and
+**expanding costs no round trip at all** — the route key no longer moves.
+
+The caption stays visible with them now, since the thing it describes is always
+on screen: it says what the group list covers, the pager below says what the
+open group covers.
+
+**Not assertable here:** the nesting itself. Expanding needs a click, and
+`renderToStaticMarkup` dispatches no events. What the suite holds is the
+collapsed invariant either side of it — headers and no rows.
+
+**Walked again on 0.6.2 and it holds.** Five headers with their counts and
+measures, one group open in place, the other four intact, the caption reading
+*"5 groups · 21 records · the whole view"*. Grouping is done.
+
+**One consequence to document rather than fix.** A group larger than the page
+size pages *within itself*: Maintenance showed *5 records* in its header and
+four rows beneath it, with the pager reading *1–4 of 5*. That is expand-as-filter
+working — the group's rows are rows, and rows page — but the header count and
+what is on screen disagree, and only the pager explains it. Raising the page
+size on expand would trade one surprise for another; `docs/limitations.md` says
+so instead.
+
+## Multi-column sort
+
+Shipped because S1–S5 came back green, and it very nearly shipped on a reading
+that was wrong.
+
+**The first measurement was a false pass.** The probe sorted by
+`cll_accountname` then `cll_lastcontacted` and the rows came back in name order
+— which is exactly what a platform ignoring the second entry would also
+produce, because every name in that view was distinct and the secondary sort
+never had a tie to break. Reading three green rows there and shipping would have
+put a rank indicator over an order the platform had quietly collapsed: a wrong
+answer that looks completely right, and the thing S1 exists to prevent.
+
+The corrected measurement grouped the sort by a four-value Choice so the ties
+were real, then flipped **only the second entry**. The order within each group
+reversed, so the entry is honoured. The array also survived `paging.reset()` and
+a page turn, and four entries were retained with no ceiling found.
+
+**What shipped.** `enableMultiSort`, off by default. A plain click replaces the
+order exactly as 0.5.0 did, so every existing installation is unchanged;
+shift-click appends. The second activation of a column flips it, and the third
+**removes** it — with a rank on screen there is a meaningful "not sorted by
+this" state and no other way to reach it, while a single-column sort has no such
+state and still cycles. The rank renders only once more than one column is in
+the order.
+
+**`aria-sort` cannot carry it.** The attribute takes ascending, descending or
+none, so a screen reader told only that hears four columns each "sorted
+ascending" and nothing about which wins. The rank goes in the button's
+accessible name; the numeral beside the arrow is `aria-hidden`, because a reader
+hearing both would hear it twice.
+
+**The rig was wrong about this and had to be corrected.** `ordered()` honoured
+only `sorting[0]`, with a comment arguing that a view's `ORDER BY` is what the
+array holds and that a control pushing instead of replacing would build a sort
+nobody asked for. Reasonable, and measured false. A rig modelling the platform
+as somebody reasoned about it rather than as it was measured passes a control
+that cannot work — which is the whole argument for the `quirks` defaults,
+applied here to a quirk that turned out not to exist.
+`quirks.sortingHonoursMultiple` now reaches the collapsing host deliberately.
+
+### Verified on a real form
+
+Walked on the Site Visits subgrid with 0.6.3, `groupBy` empty so sorting was the
+only thing under test.
+
+With the property **off**, a heading cycled ascending and descending with one
+arrow and no rank, and shift-click behaved exactly as a plain click — the claim
+that every existing installation is unchanged. With it **on**: a plain click
+still replaced the order; shift-click appended and the ranks appeared; a second
+shift-click flipped only that column; a third removed it and the ranks
+disappeared with it, one column being left.
+
+**The tie test passed**, which is the one that matters — flipping only the second
+entry reversed the rows *within* each visit type while the visit types held
+their order. That is the measurement the first probe run could not make, and the
+reason it is worth making through the control rather than through a console
+snippet.
+
+The order survived a page turn, both ranks intact.
+
+And the accessible names carried the position `aria-sort` cannot:
+
+```
+aria-label "Sorted by Outcome, 1 of 2"   aria-sort "ascending"
+aria-label "Sorted by Subject, 2 of 2"   aria-sort "ascending"
+dataset.sorting  [cll_outcome:0, subject:0]
+```
+
+Worth noting because it reads as a discrepancy and is not: the DOM lists Subject
+first, because it is the leftmost **column**, while the ranks say Outcome is
+first in the **sort**. Column order and sort order are different things, and the
+rank tracks the sort.
+
+### Not verified in multi-column sort
+
+- **Canvas.** S7 was never asked. Whether `dataset.sorting` is honoured there at
+  all is unknown, let alone with several entries.
+- **A ceiling.** Four entries were retained; nobody pushed until something
+  broke, so the UI imposes no cap and the docs claim none.
+- **A `disableSorting` column in the order.** S6 was skipped at probe time and
+  step 7 of the walkthrough could not be run either — **neither test view has a
+  column the platform refuses to sort**. Whether one poisons the whole array is
+  unmeasured. The control never offers those headings a sort control, so
+  reaching it would take a deliberate push, which is the only reason this is not
+  a blocker.
+- **Discoverability.** Shift-click has no visible affordance, and no reader has
+  been watched trying to find it.
+
+## The full-view export
+
+The last of the four, and the only one that re-enters `updateView` on purpose.
+
+**The common case stopped being a state machine.** E2 measured
+`setPageSize(250)` honoured and echoed back, so a view of 250 rows or fewer is
+one request and no loop. The machine below runs only for the long case.
+
+**The re-entry guard generalises `appliedPageSize`.** A field holding the page
+already asked for, compared before asking again — exactly one fetch outstanding,
+the page number strictly increasing. Without it `updateView`, which fires on
+every dataset change including the ones the export caused, asks for the same
+page forever.
+
+### The bug the rig found, which the rig could not previously reach
+
+`docs/limitations.md` has said since 0.2.0 that **the platform may return fewer
+rows per page than asked for**. The rig had no way to model it, so the export
+always finished in one fetch against a twelve-row fixture and the loop it exists
+for was never driven round a second time.
+
+Adding `quirks.maxPageSize` — modelling documented behaviour, not inventing a
+hostile host — broke it immediately. `nextPageFor` computed the page count by
+dividing `totalResultCount` by the size it had **requested**, so on any view the
+platform paged more tightly it concluded one page covered everything and wrote a
+**silently truncated file**. The worst shape this feature could fail in: the
+export looks like it worked.
+
+**The fix is to ask rather than compute.** `hasNextPage` is the platform's own
+answer to the only question that matters, needs no arithmetic, and is right
+whether or not the count is available — `totalResultCount` is `-1` when the
+platform declines to count. The 10,000-row ceiling stays as the backstop for a
+host whose `hasNextPage` never goes false.
+
+### Not verified in the export
+
+- **Anything on a form.** The whole feature is rig-only so far.
+- **How long a page actually takes.** E1's readings were swamped by the probe's
+  own settle, so a forty-page export's cost is genuinely unknown — which is why
+  there is a page counter and a Stop at all.
+- **The *Stopping* label.** Cancelling takes effect on the next pass, and in the
+  rig a fetch resolves synchronously, so there is no pass between the cancel and
+  the finish for the label to render in. On a form, where a page takes seconds,
+  it is the whole point. What the suite does hold is that the cancel is obeyed:
+  ten rows collected of twelve, and the page size restored.
+- **The watchdog.** Thirty seconds is reasoned from the 3–14s refreshes measured
+  on the probe subgrid; no page has ever actually stalled.
+- **Whether `loadExactPage` is throttled in a tight loop.** E1 measured eight
+  pages with a settle between each; forty in a row is a different regime.

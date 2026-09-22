@@ -1,4 +1,7 @@
 import * as React from 'react';
+import { AliasPlan, GroupReading, GroupSource } from '../group/types';
+import { expandConditions, groupRecords, GroupSort, sortGroups } from '../group/group';
+import { Condition } from '../query/fetchXml';
 import { FluentProvider, webLightTheme } from '@fluentui/react-components';
 import {
     cellKey,
@@ -481,9 +484,41 @@ function Chevron(props: { d: string }): React.ReactElement {
 type Column = ComponentFramework.PropertyHelper.DataSetApi.Column;
 type DataSet = ComponentFramework.PropertyTypes.DataSet;
 
+/** What a route run produced, and which route it was. */
+export interface GroupAnswer {
+    readings: GroupReading[];
+    source: GroupSource;
+    /** A server sentence fit to show, or `null`. See `isRenderableMessage`. */
+    message: string | null;
+}
+
+/** The server route, handed down as something to run rather than something run. */
+export interface GroupRoute {
+    /** Everything the answer depends on; a change re-runs it and drops a stale one. */
+    key: string;
+    load: () => Promise<GroupAnswer>;
+}
+
 export interface IProps {
     dataset: DataSet;
     columns: Column[];
+    /**
+     * The server route, or `null` when it is withheld.
+     *
+     * A **loader**, not an answer, and deliberately: storing the resolved
+     * groups on the control instance and calling `notifyOutputChanged()` to
+     * get a repaint does not work, because that call announces that *outputs*
+     * changed and these did not — so the platform has no reason to call
+     * `updateView` again. `pcf-kanban-board` learned this the expensive way
+     * and `pcf-chart-view` copies it. The component owns the async state.
+     */
+    groupRoute: GroupRoute | null;
+    /** How the group headers are ordered. */
+    groupSort: GroupSort;
+    /** The aliases in play, or `null` when nothing is grouped. */
+    groupPlan: AliasPlan | null;
+    /** Expand one group, or `null` to collapse. */
+    onExpand: (conditions: Condition[] | null) => void;
     /** Which columns stick, how wide they are, and how far in they sit. */
     pins: PinPlan;
     pageIds: string[];
@@ -505,7 +540,10 @@ export interface IProps {
     isRTL: boolean;
     theme: Record<string, string> | undefined;
     getString: (id: string) => string;
-    onSort: (columnName: string) => void;
+    /** `additive` appends to the order rather than replacing it. */
+    onSort: (columnName: string, additive: boolean) => void;
+    /** Whether the host and the maker both allow more than one sort column. */
+    canMultiSort: boolean;
     onFilter: (columnName: string, value: string) => void;
     onFilterOp: (columnName: string, op: DateOp) => void;
     onClearFilter: (columnName: string) => void;
@@ -513,6 +551,21 @@ export interface IProps {
     onGoToPage: (page: number) => void;
     onPageSize: (size: number) => void;
     onExport: () => void;
+    /** Stop a running full-view export. It cannot abort the fetch in flight. */
+    onCancelExport: () => void;
+
+    /**
+     * Format an aggregate for display on the browser route.
+     *
+     * The server route brings formatted values back with the FetchXML answer;
+     * this route computes its own and has nothing to format them with, because
+     * an aggregate belongs to no record. Supplied from `context.formatting`.
+     */
+    formatNumber: (value: number, column: string) => string;
+    /** Non-null while a full-view export is running. */
+    exporting: { page: number; rows: number; stopping: boolean } | null;
+    /** A sentence about the last export — capped, or failed — or `''`. */
+    exportNote: string;
     onNextPage: () => void;
     onPreviousPage: () => void;
     onToggleRow: (id: string) => void;
@@ -1060,509 +1113,123 @@ function useIndeterminate(state: 'none' | 'some' | 'all'): React.RefObject<HTMLI
     return ref;
 }
 
-export function DataTableControl(props: IProps): React.ReactElement | null {
-    const { dataset, columns, pageIds, getString } = props;
 
-    const [selected, setSelected] = useMirroredSelection(props.selected);
-    const [filters, setFilter, filterOps, setFilterOp] = useMirroredFilters(
-        props.filters,
-        props.filterOps,
-    );
-    const checkState = headerCheckState(selected, pageIds);
-    const headerRef = useIndeterminate(checkState);
-    // Before every early return: hooks cannot be conditional.
-    const edit = useEditing(props);
-    const choiceOptions = useChoiceOptions(props);
-    // Whether the lookup dialog is up. One flag rather than one per cell:
-    // the dialog is modal, so at most one cell is choosing at a time.
-    const [picking, setPicking] = React.useState(false);
-    const [creating, setCreating] = React.useState(false);
-    const [createFailure, setCreateFailure] = React.useState<string | null>(null);
+/**
+ * The groups, from whichever route can answer.
+ *
+ * **Both routes are prepared on every pass and the browser one always runs.**
+ * That is not belt-and-braces: the browser route is the only route canvas
+ * gets, it is what stands in while the server route is in flight, and it is
+ * the fallback for every refusal. The server route replaces its answer when it
+ * lands, and `source` records which one the reader is looking at — which the
+ * caption then says out loud, because a page-sized total shown as the whole is
+ * the bug this entire design exists to prevent.
+ *
+ * Keyed on `route.key`, which concatenates the spec, the view, the filter and
+ * the parent record. An `alive` flag drops an answer for a key that has since
+ * changed, so a slow query for an old filter cannot overwrite a fast one for
+ * the current filter.
+ */
+function useGroups(props: IProps): { readings: GroupReading[]; source: GroupSource; message: string | null; loading: boolean } {
+    const { dataset, groupPlan, groupRoute, groupSort, pageIds } = props;
+    const [answer, setAnswer] = React.useState<GroupAnswer | null>(null);
+    const [loading, setLoading] = React.useState(false);
+    const key = groupRoute ? groupRoute.key : '';
 
-    /**
-     * The New button. `creating` disables it while the quick create form is
-     * up, because a second click would open a second form over the first.
-     * A dismissed form resolves `null` and is not a failure; a form the
-     * platform would not open is, and it is said under the button rather than
-     * lost in the console.
-     */
-    const create = (): void => {
-        setCreating(true);
-        setCreateFailure(null);
+    React.useEffect(() => {
+        if (!groupRoute) {
+            setAnswer(null);
 
-        props.onCreate().then(
-            () => setCreating(false),
-            (error: unknown) => {
-                setCreating(false);
-                setCreateFailure(
-                    (error as Error)?.message || getString('DataTable_CreateFailed'),
-                );
-            },
-        );
-    };
-
-    // Whether the reader has narrowed the view themselves. It decides whether
-    // an empty result is "this view is empty" or "your filters matched nothing"
-    // — and, below, whether the table is drawn at all when nothing came back.
-    const filtered = Object.values(props.filters).some((value) => value.trim() !== '');
-
-    // Canvas relies on this; a model-driven form hides the section itself, so
-    // honouring it costs a line and covers both hosts.
-    if (!props.visible) {
-        return null;
-    }
-
-    const frame = (content: React.ReactElement): React.ReactElement => (
-        <FluentProvider theme={props.theme ?? webLightTheme} dir={props.isRTL ? 'rtl' : 'ltr'}>
-            {/*
-              **The measured width, as a pixel ceiling.** Without it the scroll
-              wrapper's `overflow-x: auto` is inert: a form section can hand a
-              control a shrink-to-fit parent, which takes its width *from* its
-              content, so `width: 100%` here resolves against a number this
-              control produced. The table then draws wider than its box, an
-              ancestor clips it, and no scrollbar appears — observed on a real
-              subgrid, 2026-09-09. Nothing written in CSS breaks that circle;
-              the way out is a number from outside it.
-            */}
-            <div
-                className="DataTable"
-                style={props.maxWidth ? { maxWidth: `${props.maxWidth}px` } : undefined}
-            >
-                {content}
-            </div>
-        </FluentProvider>
-    );
-
-    if (dataset.error) {
-        return frame(
-            <p className="DataTable-message DataTable-error">
-                {dataset.errorMessage || getString('DataTable_Error')}
-            </p>,
-        );
-    }
-
-    // A canvas app supplies only the columns the maker picked in the Items
-    // Fields flyout. None picked is a real state, and a bare <table> with a
-    // header row and no cells reads as a broken control rather than as a
-    // configuration the maker still has to finish.
-    if (columns.length === 0) {
-        return frame(
-            <p className="DataTable-message">
-                {dataset.loading ? getString('DataTable_Loading') : getString('DataTable_NoColumns')}
-            </p>,
-        );
-    }
-
-    /*
-     * `loading` is true on the first updateView, before any records arrive, so
-     * rendering the empty state here would flash "No records" on every load.
-     *
-     * **The `!filtered` is load-bearing and not a tidy-up.** The filter boxes
-     * live in `<thead>`, so returning a bare message here at the moment a
-     * filter matches nothing would delete the only UI that can clear it: the
-     * reader types one character too many and the control becomes a dead end
-     * with no way back to their own data. When a filter is in force the table
-     * is drawn regardless, and the message goes in the body — see the empty
-     * `<tbody>` branch below.
-     */
-    if (pageIds.length === 0 && !filtered) {
-        return frame(
-            <p className="DataTable-message">
-                {dataset.loading ? getString('DataTable_Loading') : getString('DataTable_Empty')}
-            </p>,
-        );
-    }
-
-    const primary = primaryColumn(columns);
-    const selectable = props.selectionMode !== 'none';
-    const multiple = props.selectionMode === 'multiple';
-    const pins = props.pins;
-
-    /*
-     * **Two width systems, and only one of them is in force at a time.**
-     *
-     * Unpinned, this is exactly what 0.2.0 did: `columnWidths` turns
-     * `visualSizeFactor` into percentages, or returns `null` where the host set
-     * no factors at all and the browser's own table layout is the better answer.
-     *
-     * Pinned, the plan owns every width — because a pinned column needs pixels
-     * for its sticky offset to mean anything, and the loose columns then have to
-     * divide what is left rather than the whole table. Mixing the two by hand at
-     * this level is how the layout drifts wider on every render.
-     */
-    const widths = pins.none ? columnWidths(columns) : pins.columns.map((pin) => pin.width);
-    const minWidth = pins.none ? tableMinWidth(columns.length, selectable) : pins.minWidth;
-    const selectPin = pins.selectPinned ? SELECT_PIN : undefined;
-
-    const toggleRow = (id: string): void => {
-        props.onToggleRow(id);
-        setSelected(
-            selected.includes(id)
-                ? selected.filter((existing) => existing !== id)
-                : multiple
-                  ? [...selected, id]
-                  : [id],
-        );
-    };
-
-    const toggleAll = (): void => {
-        const selectAll = checkState !== 'all';
-        props.onToggleAll(pageIds, selectAll);
-        setSelected(selectAll ? [...new Set([...selected, ...pageIds])] : []);
-    };
-
-    const sortFor = (column: Column): 'ascending' | 'descending' | 'none' => {
-        // `sorting` is typed as a required array, and the local test harness
-        // supplies `undefined` for it — so this reads through a fallback.
-        // Without it `npm start` throws a TypeError the harness swallows, and
-        // the control renders as an empty box with nothing in the console.
-        const status = (dataset.sorting ?? []).find((entry) => entry.name === column.name);
-
-        if (!status) {
-            return 'none';
+            return undefined;
         }
 
-        return status.sortDirection === DESCENDING ? 'descending' : 'ascending';
-    };
+        let alive = true;
 
-    return frame(
-        <>
-            <div className={dataset.loading ? 'DataTable-scroll is-loading' : 'DataTable-scroll'}>
-                {/*
-                  The minimum is what makes the wrapper's `overflow-x: auto` do
-                  anything at all — see `tableMinWidth`. Inline rather than in
-                  the stylesheet because it depends on how many columns the view
-                  has, which CSS cannot count.
-                */}
-                <table
-                    className="DataTable-table"
-                    style={{ minWidth: `${minWidth}px` }}
-                >
-                    <caption className="DataTable-caption">{dataset.getTitle()}</caption>
+        setLoading(true);
+        groupRoute.load().then(
+            (next) => {
+                if (alive) {
+                    setAnswer(next);
+                    setLoading(false);
+                }
+            },
+            () => {
+                // `load` is written not to reject; this is the guard for a
+                // host that throws somewhere unmodelled rather than a path.
+                if (alive) {
+                    setAnswer(null);
+                    setLoading(false);
+                }
+            },
+        );
 
-                    {widths && (
-                        <colgroup>
-                            {selectable && <col className="DataTable-selectCol" />}
-                            {widths.map((width, index) => (
-                                <col
-                                    key={columns[index].name}
-                                    // `null` is a real entry: the plan leaves a
-                                    // loose column unmeasured where the host set
-                                    // no factors, and React drops an undefined
-                                    // width rather than writing `width: null`.
-                                    style={{ width: width ?? undefined }}
-                                />
-                            ))}
-                        </colgroup>
-                    )}
+        return () => {
+            alive = false;
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [key]);
 
-                    <thead>
-                        <tr>
-                            {selectable && (
-                                <th scope="col" {...pinCell(selectPin, 'DataTable-selectCell')}>
-                                    {multiple && (
-                                        <input
-                                            ref={headerRef}
-                                            type="checkbox"
-                                            checked={checkState === 'all'}
-                                            disabled={props.disabled}
-                                            aria-label={getString('DataTable_SelectAll')}
-                                            onChange={toggleAll}
-                                        />
-                                    )}
-                                </th>
-                            )}
+    return React.useMemo(() => {
+        if (!groupPlan) {
+            return { readings: [], source: 'client' as GroupSource, message: null, loading: false };
+        }
 
-                            {columns.map((column, index) => {
-                                const sorted = sortFor(column);
-                                // The fixture format cannot express a
-                                // non-sortable column, so undefined means
-                                // sortable — which is also what a view reports
-                                // for an ordinary column.
-                                const sortable = props.enableSorting && !column.disableSorting;
+        if (answer && answer.source === 'server') {
+            return {
+                readings: sortGroups(answer.readings, groupSort),
+                source: answer.source,
+                message: answer.message,
+                loading: false,
+            };
+        }
 
-                                return (
-                                    <th
-                                        key={column.name}
-                                        scope="col"
-                                        aria-sort={sortable ? sorted : undefined}
-                                        {...pinCell(pins.columns[index])}
-                                    >
-                                        {sortable ? (
-                                            <button
-                                                type="button"
-                                                className="DataTable-sort"
-                                                title={getString('DataTable_SortBy').replace(
-                                                    '{0}',
-                                                    column.displayName,
-                                                )}
-                                                onClick={(): void => props.onSort(column.name)}
-                                            >
-                                                <span>{column.displayName}</span>
-                                                <span aria-hidden="true" className="DataTable-arrow">
-                                                    {sorted === 'ascending'
-                                                        ? '▲'
-                                                        : sorted === 'descending'
-                                                          ? '▼'
-                                                          : ''}
-                                                </span>
-                                            </button>
-                                        ) : (
-                                            column.displayName
-                                        )}
-                                    </th>
-                                );
-                            })}
-                        </tr>
+        /*
+         * The browser route, over the rows actually loaded. Honest about what
+         * it can see, and the caption is what makes that honesty visible.
+         */
+        const records = pageIds
+            .map((id) => dataset.records[id])
+            .filter((record) => Boolean(record));
 
-                        {/*
-                          A second row in the same `<thead>`, which inherits the
-                          `<colgroup>` alignment above rather than needing its
-                          own — including the leading select column, which is
-                          why the empty `<th>` below is not optional.
-                        */}
-                        {props.enableFiltering && (
-                            <tr className="DataTable-filterRow">
-                                {selectable && <th {...pinCell(selectPin, 'DataTable-selectCell')} />}
+        return {
+            readings: sortGroups(
+                groupRecords(
+                    records as never[],
+                    groupPlan,
+                    props.getString('DataTable_GroupBlank'),
+                    props.formatNumber,
+                ),
+                groupSort,
+            ),
+            source: (answer ? answer.source : 'client') as GroupSource,
+            message: answer ? answer.message : null,
+            loading,
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [answer, groupPlan, groupSort, pageIds, loading, dataset]);
+}
 
-                                {columns.map((column, index) => {
-                                    const kind = filterKindFor(column);
-                                    const options = choiceOptions.get(column.name);
+export function DataTableControl(props: IProps): React.ReactElement | null {
+    /*
+     * Grouping. `grouped` decides whether the table is a list of rows or a
+     * list of groups — they are never both, which is what keeps paging and
+     * grouping from having to be reconciled.
+     */
+    const groups = useGroups(props);
+    const grouped = Boolean(props.groupPlan) && props.groupPlan!.groups.length > 0;
+    const [expandedKey, setExpandedKey] = React.useState<string | null>(null);
+    const { groupPlan, onExpand } = props;
 
-                                    /*
-                                      A choice column can carry a box only once
-                                      its options are here: nothing on a host
-                                      without `utils`, nothing while they load,
-                                      nothing when the list came back empty.
-                                      Read-only is the fallback for all three.
-                                    */
-                                    const withheld =
-                                        kind === 'choice' && !(options && options.length > 0);
-
-                                    if (kind === 'none' || withheld) {
-                                        /*
-                                          Empty, and it has to say why. A blank
-                                          cell between two filter boxes reads as
-                                          a box that failed to render — on the
-                                          first real form it was the thing that
-                                          looked broken — so it carries the
-                                          reason on hover and a dash for the eye.
-                                        */
-                                        return (
-                                            <th
-                                                key={column.name}
-                                                title={getString('DataTable_Unfilterable').replace(
-                                                    '{0}',
-                                                    column.displayName,
-                                                )}
-                                                {...pinCell(
-                                                    pins.columns[index],
-                                                    'DataTable-filterNone',
-                                                )}
-                                            >
-                                                <span aria-hidden="true">—</span>
-                                            </th>
-                                        );
-                                    }
-
-                                    const label = (
-                                        kind === 'number'
-                                            ? getString('DataTable_FilterNumberHint')
-                                            : kind === 'date'
-                                              ? getString('DataTable_FilterDateHint')
-                                              : getString('DataTable_FilterColumn')
-                                    ).replace('{0}', column.displayName);
-
-                                    /*
-                                      The choice box has no clear cross: "Any"
-                                      is the clear, and it is the first entry so
-                                      that a box nobody has touched reads as a
-                                      choice made rather than as a box that is
-                                      empty.
-                                    */
-                                    if (kind === 'choice') {
-                                        return (
-                                            <th key={column.name} {...pinCell(pins.columns[index])}>
-                                                <select
-                                                    className="DataTable-filter DataTable-filterSelect"
-                                                    value={filters[column.name] ?? ''}
-                                                    disabled={props.disabled}
-                                                    aria-label={label}
-                                                    title={label}
-                                                    onChange={(event): void => {
-                                                        setFilter(column.name, event.target.value);
-                                                        props.onFilter(column.name, event.target.value);
-                                                    }}
-                                                >
-                                                    <option value="">
-                                                        {getString('DataTable_FilterAny')}
-                                                    </option>
-                                                    {(options ?? []).map((option) => (
-                                                        <option
-                                                            key={option.value}
-                                                            value={String(option.value)}
-                                                        >
-                                                            {option.label}
-                                                        </option>
-                                                    ))}
-                                                </select>
-                                            </th>
-                                        );
-                                    }
-
-                                    const op = filterOps[column.name] ?? 'on';
-                                    const opLabel = getString(
-                                        op === 'from'
-                                            ? 'DataTable_DateFrom'
-                                            : op === 'until'
-                                              ? 'DataTable_DateUntil'
-                                              : 'DataTable_DateOn',
-                                    );
-
-                                    return (
-                                        <th key={column.name} {...pinCell(pins.columns[index])}>
-                                            <span className={
-                                                kind === 'date'
-                                                    ? 'DataTable-filterBox DataTable-filterDate'
-                                                    : 'DataTable-filterBox'
-                                            }>
-                                            {/*
-                                              The toggle leads the box, so the
-                                              cell reads as a sentence — "From
-                                              2026-03-01" — and so the date
-                                              input's own picker icon, which
-                                              Chromium draws at the trailing
-                                              edge, does not collide with it.
-                                            */}
-                                            {kind === 'date' && (
-                                                <button
-                                                    type="button"
-                                                    className="DataTable-filterOp"
-                                                    disabled={props.disabled}
-                                                    aria-label={getString('DataTable_DateOpHint').replace(
-                                                        '{0}',
-                                                        column.displayName,
-                                                    )}
-                                                    title={getString('DataTable_DateOpHint').replace(
-                                                        '{0}',
-                                                        column.displayName,
-                                                    )}
-                                                    onClick={(): void => {
-                                                        const next = nextDateOp(op);
-
-                                                        setFilterOp(column.name, next);
-                                                        props.onFilterOp(column.name, next);
-                                                    }}
-                                                >
-                                                    {/*
-                                                      The word, and the sign
-                                                      the stylesheet swaps in
-                                                      when the cell is too
-                                                      narrow for the word. The
-                                                      accessible name is the
-                                                      hint above either way.
-                                                    */}
-                                                    <span className="DataTable-filterOpWord">{opLabel}</span>
-                                                    <span className="DataTable-filterOpSign" aria-hidden="true">
-                                                        {op === 'from' ? '≥' : op === 'until' ? '≤' : '='}
-                                                    </span>
-                                                </button>
-                                            )}
-                                            <input
-                                                type={kind === 'date' ? 'date' : 'text'}
-                                                className="DataTable-filter"
-                                                value={filters[column.name] ?? ''}
-                                                disabled={props.disabled}
-                                                aria-label={label}
-                                                title={label}
-                                                /*
-                                                  A visible placeholder, not only
-                                                  the accessible name. Without it
-                                                  the row is a line of empty
-                                                  boxes with no stated purpose,
-                                                  which is what it looked like on
-                                                  the first real form.
-                                                */
-                                                placeholder={
-                                                    kind === 'number'
-                                                        ? getString('DataTable_FilterNumberPlaceholder')
-                                                        : kind === 'date'
-                                                          // A date input draws its own
-                                                          // mask and ignores this.
-                                                          ? undefined
-                                                          : getString('DataTable_FilterPlaceholder')
-                                                }
-                                                onChange={(event): void => {
-                                                    setFilter(column.name, event.target.value);
-                                                    props.onFilter(column.name, event.target.value);
-                                                }}
-                                            />
-
-                                            {/*
-                                              Only once there is something to
-                                              clear. A cross sitting in an empty
-                                              box is a control that does nothing,
-                                              and it would compete with the
-                                              placeholder for the same few
-                                              pixels.
-                                            */}
-                                            {(filters[column.name] ?? '') !== '' && !props.disabled && (
-                                                <button
-                                                    type="button"
-                                                    className="DataTable-filterClear"
-                                                    aria-label={getString(
-                                                        'DataTable_ClearFilter',
-                                                    ).replace('{0}', column.displayName)}
-                                                    title={getString('DataTable_ClearFilter').replace(
-                                                        '{0}',
-                                                        column.displayName,
-                                                    )}
-                                                    onClick={(): void => {
-                                                        setFilter(column.name, '');
-                                                        props.onClearFilter(column.name);
-                                                    }}
-                                                >
-                                                    <ClearGlyph />
-                                                </button>
-                                            )}
-                                            </span>
-                                        </th>
-                                    );
-                                })}
-                            </tr>
-                        )}
-                    </thead>
-
-                    <tbody>
-                        {/*
-                          The other half of the early-return fix above: the
-                          table is standing, so the reason there are no rows
-                          goes in it. Naming the filters rather than saying "no
-                          records" is the difference between a reader reaching
-                          for the boxes they filled and one concluding the view
-                          is empty.
-                        */}
-                        {pageIds.length === 0 && (
-                            <tr>
-                                <td colSpan={columns.length + (selectable ? 1 : 0)}>
-                                    <span className="DataTable-message">
-                                        {dataset.loading
-                                            ? getString('DataTable_Loading')
-                                            : getString('DataTable_NoMatches')}
-                                    </span>{' '}
-                                    <button
-                                        type="button"
-                                        className="DataTable-clearFilters"
-                                        disabled={props.disabled}
-                                        onClick={props.onClearFilters}
-                                    >
-                                        {getString('DataTable_ClearFilters')}
-                                    </button>
-                                </td>
-                            </tr>
-                        )}
-
-                        {pageIds.map((id) => {
+    /*
+     * The member rows.
+     *
+     * Extracted so a grouped table can put them **under their own group
+     * header** rather than after every header. The first version rendered all
+     * headers and then all rows, which was fine while collapsed and wrong the
+     * moment one opened.
+     */
+    const memberRows = () => {
+                            return pageIds.map((id) => {
                             const record = dataset.records[id];
 
                             if (!record) {
@@ -1923,11 +1590,824 @@ export function DataTableControl(props: IProps): React.ReactElement | null {
                                     })}
                                 </tr>
                             );
+                        })
+;
+    };
+
+
+    const { dataset, columns, pageIds, getString } = props;
+
+    const [selected, setSelected] = useMirroredSelection(props.selected);
+    const [filters, setFilter, filterOps, setFilterOp] = useMirroredFilters(
+        props.filters,
+        props.filterOps,
+    );
+    const checkState = headerCheckState(selected, pageIds);
+    const headerRef = useIndeterminate(checkState);
+    // Before every early return: hooks cannot be conditional.
+    const edit = useEditing(props);
+    const choiceOptions = useChoiceOptions(props);
+    // Whether the lookup dialog is up. One flag rather than one per cell:
+    // the dialog is modal, so at most one cell is choosing at a time.
+    const [picking, setPicking] = React.useState(false);
+    const [creating, setCreating] = React.useState(false);
+    const [createFailure, setCreateFailure] = React.useState<string | null>(null);
+
+    /**
+     * The New button. `creating` disables it while the quick create form is
+     * up, because a second click would open a second form over the first.
+     * A dismissed form resolves `null` and is not a failure; a form the
+     * platform would not open is, and it is said under the button rather than
+     * lost in the console.
+     */
+    const create = (): void => {
+        setCreating(true);
+        setCreateFailure(null);
+
+        props.onCreate().then(
+            () => setCreating(false),
+            (error: unknown) => {
+                setCreating(false);
+                setCreateFailure(
+                    (error as Error)?.message || getString('DataTable_CreateFailed'),
+                );
+            },
+        );
+    };
+
+    // Whether the reader has narrowed the view themselves. It decides whether
+    // an empty result is "this view is empty" or "your filters matched nothing"
+    // — and, below, whether the table is drawn at all when nothing came back.
+    const filtered = Object.values(props.filters).some((value) => value.trim() !== '');
+
+    // Canvas relies on this; a model-driven form hides the section itself, so
+    // honouring it costs a line and covers both hosts.
+    if (!props.visible) {
+        return null;
+    }
+
+    const frame = (content: React.ReactElement): React.ReactElement => (
+        <FluentProvider theme={props.theme ?? webLightTheme} dir={props.isRTL ? 'rtl' : 'ltr'}>
+            {/*
+              **The measured width, as a pixel ceiling.** Without it the scroll
+              wrapper's `overflow-x: auto` is inert: a form section can hand a
+              control a shrink-to-fit parent, which takes its width *from* its
+              content, so `width: 100%` here resolves against a number this
+              control produced. The table then draws wider than its box, an
+              ancestor clips it, and no scrollbar appears — observed on a real
+              subgrid, 2026-09-09. Nothing written in CSS breaks that circle;
+              the way out is a number from outside it.
+            */}
+            <div
+                className="DataTable"
+                style={props.maxWidth ? { maxWidth: `${props.maxWidth}px` } : undefined}
+            >
+                {content}
+            </div>
+        </FluentProvider>
+    );
+
+    if (dataset.error) {
+        return frame(
+            <p className="DataTable-message DataTable-error">
+                {dataset.errorMessage || getString('DataTable_Error')}
+            </p>,
+        );
+    }
+
+    // A canvas app supplies only the columns the maker picked in the Items
+    // Fields flyout. None picked is a real state, and a bare <table> with a
+    // header row and no cells reads as a broken control rather than as a
+    // configuration the maker still has to finish.
+    if (columns.length === 0) {
+        return frame(
+            <p className="DataTable-message">
+                {dataset.loading ? getString('DataTable_Loading') : getString('DataTable_NoColumns')}
+            </p>,
+        );
+    }
+
+    /*
+     * `loading` is true on the first updateView, before any records arrive, so
+     * rendering the empty state here would flash "No records" on every load.
+     *
+     * **The `!filtered` is load-bearing and not a tidy-up.** The filter boxes
+     * live in `<thead>`, so returning a bare message here at the moment a
+     * filter matches nothing would delete the only UI that can clear it: the
+     * reader types one character too many and the control becomes a dead end
+     * with no way back to their own data. When a filter is in force the table
+     * is drawn regardless, and the message goes in the body — see the empty
+     * `<tbody>` branch below.
+     */
+    if (pageIds.length === 0 && !filtered) {
+        return frame(
+            <p className="DataTable-message">
+                {dataset.loading ? getString('DataTable_Loading') : getString('DataTable_Empty')}
+            </p>,
+        );
+    }
+
+    const primary = primaryColumn(columns);
+    const selectable = props.selectionMode !== 'none';
+    const multiple = props.selectionMode === 'multiple';
+    const pins = props.pins;
+
+    /*
+     * **Two width systems, and only one of them is in force at a time.**
+     *
+     * Unpinned, this is exactly what 0.2.0 did: `columnWidths` turns
+     * `visualSizeFactor` into percentages, or returns `null` where the host set
+     * no factors at all and the browser's own table layout is the better answer.
+     *
+     * Pinned, the plan owns every width — because a pinned column needs pixels
+     * for its sticky offset to mean anything, and the loose columns then have to
+     * divide what is left rather than the whole table. Mixing the two by hand at
+     * this level is how the layout drifts wider on every render.
+     */
+    const widths = pins.none ? columnWidths(columns) : pins.columns.map((pin) => pin.width);
+    const minWidth = pins.none ? tableMinWidth(columns.length, selectable) : pins.minWidth;
+    const selectPin = pins.selectPinned ? SELECT_PIN : undefined;
+
+    const toggleRow = (id: string): void => {
+        props.onToggleRow(id);
+        setSelected(
+            selected.includes(id)
+                ? selected.filter((existing) => existing !== id)
+                : multiple
+                  ? [...selected, id]
+                  : [id],
+        );
+    };
+
+    const toggleAll = (): void => {
+        const selectAll = checkState !== 'all';
+        props.onToggleAll(pageIds, selectAll);
+        setSelected(selectAll ? [...new Set([...selected, ...pageIds])] : []);
+    };
+
+    const sortFor = (column: Column): 'ascending' | 'descending' | 'none' => {
+        // `sorting` is typed as a required array, and the local test harness
+        // supplies `undefined` for it — so this reads through a fallback.
+        // Without it `npm start` throws a TypeError the harness swallows, and
+        // the control renders as an empty box with nothing in the console.
+        const status = (dataset.sorting ?? []).find((entry) => entry.name === column.name);
+
+        if (!status) {
+            return 'none';
+        }
+
+        return status.sortDirection === DESCENDING ? 'descending' : 'ascending';
+    };
+
+    /*
+      **A running export draws no rows.**
+
+      Reported from a real form, 2026-09-21: *"I cannot stop it mid-run,
+      because the table grows vertically too fast and the button scrolls out of
+      sight."* The export raises the page size to 250 to read efficiently, and
+      the pager — which is where the progress and the **Stop** live — renders
+      *after* the table. So the one control that can end a long export is
+      pushed below the fold by the export itself.
+
+      Drawing the rows was never worth anything here. They are pages the reader
+      did not ask to see, replaced every round trip, and scrolling past them to
+      reach Stop is the only interaction they support. A short panel keeps the
+      control its normal height, keeps Stop under the reader's cursor, and skips
+      250 rows of rendering per page while it is at it.
+
+      The rows come back the moment the export ends, on the page the reader
+      started from — see `restorePlan`.
+    */
+    if (props.exporting) {
+        return frame(
+            <div className="DataTable-exporting" role="status" aria-live="polite">
+                {getString('DataTable_ExportProgress')
+                    .replace('{0}', String(props.exporting.page))
+                    .replace('{1}', String(props.exporting.rows))}
+                <button
+                    type="button"
+                    className="DataTable-exportCancel"
+                    disabled={props.exporting.stopping}
+                    onClick={props.onCancelExport}
+                >
+                    {/*
+                      `stopping` has been unreachable since 0.6.6: Stop finishes
+                      the export where it stands rather than waiting for the
+                      page in flight, so there is no interval to report. The
+                      branch stays because the string does, and because a future
+                      host that *can* abort a fetch would want it back.
+                    */}
+                    {getString(props.exporting.stopping
+                        ? 'DataTable_ExportStopping'
+                        : 'DataTable_ExportCancel')}
+                </button>
+            </div>,
+        );
+    }
+
+    return frame(
+        <>
+            <div className={dataset.loading ? 'DataTable-scroll is-loading' : 'DataTable-scroll'}>
+                {/*
+                  The minimum is what makes the wrapper's `overflow-x: auto` do
+                  anything at all — see `tableMinWidth`. Inline rather than in
+                  the stylesheet because it depends on how many columns the view
+                  has, which CSS cannot count.
+                */}
+                <table
+                    className="DataTable-table"
+                    style={{ minWidth: `${minWidth}px` }}
+                >
+                    <caption className="DataTable-caption">{dataset.getTitle()}</caption>
+
+                    {widths && (
+                        <colgroup>
+                            {selectable && <col className="DataTable-selectCol" />}
+                            {widths.map((width, index) => (
+                                <col
+                                    key={columns[index].name}
+                                    // `null` is a real entry: the plan leaves a
+                                    // loose column unmeasured where the host set
+                                    // no factors, and React drops an undefined
+                                    // width rather than writing `width: null`.
+                                    style={{ width: width ?? undefined }}
+                                />
+                            ))}
+                        </colgroup>
+                    )}
+
+                    <thead>
+                        <tr>
+                            {selectable && (
+                                <th scope="col" {...pinCell(selectPin, 'DataTable-selectCell')}>
+                                    {multiple && (
+                                        <input
+                                            ref={headerRef}
+                                            type="checkbox"
+                                            checked={checkState === 'all'}
+                                            disabled={props.disabled}
+                                            aria-label={getString('DataTable_SelectAll')}
+                                            onChange={toggleAll}
+                                        />
+                                    )}
+                                </th>
+                            )}
+
+                            {columns.map((column, index) => {
+                                const sorted = sortFor(column);
+                                // The fixture format cannot express a
+                                // non-sortable column, so undefined means
+                                // sortable — which is also what a view reports
+                                // for an ordinary column.
+                                const sortable = props.enableSorting && !column.disableSorting;
+                                const order = props.dataset.sorting ?? [];
+                                const total = order.length;
+                                const rank = order.findIndex((status) => status.name === column.name) + 1;
+
+                                return (
+                                    <th
+                                        key={column.name}
+                                        scope="col"
+                                        aria-sort={sortable ? sorted : undefined}
+                                        {...pinCell(pins.columns[index])}
+                                    >
+                                        {sortable ? (
+                                            <button
+                                                type="button"
+                                                className="DataTable-sort"
+                                                title={getString('DataTable_SortBy').replace(
+                                                    '{0}',
+                                                    column.displayName,
+                                                )}
+                                                /*
+                                                 * **The rank lives in the
+                                                 * accessible name, not in
+                                                 * `aria-sort`.** That attribute
+                                                 * takes `ascending`,
+                                                 * `descending` or `none` and
+                                                 * carries no position at all,
+                                                 * so a screen reader told only
+                                                 * `aria-sort` hears four
+                                                 * columns each "sorted
+                                                 * ascending" and nothing about
+                                                 * which one wins. The numeral
+                                                 * beside the arrow is
+                                                 * `aria-hidden` for the same
+                                                 * reason it is small: it is a
+                                                 * reminder, not the answer.
+                                                 */
+                                                aria-label={rank > 0 && total > 1
+                                                    ? getString('DataTable_SortRank')
+                                                        .replace('{0}', column.displayName)
+                                                        .replace('{1}', String(rank))
+                                                        .replace('{2}', String(total))
+                                                    : undefined}
+                                                onClick={(event): void =>
+                                                    props.onSort(column.name, props.canMultiSort && event.shiftKey)}
+                                            >
+                                                <span className="DataTable-sortLabel">{column.displayName}</span>
+                                                <span aria-hidden="true" className="DataTable-arrow">
+                                                    {sorted === 'ascending'
+                                                        ? '▲'
+                                                        : sorted === 'descending'
+                                                          ? '▼'
+                                                          : ''}
+                                                </span>
+                                                {/*
+                                                  Only once there is more than
+                                                  one, so a single sort looks
+                                                  exactly as it did in 0.5.0.
+                                                */}
+                                                {total > 1 && rank > 0 && (
+                                                    <span aria-hidden="true" className="DataTable-sortRank">
+                                                        {rank}
+                                                    </span>
+                                                )}
+                                            </button>
+                                        ) : (
+                                            column.displayName
+                                        )}
+                                    </th>
+                                );
+                            })}
+                        </tr>
+
+                        {/*
+                          A second row in the same `<thead>`, which inherits the
+                          `<colgroup>` alignment above rather than needing its
+                          own — including the leading select column, which is
+                          why the empty `<th>` below is not optional.
+                        */}
+                        {props.enableFiltering && (
+                            <tr className="DataTable-filterRow">
+                                {selectable && <th {...pinCell(selectPin, 'DataTable-selectCell')} />}
+
+                                {columns.map((column, index) => {
+                                    const kind = filterKindFor(column);
+                                    const options = choiceOptions.get(column.name);
+
+                                    /*
+                                      A choice column can carry a box only once
+                                      its options are here: nothing on a host
+                                      without `utils`, nothing while they load,
+                                      nothing when the list came back empty.
+                                      Read-only is the fallback for all three.
+                                    */
+                                    const withheld =
+                                        kind === 'choice' && !(options && options.length > 0);
+
+                                    if (kind === 'none' || withheld) {
+                                        /*
+                                          Empty, and it has to say why. A blank
+                                          cell between two filter boxes reads as
+                                          a box that failed to render — on the
+                                          first real form it was the thing that
+                                          looked broken — so it carries the
+                                          reason on hover and a dash for the eye.
+                                        */
+                                        return (
+                                            <th
+                                                key={column.name}
+                                                title={getString('DataTable_Unfilterable').replace(
+                                                    '{0}',
+                                                    column.displayName,
+                                                )}
+                                                {...pinCell(
+                                                    pins.columns[index],
+                                                    'DataTable-filterNone',
+                                                )}
+                                            >
+                                                <span aria-hidden="true">—</span>
+                                            </th>
+                                        );
+                                    }
+
+                                    const label = (
+                                        kind === 'number'
+                                            ? getString('DataTable_FilterNumberHint')
+                                            : kind === 'date'
+                                              ? getString('DataTable_FilterDateHint')
+                                              : getString('DataTable_FilterColumn')
+                                    ).replace('{0}', column.displayName);
+
+                                    /*
+                                      The choice box has no clear cross: "Any"
+                                      is the clear, and it is the first entry so
+                                      that a box nobody has touched reads as a
+                                      choice made rather than as a box that is
+                                      empty.
+                                    */
+                                    if (kind === 'choice') {
+                                        return (
+                                            <th key={column.name} {...pinCell(pins.columns[index])}>
+                                                <select
+                                                    className="DataTable-filter DataTable-filterSelect"
+                                                    value={filters[column.name] ?? ''}
+                                                    disabled={props.disabled}
+                                                    aria-label={label}
+                                                    title={label}
+                                                    onChange={(event): void => {
+                                                        setFilter(column.name, event.target.value);
+                                                        props.onFilter(column.name, event.target.value);
+                                                    }}
+                                                >
+                                                    <option value="">
+                                                        {getString('DataTable_FilterAny')}
+                                                    </option>
+                                                    {(options ?? []).map((option) => (
+                                                        <option
+                                                            key={option.value}
+                                                            value={String(option.value)}
+                                                        >
+                                                            {option.label}
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                            </th>
+                                        );
+                                    }
+
+                                    const op = filterOps[column.name] ?? 'on';
+                                    const opLabel = getString(
+                                        op === 'from'
+                                            ? 'DataTable_DateFrom'
+                                            : op === 'until'
+                                              ? 'DataTable_DateUntil'
+                                              : 'DataTable_DateOn',
+                                    );
+
+                                    return (
+                                        <th key={column.name} {...pinCell(pins.columns[index])}>
+                                            <span className={
+                                                kind === 'date'
+                                                    ? 'DataTable-filterBox DataTable-filterDate'
+                                                    : 'DataTable-filterBox'
+                                            }>
+                                            {/*
+                                              The toggle leads the box, so the
+                                              cell reads as a sentence — "From
+                                              2026-03-01" — and so the date
+                                              input's own picker icon, which
+                                              Chromium draws at the trailing
+                                              edge, does not collide with it.
+                                            */}
+                                            {kind === 'date' && (
+                                                <button
+                                                    type="button"
+                                                    className="DataTable-filterOp"
+                                                    disabled={props.disabled}
+                                                    aria-label={getString('DataTable_DateOpHint').replace(
+                                                        '{0}',
+                                                        column.displayName,
+                                                    )}
+                                                    title={getString('DataTable_DateOpHint').replace(
+                                                        '{0}',
+                                                        column.displayName,
+                                                    )}
+                                                    onClick={(): void => {
+                                                        const next = nextDateOp(op);
+
+                                                        setFilterOp(column.name, next);
+                                                        props.onFilterOp(column.name, next);
+                                                    }}
+                                                >
+                                                    {/*
+                                                      The word, and the sign
+                                                      the stylesheet swaps in
+                                                      when the cell is too
+                                                      narrow for the word. The
+                                                      accessible name is the
+                                                      hint above either way.
+                                                    */}
+                                                    <span className="DataTable-filterOpWord">{opLabel}</span>
+                                                    <span className="DataTable-filterOpSign" aria-hidden="true">
+                                                        {op === 'from' ? '≥' : op === 'until' ? '≤' : '='}
+                                                    </span>
+                                                </button>
+                                            )}
+                                            <input
+                                                type={kind === 'date' ? 'date' : 'text'}
+                                                className="DataTable-filter"
+                                                value={filters[column.name] ?? ''}
+                                                disabled={props.disabled}
+                                                aria-label={label}
+                                                title={label}
+                                                /*
+                                                  A visible placeholder, not only
+                                                  the accessible name. Without it
+                                                  the row is a line of empty
+                                                  boxes with no stated purpose,
+                                                  which is what it looked like on
+                                                  the first real form.
+                                                */
+                                                placeholder={
+                                                    kind === 'number'
+                                                        ? getString('DataTable_FilterNumberPlaceholder')
+                                                        : kind === 'date'
+                                                          // A date input draws its own
+                                                          // mask and ignores this.
+                                                          ? undefined
+                                                          : getString('DataTable_FilterPlaceholder')
+                                                }
+                                                onChange={(event): void => {
+                                                    setFilter(column.name, event.target.value);
+                                                    props.onFilter(column.name, event.target.value);
+                                                }}
+                                            />
+
+                                            {/*
+                                              Only once there is something to
+                                              clear. A cross sitting in an empty
+                                              box is a control that does nothing,
+                                              and it would compete with the
+                                              placeholder for the same few
+                                              pixels.
+                                            */}
+                                            {(filters[column.name] ?? '') !== '' && !props.disabled && (
+                                                <button
+                                                    type="button"
+                                                    className="DataTable-filterClear"
+                                                    aria-label={getString(
+                                                        'DataTable_ClearFilter',
+                                                    ).replace('{0}', column.displayName)}
+                                                    title={getString('DataTable_ClearFilter').replace(
+                                                        '{0}',
+                                                        column.displayName,
+                                                    )}
+                                                    onClick={(): void => {
+                                                        setFilter(column.name, '');
+                                                        props.onClearFilter(column.name);
+                                                    }}
+                                                >
+                                                    <ClearGlyph />
+                                                </button>
+                                            )}
+                                            </span>
+                                        </th>
+                                    );
+                                })}
+                            </tr>
+                        )}
+                    </thead>
+
+                    <tbody>
+                        {/*
+                          Group headers.
+
+                          **Collapsed, they are the whole table**: the member
+                          rows below are not rendered at all until one is
+                          expanded, because an aggregate over the whole view
+                          and a server-paged list of rows are answers to
+                          different questions and mixing them is what makes
+                          grouping hard. Expanding is a *filter* — the members
+                          then arrive as ordinary paged rows with the pager
+                          scoped to that group — so the control never asks for
+                          "the rows of group X within page N".
+                        */}
+                        {grouped && groups.readings.map((reading) => {
+                            const conditions = groupPlan ? expandConditions(reading, groupPlan) : null;
+                            const open = expandedKey === reading.key;
+                            const label = reading.labels.join(' · ');
+
+                            return (
+                                <React.Fragment key={reading.key}>
+                                <tr className={'DataTable-groupRow' + (open ? ' is-open' : '')}>
+                                    <th
+                                        scope="rowgroup"
+                                        colSpan={1 + (selectable ? 1 : 0)}
+                                        className="DataTable-groupHead"
+                                    >
+                                        {/*
+                                          No chevron where the group cannot be
+                                          expressed as a filter — a date bucket
+                                          needs a `between` pair the filter
+                                          builder does not emit. A chevron that
+                                          does nothing reads as a bug; its
+                                          absence reads as a limit.
+                                        */}
+                                        {conditions !== null ? (
+                                            <button
+                                                type="button"
+                                                className="DataTable-groupChevron"
+                                                aria-expanded={open}
+                                                onClick={() => {
+                                                    setExpandedKey(open ? null : reading.key);
+                                                    onExpand(open ? null : conditions);
+                                                }}
+                                            >
+                                                <span aria-hidden="true">{open ? '▾' : '▸'}</span>
+                                                <span className="DataTable-groupLabel">{label}</span>
+                                                <span className="DataTable-visuallyHidden">
+                                                    {getString(open ? 'DataTable_GroupCollapse' : 'DataTable_GroupExpand')
+                                                        .replace('{0}', label)}
+                                                </span>
+                                            </button>
+                                        ) : (
+                                            <span className="DataTable-groupLabel">{label}</span>
+                                        )}
+
+                                        <span className="DataTable-groupCount">
+                                            {reading.count === 1
+                                                ? getString('DataTable_GroupRecord')
+                                                : getString('DataTable_GroupRecords').replace('{0}', String(reading.count))}
+                                        </span>
+                                    </th>
+
+                                    {/*
+                                      Each measure under its own column
+                                      heading, so `sum:revenue` sits above the
+                                      revenue column and the header reads as
+                                      the subtotal row it is. A column with no
+                                      measure gets an empty cell rather than
+                                      being skipped, or the alignment collapses.
+
+                                      **Every measure on that column, not the
+                                      first.** This used to be a `findIndex`,
+                                      which meant `sum:revenue, avg:revenue`
+                                      rendered the sum and dropped the average
+                                      without a word — a configured aggregate
+                                      vanishing silently. Found by taking the
+                                      0.6.0 screenshots, which is the one check
+                                      that looks at the thing rather than
+                                      counting its parts.
+
+                                      With one measure the cell is the bare
+                                      value, exactly as before. With more, each
+                                      is prefixed by the keyword the maker
+                                      wrote in `aggregates` — `sum`, `avg` —
+                                      because two unlabelled numbers in one
+                                      cell say nothing about which is which.
+                                      The keyword is echoed rather than
+                                      translated: it is the maker's own
+                                      identifier, not prose.
+                                    */}
+                                    {columns.slice(1).map((column) => {
+                                        const on = groupPlan
+                                            ? groupPlan.measures
+                                                .map((measure, index) => ({ measure, index }))
+                                                .filter((entry) => entry.measure.column === column.name)
+                                            : [];
+
+                                        return (
+                                            <td key={column.name} className="DataTable-groupMeasure">
+                                                {on
+                                                    // A measure with nothing to
+                                                    // show — the blank group's
+                                                    // sum over no values — gets
+                                                    // no keyword either, or the
+                                                    // row reads "SUM AVG" with
+                                                    // no numbers under it.
+                                                    .filter(({ index }) => Boolean(reading.measureLabels[index]))
+                                                    .map(({ measure, index }) => (
+                                                        <span key={measure.alias} className="DataTable-groupValue">
+                                                            {on.length > 1 && (
+                                                                <span className="DataTable-groupAggregate">
+                                                                    {measure.aggregate}
+                                                                </span>
+                                                            )}
+                                                            {reading.measureLabels[index]}
+                                                        </span>
+                                                    ))}
+                                            </td>
+                                        );
+                                    })}
+                                </tr>
+
+                                {/*
+                                  **The open group's rows, under its own
+                                  header** — not after every header, and not
+                                  instead of them.
+                                  
+                                  The first version replaced the whole list:
+                                  expanding pushed conditions into the dataset
+                                  filter, the aggregate re-ran against it and
+                                  returned only the expanded group, so every
+                                  other header vanished and getting back needed
+                                  a second click. Reported from the form,
+                                  2026-09-20. The aggregate no longer sees the
+                                  expansion at all — it narrows the rows, never
+                                  the group list — so the headers stay put and
+                                  expanding costs no round trip.
+                                */}
+                                {open && memberRows()}
+                                </React.Fragment>
+                            );
                         })}
+
+                        {/*
+                          The other half of the early-return fix above: the
+                          table is standing, so the reason there are no rows
+                          goes in it. Naming the filters rather than saying "no
+                          records" is the difference between a reader reaching
+                          for the boxes they filled and one concluding the view
+                          is empty.
+                        */}
+                        {pageIds.length === 0 && (
+                            <tr>
+                                <td colSpan={columns.length + (selectable ? 1 : 0)}>
+                                    <span className="DataTable-message">
+                                        {dataset.loading
+                                            ? getString('DataTable_Loading')
+                                            : getString('DataTable_NoMatches')}
+                                    </span>{' '}
+                                    <button
+                                        type="button"
+                                        className="DataTable-clearFilters"
+                                        disabled={props.disabled}
+                                        onClick={props.onClearFilters}
+                                    >
+                                        {getString('DataTable_ClearFilters')}
+                                    </button>
+                                </td>
+                            </tr>
+                        )}
+
+                        {/*
+                          Member rows, and **not while every group is
+                          collapsed**. A grouped table with nothing open is its
+                          headers and nothing else: the counts come from the
+                          whole view and the rows would come from the current
+                          page, so showing both puts two answers to different
+                          questions in one table.
+
+                          When a group *is* open its rows are rendered by the
+                          group loop above, nested under that group's own
+                          header — so this renders them only for an ungrouped
+                          table.
+                        */}
+                        {!grouped && memberRows()}
                     </tbody>
                 </table>
             </div>
 
+            {/*
+              The caption, where the pager sits, when the table is a list of
+              groups rather than a list of rows.
+
+              **It always names its scope.** "the whole view" and "the 50
+              records loaded so far" are the same sentence with one clause
+              different, so a reader who only ever sees the working case still
+              learns that the distinction exists — which is the whole point of
+              having two routes rather than one that quietly degrades. A
+              page-sized total shown as the whole is the bug this design was
+              built to prevent, and a caption that only speaks up when
+              something went wrong would not prevent it.
+            */}
+            {/*
+              Shown whenever the table is grouped, open or not.
+              
+              It was hidden while a group was expanded, back when expanding
+              replaced the group list with one group — the caption would have
+              been describing something no longer on screen. Now the headers
+              stay, so the caption stays with them: it says what the *group
+              list* covers, and the pager below says what the *open group*
+              covers. Two bars answering two questions, which is the shape the
+              table is actually in.
+            */}
+            {grouped && (
+                <div className="DataTable-pager DataTable-groupCaption">
+                    <span className="DataTable-pagerStatus" aria-live="polite">
+                        {groups.loading
+                            ? getString('DataTable_GroupsLoading')
+                            : groups.readings.length === 0
+                                ? getString('DataTable_GroupsEmpty')
+                                : groups.source === 'server'
+                                    ? getString('DataTable_CaptionAll')
+                                        .replace('{0}', String(groups.readings.length))
+                                        .replace('{1}', String(groups.readings.reduce((sum, r) => sum + r.count, 0)))
+                                    : groups.source === 'client-refused'
+                                        ? getString('DataTable_CaptionRefused')
+                                            .replace('{0}', String(groups.readings.length))
+                                        : getString('DataTable_CaptionLoaded')
+                                            .replace('{0}', String(groups.readings.length))
+                                            .replace('{1}', String(pageIds.length))}
+                    </span>
+
+                    {/*
+                      A server sentence, only when it is fit to be shown.
+                      Measured: a refusal can arrive as a message template with
+                      `{0}` never substituted, and `isRenderableMessage` is
+                      what keeps that off the form.
+                    */}
+                    {groups.message && (
+                        <span className="DataTable-message" role="status">{groups.message}</span>
+                    )}
+                </div>
+            )}
+
+            {/*
+              The row pager, and **not while the table is a list of groups.**
+              
+              It counts rows, and a collapsed grouped table is showing none —
+              so on the first form walkthrough it read "1–4 of 21" and "page 1
+              of 6" underneath five group headers, describing a thing that was
+              not on screen. The caption above answers the question this was
+              trying to answer, in the vocabulary the table is actually in.
+              
+              It comes back the moment a group is expanded, scoped to that
+              group, which is the whole point of expanding being a filter.
+            */}
+            {(!grouped || expandedKey !== null) && (
             <div className="DataTable-pager">
                 {/*
                   `hasPreviousPage` is deliberately not consulted. It stays
@@ -2065,8 +2545,26 @@ export function DataTableControl(props: IProps): React.ReactElement | null {
                         {getString('DataTable_Export')}
                     </button>
                 )}
+
+                {/*
+                  The pager carried the export's progress until 0.6.0's last
+                  revision. It no longer can: a running export replaces the
+                  whole control with `DataTable-exporting`, precisely because
+                  the pager sits *below* a table that grows to 250 rows and took
+                  the Stop button off screen with it.
+                */}
+
+                {/*
+                  What happened last time: the ceiling, or a page that never
+                  came. Not an error state — the file was still written, with
+                  what there was.
+                */}
+                {!props.exporting && props.exportNote !== '' && (
+                    <span className="DataTable-message" role="status">{props.exportNote}</span>
+                )}
                 </span>
             </div>
+            )}
         </>,
     );
 }

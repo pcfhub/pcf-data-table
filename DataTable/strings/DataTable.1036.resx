@@ -6,8 +6,9 @@
     what appear in the component's API reference on the hub as well as in the
     maker's properties pane.
 
-    Copy this file to add a language — DataTable.3082.resx for Spanish, and so
-    on — then list it under <resources> in the manifest.
+    French (1036). Translated from DataTable.1033.resx, which is the
+    source of truth: every key here exists there, carrying the same {0}
+    placeholders. check-template.mjs enforces both.
   -->
   <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
     <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
@@ -70,372 +71,372 @@
 
 
   <data name="DataTable_Name" xml:space="preserve">
-    <value>Data Table</value>
+    <value>Table de données</value>
   </data>
   <data name="DataTable_Desc" xml:space="preserve">
-    <value>A sortable, filterable table over any Dataverse view, with inline editing and pinned columns.</value>
+    <value>Une table triable et filtrable sur n’importe quelle vue Dataverse, avec modification en ligne et colonnes figées.</value>
   </data>
 
   <data name="Records_DataSet_Name" xml:space="preserve">
-    <value>Records</value>
+    <value>Enregistrements</value>
   </data>
 
   <data name="PageSize_Name" xml:space="preserve">
-    <value>Page size</value>
+    <value>Taille de page</value>
   </data>
   <data name="PageSize_Desc" xml:space="preserve">
-    <value>How many rows to request per page. The platform may clamp large values.</value>
+    <value>Nombre de lignes demandées par page. La plateforme peut limiter les valeurs élevées.</value>
   </data>
 
   <data name="PageSizeOptions_Name" xml:space="preserve">
-    <value>Rows-per-page choices</value>
+    <value>Choix de lignes par page</value>
   </data>
   <data name="PageSizeOptions_Desc" xml:space="preserve">
-    <value>A comma-separated list of page sizes to offer the reader, such as 10,25,50,100. Leave empty for no picker.</value>
+    <value>Une liste de tailles de page séparées par des virgules à proposer au lecteur, par exemple 10,25,50,100. Laissez vide pour n’en proposer aucune.</value>
   </data>
 
   <data name="SelectionMode_Name" xml:space="preserve">
-    <value>Selection</value>
+    <value>Sélection</value>
   </data>
   <data name="SelectionMode_Desc" xml:space="preserve">
-    <value>Whether rows can be selected, and whether more than one at a time.</value>
+    <value>Si les lignes peuvent être sélectionnées, et si plusieurs à la fois.</value>
   </data>
   <data name="SelectionMode_None_Name" xml:space="preserve">
-    <value>No selection</value>
+    <value>Aucune sélection</value>
   </data>
   <data name="SelectionMode_Single_Name" xml:space="preserve">
-    <value>Single row</value>
+    <value>Une seule ligne</value>
   </data>
   <data name="SelectionMode_Multiple_Name" xml:space="preserve">
-    <value>Multiple rows</value>
+    <value>Plusieurs lignes</value>
   </data>
 
   <data name="EnableSorting_Name" xml:space="preserve">
-    <value>Allow sorting</value>
+    <value>Autoriser le tri</value>
   </data>
   <data name="EnableSorting_Desc" xml:space="preserve">
-    <value>Show a sort control on each column the view allows sorting on.</value>
+    <value>Afficher un contrôle de tri sur chaque colonne que la vue autorise à trier.</value>
   </data>
 
   <data name="EnableFiltering_Name" xml:space="preserve">
-    <value>Allow filtering</value>
+    <value>Autoriser le filtrage</value>
   </data>
   <data name="EnableFiltering_Desc" xml:space="preserve">
-    <value>Show a filter box under each column heading that can carry one: text, numbers, dates, and — in a model-driven app — choices. Filtering is applied by the server, across every page.</value>
+    <value>Afficher une zone de filtre sous chaque en-tête de colonne qui peut en porter une : texte, nombres, dates et — dans une application pilotée par modèle — choix. Le filtrage est appliqué par le serveur, sur toutes les pages.</value>
   </data>
 
   <data name="EnableExport_Name" xml:space="preserve">
-    <value>Allow CSV export</value>
+    <value>Autoriser l’export CSV</value>
   </data>
   <data name="EnableExport_Desc" xml:space="preserve">
-    <value>Show a button that saves the loaded rows as a CSV file. It exports the pages read so far, not the whole view.</value>
+    <value>Afficher un bouton qui enregistre les lignes chargées dans un fichier CSV. Il exporte les pages lues jusqu’ici, pas la vue entière.</value>
   </data>
 
   <data name="OpenOnRowClick_Name" xml:space="preserve">
-    <value>Open on row click</value>
+    <value>Ouvrir au clic sur la ligne</value>
   </data>
   <data name="OpenOnRowClick_Desc" xml:space="preserve">
-    <value>Open the record when its row is clicked, as well as from the primary column.</value>
+    <value>Ouvrir l’enregistrement lorsque sa ligne est cliquée, et pas seulement depuis la colonne principale.</value>
   </data>
 
   <data name="PinnedStart_Name" xml:space="preserve">
-    <value>Pinned columns (start)</value>
+    <value>Colonnes figées (début)</value>
   </data>
   <data name="PinnedStart_Desc" xml:space="preserve">
-    <value>How many of the view's first columns stay in place while the table scrolls sideways. Leave empty to pin none.</value>
+    <value>Combien des premières colonnes de la vue restent en place pendant le défilement horizontal. Laissez vide pour n’en figer aucune.</value>
   </data>
   <data name="PinnedEnd_Name" xml:space="preserve">
-    <value>Pinned columns (end)</value>
+    <value>Colonnes figées (fin)</value>
   </data>
   <data name="PinnedEnd_Desc" xml:space="preserve">
-    <value>How many of the view's last columns stay in place while the table scrolls sideways. Leave empty to pin none.</value>
+    <value>Combien des dernières colonnes de la vue restent en place pendant le défilement horizontal. Laissez vide pour n’en figer aucune.</value>
   </data>
 
   <data name="EnableEditing_Name" xml:space="preserve">
-    <value>Inline editing</value>
+    <value>Modification en ligne</value>
   </data>
   <data name="EnableEditing_Desc" xml:space="preserve">
-    <value>Let readers edit a cell in place and save it. Only columns the platform reports as editable for that record are offered.</value>
+    <value>Permettre aux lecteurs de modifier une cellule sur place et de l’enregistrer. Seules les colonnes que la plateforme signale comme modifiables pour cet enregistrement sont proposées.</value>
   </data>
   <data name="EditableColumns_Name" xml:space="preserve">
-    <value>Editable columns</value>
+    <value>Colonnes modifiables</value>
   </data>
   <data name="EditableColumns_Desc" xml:space="preserve">
-    <value>A comma-separated list of column logical names to limit editing to. Leave empty for every column the platform says is editable. This list can only narrow that, never widen it.</value>
+    <value>Une liste de noms logiques de colonnes séparés par des virgules, à laquelle limiter la modification. Laissez vide pour toutes les colonnes que la plateforme déclare modifiables. Cette liste ne peut que restreindre, jamais élargir.</value>
   </data>
   <data name="EditedRecordId_Name" xml:space="preserve">
-    <value>Edited record ID</value>
+    <value>ID de l’enregistrement modifié</value>
   </data>
   <data name="EditedRecordId_Desc" xml:space="preserve">
-    <value>The ID of the row most recently saved by an inline edit.</value>
+    <value>L’ID de la ligne enregistrée le plus récemment par une modification en ligne.</value>
   </data>
   <data name="GroupBy_Name" xml:space="preserve">
-    <value>Group by</value>
+    <value>Grouper par</value>
   </data>
   <data name="GroupBy_Desc" xml:space="preserve">
-    <value>Column logical names, comma separated, to group the rows by. Leave empty for an ungrouped table.</value>
+    <value>Noms logiques de colonnes, séparés par des virgules, selon lesquels grouper les lignes. Laissez vide pour une table non groupée.</value>
   </data>
   <data name="Aggregates_Name" xml:space="preserve">
-    <value>Aggregates</value>
+    <value>Agrégats</value>
   </data>
   <data name="Aggregates_Desc" xml:space="preserve">
-    <value>Measures per group, as aggregate:column — for example sum:revenue, avg:revenue. A record count is always shown.</value>
+    <value>Mesures par groupe, sous la forme agrégat:colonne — par exemple sum:revenue, avg:revenue. Un nombre d’enregistrements est toujours affiché.</value>
   </data>
   <data name="GroupSort_Name" xml:space="preserve">
-    <value>Order groups by</value>
+    <value>Trier les groupes par</value>
   </data>
   <data name="GroupSort_Desc" xml:space="preserve">
-    <value>Whether group headers are ordered by their label or by how many records each holds.</value>
+    <value>Si les en-têtes de groupe sont ordonnés par leur libellé ou par le nombre d’enregistrements qu’ils contiennent.</value>
   </data>
   <data name="GroupSort_Label" xml:space="preserve">
-    <value>Label</value>
+    <value>Libellé</value>
   </data>
   <data name="GroupSort_Count" xml:space="preserve">
-    <value>Record count</value>
+    <value>Nombre d’enregistrements</value>
   </data>
   <data name="ParentLookup_Name" xml:space="preserve">
-    <value>Parent lookup</value>
+    <value>Recherche parente</value>
   </data>
   <data name="ParentLookup_Desc" xml:space="preserve">
-    <value>The lookup pointing at the record this subgrid sits on. Usually left empty; set it where the table has several lookups to the same table, or to "none" where the subgrid is unrelated.</value>
+    <value>La recherche qui pointe vers l’enregistrement sous lequel se trouve cette sous-grille. Généralement laissée vide ; renseignez-la lorsque la table comporte plusieurs recherches vers la même table, ou indiquez "none" lorsque la sous-grille n’est pas liée.</value>
   </data>
   <data name="DataTable_GroupBlank" xml:space="preserve">
-    <value>(blank)</value>
+    <value>(vide)</value>
   </data>
   <data name="DataTable_GroupRecords" xml:space="preserve">
-    <value>{0} records</value>
+    <value>{0} enregistrements</value>
   </data>
   <data name="DataTable_GroupRecord" xml:space="preserve">
-    <value>1 record</value>
+    <value>1 enregistrement</value>
   </data>
   <data name="DataTable_GroupExpand" xml:space="preserve">
-    <value>Show the records in {0}</value>
+    <value>Afficher les enregistrements de {0}</value>
   </data>
   <data name="DataTable_GroupCollapse" xml:space="preserve">
-    <value>Hide the records in {0}</value>
+    <value>Masquer les enregistrements de {0}</value>
   </data>
   <data name="DataTable_CaptionAll" xml:space="preserve">
-    <value>{0} groups · {1} records · the whole view</value>
+    <value>{0} groupes · {1} enregistrements · la vue entière</value>
   </data>
   <data name="DataTable_CaptionLoaded" xml:space="preserve">
-    <value>{0} groups · the {1} records loaded so far</value>
+    <value>{0} groupes · les {1} enregistrements chargés jusqu’ici</value>
   </data>
   <data name="DataTable_CaptionRefused" xml:space="preserve">
-    <value>{0} groups · the records loaded so far — the whole view could not be counted</value>
+    <value>{0} groupes · les enregistrements chargés jusqu’ici — la vue entière n’a pas pu être comptée</value>
   </data>
   <data name="DataTable_GroupsLoading" xml:space="preserve">
-    <value>Counting the whole view…</value>
+    <value>Comptage de la vue entière…</value>
   </data>
   <data name="DataTable_GroupsEmpty" xml:space="preserve">
-    <value>No records to group.</value>
+    <value>Aucun enregistrement à grouper.</value>
   </data>
   <data name="EnableMultiSort_Name" xml:space="preserve">
-    <value>Allow sorting by several columns</value>
+    <value>Autoriser le tri sur plusieurs colonnes</value>
   </data>
   <data name="EnableMultiSort_Desc" xml:space="preserve">
-    <value>Shift-click a column heading, or use its add-to-sort control, to order by it after the columns already sorted.</value>
+    <value>Maj+clic sur un en-tête de colonne, ou son contrôle d’ajout au tri, pour trier par cette colonne après celles déjà triées.</value>
   </data>
   <data name="DataTable_SortRank" xml:space="preserve">
-    <value>Sorted by {0}, {1} of {2}</value>
+    <value>Trié par {0}, {1} sur {2}</value>
   </data>
   <data name="ExportScope_Name" xml:space="preserve">
-    <value>Export covers</value>
+    <value>L’export couvre</value>
   </data>
   <data name="ExportScope_Desc" xml:space="preserve">
-    <value>Whether Export CSV writes the rows already loaded, or reads the whole view first. Reading the whole view costs one request per page.</value>
+    <value>Si l’export CSV écrit les lignes déjà chargées, ou lit d’abord la vue entière. Lire la vue entière coûte une requête par page.</value>
   </data>
   <data name="ExportScope_Loaded" xml:space="preserve">
-    <value>The rows loaded so far</value>
+    <value>Les lignes chargées jusqu’ici</value>
   </data>
   <data name="ExportScope_View" xml:space="preserve">
-    <value>The whole view</value>
+    <value>La vue entière</value>
   </data>
   <data name="DataTable_ExportProgress" xml:space="preserve">
-    <value>Reading page {0} — {1} rows so far</value>
+    <value>Lecture de la page {0} — {1} lignes jusqu’ici</value>
   </data>
   <data name="DataTable_ExportCancel" xml:space="preserve">
-    <value>Stop</value>
+    <value>Arrêter</value>
   </data>
   <data name="DataTable_ExportStopping" xml:space="preserve">
-    <value>Stopping after this page…</value>
+    <value>Arrêt après cette page…</value>
   </data>
   <data name="DataTable_ExportCapped" xml:space="preserve">
-    <value>The first {0} rows were exported; the view holds more.</value>
+    <value>Les {0} premières lignes ont été exportées ; la vue en contient davantage.</value>
   </data>
   <data name="DataTable_ExportFailed" xml:space="preserve">
-    <value>The view could not be read past page {0}. {1} rows were collected.</value>
+    <value>La vue n’a pas pu être lue au-delà de la page {0}. {1} lignes ont été collectées.</value>
   </data>
   <data name="EnableCreate_Name" xml:space="preserve">
-    <value>Allow adding rows</value>
+    <value>Autoriser l’ajout de lignes</value>
   </data>
   <data name="EnableCreate_Desc" xml:space="preserve">
-    <value>Show a New button that opens the table's quick create form. The table needs quick create enabled and a quick create form. Model-driven apps only.</value>
+    <value>Afficher un bouton Nouveau qui ouvre le formulaire de création rapide de la table. La table doit avoir la création rapide activée et un formulaire de création rapide. Applications pilotées par modèle uniquement.</value>
   </data>
   <data name="CreatedRecordId_Name" xml:space="preserve">
-    <value>Created record ID</value>
+    <value>ID de l’enregistrement créé</value>
   </data>
   <data name="CreatedRecordId_Desc" xml:space="preserve">
-    <value>The ID of the row most recently added through the New button.</value>
+    <value>L’ID de la ligne ajoutée le plus récemment via le bouton Nouveau.</value>
   </data>
 
   <data name="DataTable_EditCell" xml:space="preserve">
-    <value>Edit {0}</value>
+    <value>Modifier {0}</value>
   </data>
   <data name="DataTable_EditEmpty" xml:space="preserve">
-    <value>(empty)</value>
+    <value>(vide)</value>
   </data>
   <data name="DataTable_Saving" xml:space="preserve">
-    <value>Saving…</value>
+    <value>Enregistrement…</value>
   </data>
   <data name="DataTable_SaveFailed" xml:space="preserve">
-    <value>{0} could not be saved. {1}</value>
+    <value>{0} n’a pas pu être enregistré. {1}</value>
   </data>
   <data name="DataTable_SaveFailedGeneric" xml:space="preserve">
-    <value>The platform refused the change.</value>
+    <value>La plateforme a refusé la modification.</value>
   </data>
   <data name="DataTable_SaveTimedOut" xml:space="preserve">
-    <value>The platform did not confirm this change. It may not have been saved — reload the form to see the stored value.</value>
+    <value>La plateforme n’a pas confirmé cette modification. Elle n’a peut-être pas été enregistrée — rechargez le formulaire pour voir la valeur stockée.</value>
   </data>
   <data name="DataTable_NotANumber" xml:space="preserve">
-    <value>That is not a number, so nothing was saved.</value>
+    <value>Ce n’est pas un nombre, rien n’a donc été enregistré.</value>
   </data>
   <data name="DataTable_Yes" xml:space="preserve">
-    <value>Yes</value>
+    <value>Oui</value>
   </data>
   <data name="DataTable_No" xml:space="preserve">
-    <value>No</value>
+    <value>Non</value>
   </data>
   <data name="DataTable_NoValue" xml:space="preserve">
-    <value>(none)</value>
+    <value>(aucun)</value>
   </data>
   <data name="DataTable_LookupChoose" xml:space="preserve">
-    <value>Choose…</value>
+    <value>Choisir…</value>
   </data>
   <data name="DataTable_LookupClear" xml:space="preserve">
-    <value>Clear</value>
+    <value>Effacer</value>
   </data>
   <data name="DataTable_LookupCancel" xml:space="preserve">
-    <value>Cancel</value>
+    <value>Annuler</value>
   </data>
   <data name="DataTable_New" xml:space="preserve">
-    <value>New</value>
+    <value>Nouveau</value>
   </data>
   <data name="DataTable_NewHint" xml:space="preserve">
-    <value>Add a row using the quick create form.</value>
+    <value>Ajouter une ligne à l’aide du formulaire de création rapide.</value>
   </data>
   <data name="DataTable_CreateFailed" xml:space="preserve">
-    <value>The quick create form could not be opened.</value>
+    <value>Le formulaire de création rapide n’a pas pu être ouvert.</value>
   </data>
 
   <data name="SelectedRecordIds_Name" xml:space="preserve">
-    <value>Selected record IDs</value>
+    <value>ID des enregistrements sélectionnés</value>
   </data>
   <data name="SelectedRecordIds_Desc" xml:space="preserve">
-    <value>The IDs of the currently selected rows, one per line.</value>
+    <value>Les ID des lignes actuellement sélectionnées, un par ligne.</value>
   </data>
 
   <data name="OpenedRecordId_Name" xml:space="preserve">
-    <value>Opened record ID</value>
+    <value>ID de l’enregistrement ouvert</value>
   </data>
   <data name="OpenedRecordId_Desc" xml:space="preserve">
-    <value>The ID of the row most recently opened.</value>
+    <value>L’ID de la ligne ouverte le plus récemment.</value>
   </data>
 
   <data name="DataTable_Loading" xml:space="preserve">
-    <value>Loading records…</value>
+    <value>Chargement des enregistrements…</value>
   </data>
   <data name="DataTable_Empty" xml:space="preserve">
-    <value>No records.</value>
+    <value>Aucun enregistrement.</value>
   </data>
   <data name="DataTable_NoColumns" xml:space="preserve">
-    <value>No columns are selected for this table.</value>
+    <value>Aucune colonne n’est sélectionnée pour cette table.</value>
   </data>
   <data name="DataTable_Error" xml:space="preserve">
-    <value>This view could not be loaded.</value>
+    <value>Cette vue n’a pas pu être chargée.</value>
   </data>
   <data name="DataTable_Previous" xml:space="preserve">
-    <value>Previous page</value>
+    <value>Page précédente</value>
   </data>
   <data name="DataTable_Next" xml:space="preserve">
-    <value>Next page</value>
+    <value>Page suivante</value>
   </data>
   <data name="DataTable_PageStatus" xml:space="preserve">
     <value>Page {0}</value>
   </data>
   <data name="DataTable_RangeStatus" xml:space="preserve">
-    <value>{0}–{1} of {2}</value>
+    <value>{0}–{1} sur {2}</value>
   </data>
   <data name="DataTable_Export" xml:space="preserve">
-    <value>Export CSV</value>
+    <value>Exporter en CSV</value>
   </data>
   <data name="DataTable_ExportHint" xml:space="preserve">
-    <value>Save the rows loaded so far as a CSV file. Pages you have not opened are not included.</value>
+    <value>Enregistrer les lignes chargées jusqu’ici dans un fichier CSV. Les pages que vous n’avez pas ouvertes ne sont pas incluses.</value>
   </data>
 
   <data name="DataTable_RowsPerPage" xml:space="preserve">
-    <value>Rows per page</value>
+    <value>Lignes par page</value>
   </data>
   <data name="DataTable_GoToPage" xml:space="preserve">
-    <value>Go to page</value>
+    <value>Aller à la page</value>
   </data>
   <data name="DataTable_OfPages" xml:space="preserve">
-    <value>of {0}</value>
+    <value>sur {0}</value>
   </data>
 
   <data name="DataTable_SortBy" xml:space="preserve">
-    <value>Sort by {0}</value>
+    <value>Trier par {0}</value>
   </data>
   <data name="DataTable_FilterColumn" xml:space="preserve">
-    <value>Filter by {0}</value>
+    <value>Filtrer par {0}</value>
   </data>
   <data name="DataTable_FilterNumberHint" xml:space="preserve">
-    <value>Filter by {0}. Type a number, or a comparison such as &gt;1000.</value>
+    <value>Filtrer par {0}. Saisissez un nombre, ou une comparaison telle que &gt;1000.</value>
   </data>
   <data name="DataTable_FilterPlaceholder" xml:space="preserve">
-    <value>Filter</value>
+    <value>Filtre</value>
   </data>
   <data name="DataTable_FilterNumberPlaceholder" xml:space="preserve">
-    <value>e.g. &gt;1000</value>
+    <value>ex. &gt;1000</value>
   </data>
   <data name="DataTable_Unfilterable" xml:space="preserve">
-    <value>{0} cannot be filtered here. Lookups are filtered by the view; a choice needs table metadata this host does not provide.</value>
+    <value>{0} ne peut pas être filtré ici. Les recherches se filtrent via la vue ; un choix nécessite des métadonnées de table que cet hôte ne fournit pas.</value>
   </data>
   <data name="DataTable_FilterDateHint" xml:space="preserve">
-    <value>Filter by {0}. Pick a day; the button beside it chooses on, from or until that day.</value>
+    <value>Filtrer par {0}. Choisissez un jour ; le bouton à côté choisit le, à partir du ou jusqu’au jour retenu.</value>
   </data>
   <data name="DataTable_DateOn" xml:space="preserve">
-    <value>On</value>
+    <value>Le</value>
   </data>
   <data name="DataTable_DateFrom" xml:space="preserve">
-    <value>From</value>
+    <value>À partir du</value>
   </data>
   <data name="DataTable_DateUntil" xml:space="preserve">
-    <value>Until</value>
+    <value>Jusqu’au</value>
   </data>
   <data name="DataTable_DateOpHint" xml:space="preserve">
-    <value>Change how {0} is compared: on, from or until the chosen day</value>
+    <value>Modifier la comparaison de {0} : le, à partir du ou jusqu’au jour choisi</value>
   </data>
   <data name="DataTable_FilterAny" xml:space="preserve">
-    <value>Any</value>
+    <value>Tous</value>
   </data>
 
   <data name="DataTable_ClearFilter" xml:space="preserve">
-    <value>Clear the filter on {0}</value>
+    <value>Effacer le filtre sur {0}</value>
   </data>
   <data name="DataTable_ClearFilters" xml:space="preserve">
-    <value>Clear filters</value>
+    <value>Effacer les filtres</value>
   </data>
   <data name="DataTable_NoMatches" xml:space="preserve">
-    <value>No records match these filters.</value>
+    <value>Aucun enregistrement ne correspond à ces filtres.</value>
   </data>
 
   <data name="DataTable_SelectRow" xml:space="preserve">
-    <value>Select {0}</value>
+    <value>Sélectionner {0}</value>
   </data>
   <data name="DataTable_SelectAll" xml:space="preserve">
-    <value>Select all rows on this page</value>
+    <value>Sélectionner toutes les lignes de cette page</value>
   </data>
   <data name="DataTable_OpenRecord" xml:space="preserve">
-    <value>Open {0}</value>
+    <value>Ouvrir {0}</value>
   </data>
 </root>

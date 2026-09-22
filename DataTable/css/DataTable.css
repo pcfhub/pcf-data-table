@@ -241,6 +241,34 @@
     font-weight: inherit;
 }
 
+/*
+ * **The heading truncates; the sort indicator never does.**
+ *
+ * `text-overflow: ellipsis` on the button above does nothing, because ellipsis
+ * applies to a block's own inline content and this is a flex container — so a
+ * heading wider than its column simply overflowed, and the arrow and rank went
+ * with it, straight past the `overflow: hidden` on the cell.
+ *
+ * The effect was a sorted column showing no sort indicator at all: measured on
+ * "Annual revenue" in a 107px column, the arrow landed at x=717 inside a cell
+ * ending at x=708. Found by taking the 0.6.0 multi-sort screenshot and asking
+ * why only one of the two columns had an arrow — the markup, the aria-sort and
+ * the accessible name were all correct the whole time.
+ *
+ * So the label is the flex item that gives way, and the two marks are pinned.
+ */
+.DataTable-sortLabel {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.DataTable-arrow,
+.DataTable-sortRank {
+    flex: none;
+}
+
 .DataTable-open {
     color: var(--colorBrandForegroundLink, #0f6cbd);
     text-align: start;
@@ -973,4 +1001,207 @@
 .DataTable-editPencil:focus-visible {
     outline: 2px solid var(--colorStrokeFocus2, #000000);
     outline-offset: 2px;
+}
+
+/* ---------------------------------------------------------------- grouping */
+
+/*
+ * A group header is a subtotal row, and is styled as one: heavier than a data
+ * row, lighter than the table head, and sticky nowhere — it scrolls with its
+ * own group because it belongs to it.
+ *
+ * Tokens only, with fallbacks, as everywhere else here. A model-driven form
+ * already mounts a FluentProvider above this control, so the custom properties
+ * resolve; the fallbacks are for canvas and the harness, which publish none.
+ */
+.DataTable-groupRow {
+    background: var(--colorNeutralBackground3, #f5f5f5);
+    border-top: 1px solid var(--colorNeutralStroke2, #e0e0e0);
+}
+
+.DataTable-groupHead {
+    text-align: start;
+    font-weight: var(--fontWeightSemibold, 600);
+    padding: 6px 8px;
+}
+
+.DataTable-groupChevron {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: none;
+    border: none;
+    padding: 2px 4px;
+    margin: -2px -4px;
+    font: inherit;
+    color: inherit;
+    cursor: pointer;
+    border-radius: var(--borderRadiusMedium, 4px);
+}
+
+.DataTable-groupChevron:hover {
+    background: var(--colorNeutralBackground3Hover, #ebebeb);
+}
+
+/*
+ * A visible focus ring rather than the outline the browser would draw, for the
+ * same reason every other control here does it: the default is invisible
+ * against the Fluent greys on half the themes.
+ */
+.DataTable-groupChevron:focus-visible {
+    outline: 2px solid var(--colorStrokeFocus2, #000);
+    outline-offset: 1px;
+}
+
+.DataTable-groupCount {
+    margin-inline-start: 8px;
+    font-weight: var(--fontWeightRegular, 400);
+    color: var(--colorNeutralForeground3, #616161);
+}
+
+/* Right-aligned, because a measure is a number and numbers align on the right. */
+.DataTable-groupMeasure {
+    text-align: end;
+    font-variant-numeric: tabular-nums;
+    padding: 6px 8px;
+    color: var(--colorNeutralForeground2, #424242);
+}
+
+/*
+ * The group caption takes the pager's place, so it inherits the pager's
+ * wrapping behaviour and needs none of its own.
+ *
+ * **Named `groupCaption`, not `caption`, and that is not fussiness.** The first
+ * version called it `.DataTable-caption` — a class this stylesheet has used
+ * since 0.2.0 for the `<table><caption>` that names the table to a screen
+ * reader, and which is **visually hidden**: `position: absolute`, one pixel
+ * square, `clip: rect(0 0 0 0)`. So the caption rendered with the right text,
+ * sat in the DOM where `textContent` could read it, and was clipped to nothing
+ * on the form. Two screenshots and a DOM query to find, because the markup was
+ * correct and only the computed style was wrong.
+ *
+ * Every assertion this repository has is over markup. None of them can see a
+ * class collision, and this is the defect class that motivates the
+ * `getComputedStyle` check in the skill's *Styling* section — which this
+ * repository does not yet have.
+ */
+.DataTable-groupCaption {
+    justify-content: flex-start;
+}
+
+/*
+ * Visually hidden, still read aloud. The chevron shows a triangle and the
+ * group's name; a screen reader needs the verb as well, and putting it in the
+ * button's accessible name rather than in a title attribute is what makes it
+ * reach a touch user.
+ */
+.DataTable-visuallyHidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+/*
+ * The group's name inside the chevron button. Carries no style of its own
+ * beyond separating it from the triangle — it exists so the visually-hidden
+ * verb beside it is a sibling rather than a suffix, which is what stops a
+ * screen reader running "Manufacturing" and "Show the records in" together.
+ */
+.DataTable-groupLabel {
+    font-weight: inherit;
+}
+
+/*
+ * The sort rank, shown only once more than one column is in the order.
+ *
+ * A superscript numeral beside the arrow rather than a second glyph: the arrow
+ * already says the direction, and this says which arrow wins. Small enough to
+ * read as an annotation on the header rather than as data in it.
+ *
+ * `aria-hidden`, because `aria-sort` cannot carry a position — it takes
+ * ascending, descending or none — so the rank goes in the button's accessible
+ * name instead and this is the sighted reader's version of the same fact. A
+ * screen reader hearing both would hear the number twice.
+ */
+.DataTable-sortRank {
+    font-size: var(--fontSizeBase100, 10px);
+    font-weight: var(--fontWeightSemibold, 600);
+    vertical-align: super;
+    margin-inline-start: 1px;
+    color: var(--colorNeutralForeground3, #616161);
+}
+
+/*
+ * A running full-view export, in the pager's tool row.
+ *
+ * `aria-live="polite"` rather than `assertive`: the page counter changes every
+ * few seconds, and a reader being interrupted forty times is worse than one
+ * told late.
+ */
+/*
+ * The whole control while a full-view export runs: a line of text and the way
+ * out, and nothing else.
+ *
+ * Reported from a real form, 2026-09-21 — at a page size of 250 the table grew
+ * past the viewport faster than a reader could scroll, and Stop lives *below*
+ * the table in the pager. Height here is the feature: the panel does not move,
+ * so neither does the button.
+ */
+/*
+ * A group's measures for one column. One measure is a bare value; several stack
+ * with the aggregate keyword above each, because two unlabelled numbers in a
+ * cell say nothing about which is which.
+ */
+.DataTable-groupValue {
+    display: block;
+}
+
+.DataTable-groupAggregate {
+    margin-inline-end: var(--spacingHorizontalXS, 4px);
+    color: var(--colorNeutralForeground3, #616161);
+    font-size: var(--fontSizeBase200, 12px);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.DataTable-exporting {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--spacingHorizontalS, 8px);
+    padding: var(--spacingVerticalL, 16px) var(--spacingHorizontalM, 12px);
+    color: var(--colorNeutralForeground2, #424242);
+}
+
+.DataTable-exportProgress {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacingHorizontalS, 8px);
+    color: var(--colorNeutralForeground3, #616161);
+}
+
+.DataTable-exportCancel {
+    font: inherit;
+    color: var(--colorBrandForegroundLink, #0f6cbd);
+    background: none;
+    border: none;
+    padding: 2px 4px;
+    cursor: pointer;
+    border-radius: var(--borderRadiusMedium, 4px);
+}
+
+.DataTable-exportCancel:disabled {
+    color: var(--colorNeutralForegroundDisabled, #bdbdbd);
+    cursor: default;
+}
+
+.DataTable-exportCancel:focus-visible {
+    outline: 2px solid var(--colorStrokeFocus2, #000);
+    outline-offset: 1px;
 }

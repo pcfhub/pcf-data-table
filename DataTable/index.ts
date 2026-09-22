@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { IInputs, IOutputs } from './generated/ManifestTypes';
-import { DataTableControl, IProps } from './components/DataTableControl';
+import { DataTableControl, GroupAnswer, GroupRoute, IProps } from './components/DataTableControl';
 import {
     ASCENDING,
     buildFilter,
@@ -26,6 +26,37 @@ import {
     toggleId,
     visibleColumns,
 } from './components/resolve';
+import { AliasPlan, GroupSource, GroupSpec } from './group/types';
+import { GroupSort } from './group/group';
+import { buildSpec, describeProblem } from './group/spec';
+import { aliasPlan, Condition, Filter, filterToFetchXml, parentFilterXml } from './query/fetchXml';
+import {
+    begin,
+    Collecting,
+    ExportState,
+    harvest,
+    nextPageFor,
+    restorePlan,
+    shouldHarvest,
+    wasCapped,
+} from './export/collect';
+import { describesPlan, toGroupReading } from './query/rows';
+import { ParentReading, ParentResolution, resolveParentLookup, rowsConfirm, withholdsRoute } from './data/parent';
+import { loadAggregate, readViewFetchXml, Refusal, WebApiReader } from './data/GroupData';
+
+/**
+ * How long one export page may take before the machine gives up on it.
+ *
+ * **`loadExactPage` returns `void` and has no rejection to catch**, so a fetch
+ * that never lands is indistinguishable from one still in flight.
+ * `dataset.error` covers a refusal the platform reports; this covers the
+ * silence, which would otherwise leave "Reading page 4…" on screen for the life
+ * of the form.
+ *
+ * Thirty seconds is above the slowest refresh measured on the probe subgrid
+ * (3–14s) with room to spare.
+ */
+const EXPORT_TIMEOUT_MS = 30000;
 
 /**
  * The half of `EntityRecord` that the type definitions do not admit exists.
@@ -122,9 +153,34 @@ type MetadataReader = (entity: string, attributes: string[]) => Promise<unknown>
 function metadataReader(context: ComponentFramework.Context<IInputs>): MetadataReader | null {
     const utils = (context as { utils?: { getEntityMetadata?: unknown } }).utils;
 
-    return utils && typeof utils.getEntityMetadata === 'function'
-        ? (utils.getEntityMetadata as MetadataReader).bind(utils)
-        : null;
+    if (!utils || typeof utils.getEntityMetadata !== 'function') {
+        return null;
+    }
+
+    const read = (utils.getEntityMetadata as MetadataReader).bind(utils);
+
+    /*
+     * **A host can publish this method and refuse to run it, and refuse
+     * *synchronously*.** Canvas throws `getEntityMetadata: Method not
+     * implemented.` from the call itself rather than returning a rejected
+     * promise — so there is nothing for a caller to `.catch`, the throw escapes
+     * `updateView`, and the studio replaces the table with *Error loading
+     * control*. Reported from a real canvas app, 2026-09-21, one build after the
+     * identical defect in `page.getClientUrl` was fixed: fixing that one did not
+     * fix this one, it revealed it.
+     *
+     * The Promise executor is the whole repair. A throw inside it rejects the
+     * promise instead of propagating, which turns "refused synchronously" into
+     * the asynchronous refusal every caller is already written for.
+     *
+     * **The rejection is deliberately not swallowed here.** A refused call has
+     * to stay distinguishable from a column that genuinely has no options —
+     * the component records the rejection as its read-only fallback, and
+     * `dev/smoke.js` asserts that an empty list is not substituted for it.
+     * This makes the refusal catchable; it does not decide what it means.
+     */
+    return (entity: string, attributes: string[]): Promise<unknown> =>
+        new Promise<unknown>((resolve) => resolve(read(entity, attributes)));
 }
 
 /**
@@ -145,6 +201,29 @@ function metadataReader(context: ComponentFramework.Context<IInputs>): MetadataR
  * puts the organisation in a *path*, where `/api/...` 404s. The `Xrm` global
  * is the fallback, not the preference.
  */
+/**
+ * Call a platform method that might not work, and take `undefined` for an
+ * answer.
+ *
+ * **A method can exist and still refuse.** Canvas publishes
+ * `page.getClientUrl` and throws `Method not implemented.` when it is called,
+ * so `typeof … === 'function'` is a test of the wrong thing. Reported from a
+ * real canvas app, 2026-09-21: the throw escaped `lookupHost`, escaped
+ * `updateView`, and the studio rendered **"Error loading control"** — the whole
+ * table gone over a probe for a feature canvas was never offered.
+ *
+ * Every detection in this file is written to answer "can this host do X?" with
+ * a value rather than an exception. This is that contract for the one probe
+ * that has to *call* something to find out.
+ */
+function ask<T>(call: () => T): T | undefined {
+    try {
+        return call();
+    } catch {
+        return undefined;
+    }
+}
+
 interface LookupHost {
     clientUrl: string;
     readMetadata: MetadataReader;
@@ -161,13 +240,13 @@ function lookupHost(context: ComponentFramework.Context<IInputs>): LookupHost | 
     const readMetadata = metadataReader(context);
     const pick = loose.utils?.lookupObjects;
     const update = loose.webAPI?.updateRecord;
-    const fromPage =
-        typeof loose.page?.getClientUrl === 'function'
-            ? (loose.page.getClientUrl as () => unknown)()
-            : undefined;
-    const fromGlobal = (globalThis as {
+    const page = loose.page;
+    const fromPage = typeof page?.getClientUrl === 'function'
+        ? ask(() => (page.getClientUrl as () => unknown)())
+        : undefined;
+    const fromGlobal = ask(() => (globalThis as {
         Xrm?: { Utility?: { getGlobalContext?: () => { getClientUrl?: () => unknown } } };
-    }).Xrm?.Utility?.getGlobalContext?.()?.getClientUrl?.();
+    }).Xrm?.Utility?.getGlobalContext?.()?.getClientUrl?.());
     const clientUrl = [fromPage, fromGlobal].find(
         (url): url is string => typeof url === 'string' && url !== '',
     );
@@ -195,12 +274,63 @@ function lookupHost(context: ComponentFramework.Context<IInputs>): LookupHost | 
  */
 type FormOpener = (options: Record<string, unknown>) => Promise<unknown>;
 
+/**
+ * The organisation URL, or `null` where nothing answers with one.
+ *
+ * **This is the only measured way to tell a model-driven host from a canvas
+ * one.** Every other surface lies: the host probe asked a real canvas app about
+ * fifteen of them on 2026-09-22 and **all fifteen came back present**, refusing
+ * only when called. `typeof context.navigation.openForm === 'function'` is
+ * therefore true on canvas, and so is the same test for every Web API method.
+ *
+ * `getClientUrl` refuses too — but it refuses by *throwing*, and a thrown
+ * refusal is an answer once it is caught. A value, not a method, is the thing
+ * worth testing.
+ *
+ * The `Xrm` global is the fallback rather than the preference, for the reason
+ * `pcf-grid-data-bars` gives: on-premises puts the organisation in a path,
+ * where a root-relative URL 404s.
+ */
+function clientUrlOf(context: ComponentFramework.Context<IInputs>): string | null {
+    const page = (context as { page?: { getClientUrl?: unknown } }).page;
+    const fromPage = typeof page?.getClientUrl === 'function'
+        ? ask(() => (page.getClientUrl as () => unknown)())
+        : undefined;
+    const fromGlobal = ask(() => (globalThis as {
+        Xrm?: { Utility?: { getGlobalContext?: () => { getClientUrl?: () => unknown } } };
+    }).Xrm?.Utility?.getGlobalContext?.()?.getClientUrl?.());
+
+    const found = [fromPage, fromGlobal].find(
+        (url): url is string => typeof url === 'string' && url !== '',
+    );
+
+    return found ?? null;
+}
+
+/**
+ * The quick create opener, or `null` on a host that cannot open a form.
+ *
+ * **`typeof navigation.openForm === 'function'` is not that test.** It passes
+ * on canvas, where the method exists and refuses — so the control drew a New
+ * button in a canvas app that could only fail. Found by measuring the host
+ * rather than by reading the code: `docs/canvas.md` had claimed since 0.4.0
+ * that *"there is no New button, whatever `enableCreate` is set to:
+ * `navigation.openForm` is not on this host"*, and the second half of that
+ * sentence was simply wrong.
+ *
+ * So the method has to exist **and** the host has to be one where it means
+ * anything. See `clientUrlOf` for why that is the discriminator.
+ */
 function formOpener(context: ComponentFramework.Context<IInputs>): FormOpener | null {
     const navigation = (context as { navigation?: { openForm?: unknown } }).navigation;
 
-    return navigation && typeof navigation.openForm === 'function'
-        ? (navigation.openForm as FormOpener).bind(navigation)
-        : null;
+    if (!navigation || typeof navigation.openForm !== 'function') {
+        return null;
+    }
+
+    return clientUrlOf(context) === null
+        ? null
+        : (navigation.openForm as FormOpener).bind(navigation);
 }
 
 /**
@@ -267,6 +397,61 @@ const FILTER_DEBOUNCE_MS = 300;
  * and calling any of them unguarded from `updateView` is an infinite loop, not
  * a slow render.
  */
+/**
+ * The primary key a `count` is taken over.
+ *
+ * **Not readable from `dataset.columns`** — measured 2026-09-20: the layout
+ * carried ten columns and the primary key was not among them, though the
+ * view's own FetchXML selected it. So it is read from metadata.
+ *
+ * `pcf-chart-view` derives it as `{entity}id` with a hard-coded set of the
+ * seventeen system activity tables as the exception. **That set cannot cover a
+ * custom activity table**, which is a real shape a maker can create and whose
+ * primary key is `activityid` like every other activity. So metadata is the
+ * primary mechanism here and the list is only the synchronous fallback, for
+ * the pass before the read lands and for a host that refuses it.
+ */
+const ACTIVITIES = new Set([
+    'task', 'email', 'appointment', 'phonecall', 'letter', 'fax', 'serviceappointment',
+    'recurringappointmentmaster', 'socialactivity', 'campaignactivity', 'campaignresponse',
+    'bulkoperation', 'incidentresolution', 'opportunityclose', 'quoteclose', 'orderclose',
+    'activitypointer',
+]);
+
+/** The guess, for the pass before metadata answers. Right for most tables. */
+const guessPrimaryId = (entity: string): string =>
+    (ACTIVITIES.has(entity) ? 'activityid' : `${entity}id`);
+
+/**
+ * One input's raw value, or `null` where the parameter is not there at all.
+ *
+ * **The platform builds a parameter object for every declared property**, so
+ * `context.parameters.groupBy` is always present on a real host and reading
+ * `.raw` unguarded is safe there. That is a claim about the platform, and this
+ * repository's rule is that such a claim is checked rather than trusted — the
+ * same rule `sorting`, `loadExactPage` and `trackContainerResize` are all
+ * under.
+ *
+ * It earned its keep immediately: `dev/host.js` builds only the inputs a suite
+ * hands it, so the first grouped render threw *"Cannot read properties of
+ * undefined"* out of `updateView` and took the whole control down — and
+ * several assertions passed against the resulting empty markup, because
+ * "contains no group rows" is true of nothing at all. A control that dies on a
+ * property a host did not declare is worse than one that renders ungrouped.
+ */
+function boolInput(context: ComponentFramework.Context<IInputs>, name: string): boolean {
+    const parameter = (context.parameters as unknown as Record<string, { raw?: unknown } | undefined>)[name];
+
+    return parameter ? parameter.raw === true : false;
+}
+
+function rawInput(context: ComponentFramework.Context<IInputs>, name: string): string | null {
+    const parameter = (context.parameters as unknown as Record<string, { raw?: unknown } | undefined>)[name];
+    const raw = parameter ? parameter.raw : null;
+
+    return typeof raw === 'string' ? raw : null;
+}
+
 export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutputs> {
     private notifyOutputChanged!: () => void;
 
@@ -281,6 +466,47 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
      * changed their mind about them.
      */
     private selected: string[] = [];
+
+    /**
+     * What a group with no value is called.
+     *
+     * Held on the instance because `loadGroups` runs **after** the pass that
+     * started it, by which time there is no `context` in scope — the loader
+     * pattern's one cost. Refreshed on every `updateView`, so a host that
+     * changes language mid-session is not left with the old word.
+     */
+    private blankLabel = '(blank)';
+
+    /** The last set of grouping problems reported, so a bad name is logged once rather than per render. */
+    private reportedGroupProblems = '';
+
+    /**
+     * The conditions narrowing the table to one expanded group, or empty.
+     *
+     * **One group at a time**, and that is a design decision rather than a
+     * limitation waiting to be lifted: two expansions mean two sets of
+     * conditions ORed together, interleaved rows, and the paging problem back
+     * again. Expanding a second group collapses the first.
+     */
+    private expansion: Condition[] = [];
+
+    /** The full-view export's state machine. See `DataTable/export/collect.ts`. */
+    private exportState: ExportState = { phase: 'idle' };
+
+    /** The per-page watchdog, cleared in `destroy()` beside `filterTimer`. */
+    private exportWatchdog: number | null = null;
+
+    /** A sentence about the last export, or `''`. */
+    private exportNote = '';
+
+    /**
+     * The failure template, captured while `context` is in scope.
+     *
+     * The watchdog fires long after the pass that armed it, and there is no
+     * `context` in a timer callback — the same cost the group loader pays for
+     * `blankLabel`.
+     */
+    private exportFailure = '';
 
     private openedRecordId = '';
 
@@ -354,6 +580,9 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
      * and cleared with it.
      */
     private relationships: Promise<Relationship[]> | null = null;
+
+    /** The table's real primary key, read once. See `primaryIdFor`. */
+    private primaryId: Promise<string> | null = null;
     private targets = new Map<string, Promise<string[]>>();
     private entitySets = new Map<string, Promise<string>>();
 
@@ -432,13 +661,26 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
          * `goToPage` applies to `loadExactPage`.
          */
         if (typeof context.mode.trackContainerResize === 'function') {
-            context.mode.trackContainerResize(true);
+            // `ask`, because a host can publish a method and refuse to run it —
+            // measured twice on canvas, 2026-09-21. Losing the resize
+            // subscription costs column widths; letting the throw out costs the
+            // whole control.
+            ask(() => context.mode.trackContainerResize(true));
         }
     }
 
     public updateView(context: ComponentFramework.Context<IInputs>): React.ReactElement {
         const dataset = context.parameters.records;
         const mode = (context.parameters.selectionMode.raw ?? 'single') as SelectionMode;
+
+        /*
+         * **First, before anything else.** A running export re-enters
+         * `updateView` on every page it asks for, and this is the pass that
+         * harvests one and asks for the next. Everything below renders.
+         */
+        this.driveExport(context, dataset);
+
+        this.blankLabel = context.resources.getString('DataTable_GroupBlank');
 
         this.applyPageSize(context, dataset);
 
@@ -450,6 +692,71 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
 
         const columns = visibleColumns(dataset.columns ?? []);
         const pageIds = this.pageIds(dataset);
+
+        /*
+         * Grouping, resolved against the view's real columns.
+         *
+         * `groupBy` unset is the ordinary state and means this renders exactly
+         * what 0.5.0 rendered — which is why the property has no default.
+         *
+         * The primary key is **guessed** here and not read, and that is a
+         * known gap rather than a decision: `dataset.columns` does not carry
+         * it (measured — the layout held ten columns and the primary key was
+         * not among them), so the real answer is `PrimaryIdAttribute` from
+         * metadata. `guessPrimaryId` is right for every ordinary table and for
+         * the seventeen system activity tables, and **wrong for a custom
+         * activity table**, whose key is `activityid` and which no list can
+         * know about. The metadata read replaces it; until then a custom
+         * activity table's aggregate is refused by the server rather than
+         * answered wrongly.
+         */
+        const groupSpec = buildSpec(
+            dataset.getTargetEntityType(),
+            guessPrimaryId(dataset.getTargetEntityType()),
+            /*
+             * **Every column the dataset carries, not only the visible ones.**
+             *
+             * A hidden column is still fetched and still readable, and
+             * grouping by one is a real thing to want — "group by owner"
+             * without an owner column taking up width in the table. Validating
+             * against `visibleColumns` refused exactly that, and the refusal
+             * was indistinguishable from a typo: the maker got "ownerid is not
+             * a column on this view" about a column that is on the view.
+             *
+             * The measure cells still align to the **visible** columns, which
+             * is a different question and the right answer to it.
+             */
+            dataset.columns ?? [],
+            rawInput(context, 'groupBy'),
+            rawInput(context, 'aggregates'),
+        );
+
+        /*
+         * Reported to the **console**, once per distinct set, and not to the
+         * form.
+         *
+         * A mistyped column name is a design-time error: the person who can
+         * fix it is in the maker portal, and putting it on the form shows
+         * every user of that form an error only one of them can act on. What
+         * the maker gets instead is the list of columns that do exist, which
+         * is what a property-set's column picker would have given for free —
+         * the trade the manifest argues.
+         */
+        if (groupSpec.problems.length > 0) {
+            const reported = groupSpec.problems.map((problem) => problem.input).join('|');
+
+            if (reported !== this.reportedGroupProblems) {
+                this.reportedGroupProblems = reported;
+
+                for (const problem of groupSpec.problems) {
+                    // eslint-disable-next-line no-console
+                    console.warn('DataTable: ' + describeProblem(problem, columns));
+                }
+            }
+        }
+
+        const groupRoute = this.groupRoute(context, dataset, groupSpec.spec);
+
 
         /*
          * `isControlDisabled` is part of the condition rather than checked in
@@ -488,6 +795,23 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
         const props: IProps = {
             dataset,
             columns,
+            groupRoute,
+            groupSort: (rawInput(context, 'groupSort') ?? 'label') as GroupSort,
+            groupPlan: groupSpec.spec ? aliasPlan(groupSpec.spec) : null,
+            /*
+             * Expanding and collapsing, as one call. `null` collapses.
+             *
+             * The conditions arrive already built by `expandConditions`, which
+             * returns `null` for a group kind that cannot be expressed as a
+             * filter — a date bucket needs a `between` pair `buildFilter` does
+             * not emit. The component withholds the chevron in that case, so
+             * this is never called with an inexpressible group.
+             */
+            onExpand: (conditions) => {
+                this.expansion = conditions ?? [];
+                this.page = 1;
+                this.applyFilter(context);
+            },
             /*
              * Computed here rather than in the component because it is a
              * decision about the host — `mode.allocatedWidth` is the measurement
@@ -532,7 +856,9 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
             isRTL: context.userSettings.isRTL,
             theme: context.fluentDesignLanguage?.tokenTheme,
             getString: (id: string): string => context.resources.getString(id),
-            onSort: (columnName: string): void => this.sortBy(dataset, columnName),
+            onSort: (columnName: string, additive: boolean): void =>
+                this.sortBy(dataset, columnName, additive && boolInput(context, 'enableMultiSort')),
+            canMultiSort: boolInput(context, 'enableMultiSort') && Boolean(dataset.sorting),
             onFilter: (columnName: string, value: string): void =>
                 this.setFilterValue(context, columnName, value),
             onFilterOp: (columnName: string, op: DateOp): void =>
@@ -541,7 +867,48 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
             onClearFilters: (): void => this.clearFilters(context),
             onGoToPage: (page: number): void => this.goToPage(dataset, page),
             onPageSize: (size: number): void => this.choosePageSize(context, size),
-            onExport: (): void => this.exportCsv(context, dataset),
+            onExport: (): void => this.beginExport(context, dataset),
+            onCancelExport: (): void => this.cancelExport(context, dataset),
+
+            /*
+             * Formatting an aggregate, which no record owns. `formatting` is
+             * typed as always present and is absent on the hub's demo harness,
+             * so each method is detected rather than assumed — the same rule
+             * the date formatter above follows. A currency column gets the
+             * user's currency, everything else a decimal, and a host with
+             * neither gets the plain number rather than nothing.
+             */
+            formatNumber: (value: number, column: string): string => {
+                const currency = (dataset.columns ?? [])
+                    .some((each) => each.name === column && each.dataType.indexOf('Currency') === 0);
+                const format = context.formatting as {
+                    formatCurrency?: (value: number) => string;
+                    formatDecimal?: (value: number) => string;
+                } | undefined;
+
+                if (currency && typeof format?.formatCurrency === 'function') {
+                    return format.formatCurrency(value);
+                }
+
+                if (typeof format?.formatDecimal === 'function') {
+                    return format.formatDecimal(value);
+                }
+
+                return String(value);
+            },
+            /*
+             * The machine's state, flattened to what the component needs to
+             * draw. It never sees the state object itself, for the same reason
+             * it never sees `context`: rendering is not where this is decided.
+             */
+            exporting: this.exportState.phase === 'collecting'
+                ? {
+                    page: this.exportState.awaitingPage ?? this.exportState.nextPage,
+                    rows: this.exportState.rows.length,
+                    stopping: this.exportState.cancelled,
+                }
+                : null,
+            exportNote: this.exportState.phase === 'failed' ? this.exportState.message : this.exportNote,
             onNextPage: (): void => this.nextPage(dataset),
             onPreviousPage: (): void => this.previousPage(dataset),
             onToggleRow: (id: string): void => this.toggleRow(dataset, id, mode),
@@ -627,7 +994,13 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
             formatDate:
                 typeof context.formatting?.formatDateShort === 'function'
                     ? (value: Date, includeTime: boolean): string =>
-                        context.formatting.formatDateShort(value, includeTime)
+                        // The platform's answer where it gives one, the
+                        // browser's where it refuses. This runs inside render,
+                        // so a throw is fatal rather than degrading — and a
+                        // date in the wrong zone is a far smaller wrong than no
+                        // table at all.
+                        ask(() => context.formatting.formatDateShort(value, includeTime))
+                        ?? (includeTime ? value.toLocaleString() : value.toLocaleDateString())
                     : null,
 
             canCreate:
@@ -755,6 +1128,52 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
      * by rule — on the probe table it was the logical name, and a Customer
      * lookup has two — so the control reads the answer rather than deriving it.
      */
+    /**
+     * The table's primary key, from metadata.
+     *
+     * **`guessPrimaryId` is not good enough, and this is measured rather than
+     * cautious.** It derives `{entity}id` with a hard-coded set of the
+     * seventeen *system* activity tables as the exception — the shape
+     * `pcf-chart-view` uses. A **custom** activity table's key is `activityid`
+     * too, and no list can know about a table a maker created this morning.
+     *
+     * Measured 2026-09-20 on `cll_sitevisit`: the derived `cll_sitevisitid`
+     * was refused with `0x80041103`, *"The specified field does not exist"*,
+     * and because a refusal is whole-query it took the group counts with it.
+     * So the guess fails safe — nothing wrong is reported — but it fails, and
+     * grouping simply does not work on a custom activity table without this.
+     *
+     * Read through the same same-origin `fetch` the relationships use, because
+     * `context.webAPI` cannot address `EntityDefinitions`. Cached for the life
+     * of the control, and **the guess is the fallback** for a host that
+     * refuses the read — which is the right way round: derive when you cannot
+     * ask, rather than ask only when the derivation looks doubtful.
+     */
+    private primaryIdFor(host: LookupHost, entity: string): Promise<string> {
+        if (this.primaryId) {
+            return this.primaryId;
+        }
+
+        const url = `${host.clientUrl}/api/data/v9.2/EntityDefinitions(LogicalName='`
+            + `${encodeURIComponent(entity)}')?$select=PrimaryIdAttribute`;
+
+        const read = fetch(url, {
+            headers: { Accept: 'application/json', 'OData-MaxVersion': '4.0', 'OData-Version': '4.0' },
+            credentials: 'same-origin',
+        })
+            .then((response) => (response.ok ? response.json() : Promise.reject(response.status)))
+            .then((body: { PrimaryIdAttribute?: unknown }) => {
+                const name = body && body.PrimaryIdAttribute;
+
+                return typeof name === 'string' && name !== '' ? name : guessPrimaryId(entity);
+            })
+            .catch(() => guessPrimaryId(entity));
+
+        this.primaryId = read;
+
+        return read;
+    }
+
     private relationshipsFor(host: LookupHost, entity: string): Promise<Relationship[]> {
         if (this.relationships) {
             return this.relationships;
@@ -961,6 +1380,569 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
      * One id per line rather than comma-joined: a GUID contains no newline, so
      * the split is unambiguous, and a canvas app can `Split(…, Char(10))`.
      */
+
+    /**
+     * The record this subgrid sits on, and everything needed to work out which
+     * lookup points at it — or `null` on a main grid.
+     *
+     * `mode.contextInfo` is undocumented and typed as nothing; measured
+     * 2026-09-20 as `{ entityTypeName, entityId, entityRecordName }` on a form
+     * subgrid, and **with no `entityId` at all on a main grid** — so `entityId`
+     * is the test for "under a record", not the presence of the object.
+     */
+    private parentReading(
+        context: ComponentFramework.Context<IInputs>,
+        dataset: DataSet,
+        entity: string,
+    ): ParentReading | null {
+        const info = (context.mode as { contextInfo?: Record<string, unknown> }).contextInfo;
+        const entityType = info && typeof info.entityTypeName === 'string' ? info.entityTypeName : '';
+        const id = info && typeof info.entityId === 'string' ? info.entityId : '';
+
+        if (entityType === '' || id === '') {
+            return null;
+        }
+
+        const host = lookupHost(context);
+        const typed = (rawInput(context, 'parentLookup') ?? '').trim().toLowerCase();
+        const records = (dataset.sortedRecordIds ?? [])
+            .map((recordId) => dataset.records[recordId])
+            .filter((record) => Boolean(record));
+
+        /*
+         * Which columns the dataset actually loaded — **every column it
+         * carries, hidden ones included**, not just the visible ones. This is
+         * the only thing that knows; `getValue` answers `null` for an unloaded
+         * column, a non-existent column and an empty one alike.
+         */
+        const fetched = (dataset.columns ?? []).map((column) => column.name);
+
+        return {
+            record: { entityType, id },
+            explicit: typed === '' ? null : typed,
+            /*
+             * Reuses the `ManyToOneRelationships` read this control already
+             * makes for a lookup's `@odata.bind` key — same URL, same cache,
+             * filtered to the form's table. One metadata call serves both.
+             */
+            candidates: () => (host
+                ? this.relationshipsFor(host, entity).then((all) => all
+                    .filter((relationship) => relationship.target === entityType)
+                    .map((relationship) => relationship.column))
+                : Promise.resolve([])),
+            confirmed: (column) => rowsConfirm(records, column, id, fetched),
+        };
+    }
+
+    /**
+     * Everything the server route needs, or `null` when it is withheld.
+     *
+     * Built fresh on every `updateView` and handed to the component as a
+     * **loader** rather than resolved here — the `pcf-kanban-board` lesson:
+     * storing the answer on this instance and calling `notifyOutputChanged()`
+     * to get a repaint does not work, because that call announces that
+     * *outputs* changed and these did not, so the platform has no reason to
+     * call `updateView` again.
+     *
+     * `key` concatenates everything the answer depends on, so a change re-runs
+     * the query and a stale answer for an old key is dropped.
+     *
+     * The route is withheld — `null` — where sending the query would produce a
+     * number that is **wrong rather than missing**: no `webAPI` (canvas),
+     * nothing to group by, or a runtime filter that cannot be spelled in
+     * FetchXML, which would count records the grid is not showing.
+     */
+    private groupRoute(
+        context: ComponentFramework.Context<IInputs>,
+        dataset: DataSet,
+        spec: GroupSpec | null,
+    ): GroupRoute | null {
+        const api = (context as { webAPI?: WebApiReader }).webAPI;
+
+        if (!api || !spec) {
+            return null;
+        }
+
+        /*
+         * **The filter row only — never the expansion.**
+         *
+         * `dataset.filtering` holds both: `applyFilter` composes the maker's
+         * filter row with the conditions that narrow the table to one expanded
+         * group. Reading it back here fed the expansion into the aggregate,
+         * which re-ran and returned *only the expanded group* — so opening a
+         * group made every other group's header vanish, and getting back
+         * needed a second click to collapse.
+         *
+         * Found on the form, 2026-09-20, and it was a design error rather than
+         * a bug: **the expansion narrows the rows, not the group list.** The
+         * group list answers "what is in this view", which an expansion does
+         * not change. Building the aggregate's filter from the filter row
+         * alone keeps the headers on screen *and* stops the route key moving,
+         * so expanding costs no round trip at all.
+         */
+        const filter = filterToFetchXml(buildFilter(
+            this.filters,
+            visibleColumns(dataset.columns ?? []),
+            this.filterOps,
+        ) as Filter | null);
+
+        if (!filter.translatable) {
+            return null;
+        }
+
+        const plan = aliasPlan(spec);
+        const host = lookupHost(context);
+        const loose = dataset as { getViewId?: () => unknown };
+        const rawViewId = typeof loose.getViewId === 'function' ? ask(() => loose.getViewId!()) : null;
+        const viewId = typeof rawViewId === 'string' ? rawViewId.replace(/[{}]/g, '').toLowerCase() : '';
+        const parent = this.parentReading(context, dataset, spec.entity);
+
+        return {
+            key: [
+                spec.entity,
+                spec.groups.map((group) => group.column + ':' + group.kind).join('|'),
+                spec.measures.map((measure) => measure.aggregate + ':' + measure.column).join('|'),
+                viewId,
+                filter.xml,
+                parent ? parent.record.entityType + '/' + parent.record.id + '/' + (parent.explicit ?? '') : '',
+            ].join('~'),
+            load: () => this.loadGroups(api, host, spec, plan, viewId, filter.xml, parent),
+        };
+    }
+
+    /** The server route, run: resolve the parent, read the view, send the aggregate. */
+    private loadGroups(
+        api: WebApiReader,
+        host: LookupHost | null,
+        spec: GroupSpec,
+        plan: AliasPlan,
+        viewId: string,
+        filterXml: string,
+        parent: ParentReading | null,
+    ): Promise<GroupAnswer> {
+        const blank = this.blankLabel;
+        const refused = (message: string | null): GroupAnswer =>
+            ({ readings: [], source: 'client-refused', message });
+
+        const resolved: Promise<ParentResolution> = parent
+            ? resolveParentLookup(parent)
+            : Promise.resolve({ column: null, by: 'unrelated', candidates: [] });
+
+        /*
+         * The real primary key, in parallel with the parent resolution rather
+         * than before it — both are cached metadata reads and neither depends
+         * on the other, so on every pass after the first this costs nothing at
+         * all.
+         */
+        const keyed: Promise<string> = host
+            ? this.primaryIdFor(host, spec.entity)
+            : Promise.resolve(spec.primaryId);
+
+        return Promise.all([resolved, keyed]).then(([resolution, primaryId]) => {
+            /*
+             * A subgrid whose parent cannot be settled withholds the route
+             * rather than counting the whole table.
+             *
+             * `unrelated` is **not** that case: it means the rows say this
+             * grid is not narrowed to the record, and then no condition is the
+             * right answer — measured before the probe subgrid was switched to
+             * related-records only, where the table held 56 and the subgrid
+             * reported 56.
+             */
+            if (parent && withholdsRoute(resolution)) {
+                // eslint-disable-next-line no-console
+                console.warn(
+                    'DataTable: the lookup relating this subgrid to its record could not be settled ('
+                    + resolution.by + '; candidates: ' + (resolution.candidates.join(', ') || 'none')
+                    + '). Counting the whole view is withheld, because it would report a number larger '
+                    + 'than the grid is showing. Set the Parent lookup property, or "none" if this '
+                    + 'subgrid is not related to the record.',
+                );
+
+                return refused(null);
+            }
+
+            const parentXml = resolution.column && parent
+                ? parentFilterXml(resolution.column, parent.record.id)
+                : '';
+
+            return readViewFetchXml(api, viewId).then((viewXml) => loadAggregate(api, {
+                // The key from metadata, not the one guessed in `updateView`.
+                spec: { ...spec, primaryId },
+                plan,
+                viewXml,
+                filterXml: parentXml + filterXml,
+            }).then(
+                (rows) => {
+                    /*
+                     * Every alias comes back naming its own column, so a
+                     * response that does not describe the query sent is a
+                     * caught error rather than a mislabelled column. Free, and
+                     * the only integrity check available on a route whose
+                     * output is otherwise plausible whatever went in.
+                     */
+                    if (!describesPlan(rows, plan)) {
+                        // eslint-disable-next-line no-console
+                        console.warn('DataTable: the aggregate response does not describe the query sent.');
+
+                        return refused(null);
+                    }
+
+                    return {
+                        readings: rows.map((row) => toGroupReading(row, plan, blank)),
+                        source: 'server' as GroupSource,
+                        message: null,
+                    };
+                },
+                (refusal: Refusal) => refused(
+                    // Only a message fit to show. Measured: the server can
+                    // send a template with `{0}` still in it.
+                    refusal.renderable ? refusal.message : null,
+                ),
+            ));
+        });
+    }
+
+
+    /**
+     * Drive one pass of a running export.
+     *
+     * Called at the **top** of `updateView`, before anything else, and this is
+     * the only feature in the control that re-enters the lifecycle
+     * deliberately: every page it asks for produces an `updateView`, which is
+     * how the progress repaints for free and how the next page gets asked for.
+     *
+     * The guard is `shouldHarvest`: the machine is running, a page was asked
+     * for, and the platform is no longer loading. Any other pass falls through
+     * and renders. **Exactly one fetch is outstanding and the page number
+     * strictly increases**, which is what makes it terminate.
+     *
+     * State lives on the instance rather than in React, and this is the one
+     * feature where that is safe — because the export drives `updateView`
+     * itself. The editing state had to move into the component for exactly the
+     * opposite reason: nothing re-entered the lifecycle to repaint it.
+     */
+    private driveExport(context: ComponentFramework.Context<IInputs>, dataset: DataSet): void {
+        const state = this.exportState;
+
+        if (!shouldHarvest(state, Boolean(dataset.loading))) {
+            return;
+        }
+
+        /*
+         * **The watchdog is not cleared here.** It belongs to the request, not
+         * to the pass. Clearing it at the top and re-arming it on every
+         * `repeat` reset the thirty seconds on each pass the platform sent —
+         * so a host that keeps re-rendering while a page never lands starved
+         * the only failure signal this feature has, and the export hung
+         * instead of ending. Observed on a real subgrid, 2026-09-21: an export
+         * stopped on page two and sat there until the reader pressed Stop.
+         *
+         * `askForExportPage` clears and re-arms it when a new page is asked
+         * for, and `finishExport` clears it. Those are the only two moments
+         * that change what is outstanding.
+         */
+        const columns = visibleColumns(dataset.columns ?? []);
+        const arrival = harvest(
+            state,
+            dataset.sortedRecordIds ?? [],
+            (id) => {
+                const record = dataset.records[id];
+
+                return columns.map((column) => (record ? record.getFormattedValue(column.name) : ''));
+            },
+        );
+
+        // The page asked for has not landed — these are rows already held. Keep
+        // waiting on the request already outstanding: do not advance past it,
+        // do not ask again, and leave its watchdog running.
+        if (arrival.kind === 'repeat') {
+            return;
+        }
+
+        const collected = arrival.state;
+
+        if (arrival.kind === 'end') {
+            this.finishExport(context, dataset, collected);
+
+            return;
+        }
+
+        const next = nextPageFor(collected, Boolean(dataset.paging.hasNextPage));
+
+        if (next === null) {
+            this.finishExport(context, dataset, collected);
+
+            return;
+        }
+
+        this.exportState = { ...collected, awaitingPage: next };
+        this.askForExportPage(context, dataset, next);
+        this.notifyOutputChanged();
+    }
+
+    /**
+     * Ask for one page.
+     *
+     * `loadExactPage` where the host has it — measured moving cleanly in both
+     * directions and **not** accumulating. Otherwise `loadNextPage(true)`,
+     * which only steps forward by one and is therefore exactly what this loop
+     * needs; on the accumulating platform it hands back the whole range, which
+     * the dedupe already absorbs and which makes the loop *cheaper*.
+     *
+     * `goToPage` refuses a multi-page jump on that host, and rightly — but
+     * this never makes one.
+     */
+    private askForExportPage(context: ComponentFramework.Context<IInputs>, dataset: DataSet, page: number): void {
+        const paging = dataset.paging as {
+            loadExactPage?: (page: number) => void;
+            loadNextPage?: (only: boolean) => void;
+        };
+
+        this.startExportWatchdog(context, dataset);
+
+        /*
+         * **Page one is a jump; every page after it is a step.**
+         *
+         * Measured on a real subgrid, 2026-09-21, with the export tracing this
+         * method used to print. `loadExactPage(1)` was honoured — 250 rows,
+         * `pageSize` 250, `hasNextPage` true, `totalResultCount` 1222. The very
+         * next call, `loadExactPage(2)`, was **not**: the platform re-rendered
+         * holding page one's rows, left `firstPageNumber` at 1, and reported
+         * `loading: false`. It was not fetching and nothing further arrived.
+         *
+         * That single fact explains both failures this feature has had. The
+         * stall is the obvious one. The earlier short file — 972 of 1,222, with
+         * pages one, three, four and five present — is the same thing before
+         * the guards existed: an ignored request was harvested as though it had
+         * answered, the counter advanced past a page nobody had asked for
+         * again, and whichever later jumps happened to land left the gaps.
+         *
+         * So the walk does not use page numbers any more. `loadNextPage` is the
+         * dataset's own "give me more", it cannot be asked for a page that does
+         * not follow the one loaded, and `hasNextPage` says when to stop. On
+         * this platform it accumulates — `pageIds()` records the measurement
+         * that `loadOnlyNewPage` is not honoured — which `harvest`'s dedupe has
+         * absorbed since the first version of this machine.
+         *
+         * `loadExactPage` keeps exactly one job: putting the reader back on
+         * their page afterwards, which is a single jump and is what it was
+         * actually measured doing.
+         */
+        if (typeof paging.loadExactPage === 'function') {
+            paging.loadExactPage(page);
+
+            return;
+        }
+
+        if (page <= 1) {
+            dataset.paging.reset();
+
+            return;
+        }
+
+        if (typeof paging.loadNextPage === 'function') {
+            paging.loadNextPage(true);
+        }
+    }
+
+    /**
+     * Give up on a page that never arrived.
+     *
+     * **`loadExactPage` returns `void` and has no rejection to catch**, so a
+     * fetch that never lands is indistinguishable from one still in flight.
+     * `dataset.error` covers a refusal the platform reports; this covers the
+     * silence, which would otherwise leave "Reading page 4…" on screen for the
+     * life of the form.
+     *
+     * Cleared in `destroy()` beside `filterTimer`, for the same reason: a form
+     * the user navigated away from mid-export.
+     */
+    /**
+     * The only failure signal a page that never lands can produce.
+     *
+     * **It has to finish the export, not record that it failed.** Until
+     * 0.6.6 it set `phase: 'failed'` and called `notifyOutputChanged()` — and
+     * that announces *outputs* changed, which gives the platform no reason to
+     * call `updateView`. So a stalled export sat on screen saying "Reading page
+     * 2" forever: the failure was recorded, nothing rendered it, and no file
+     * was written. Observed on a real subgrid, 2026-09-21.
+     *
+     * This is the same lesson `pcf-kanban-board` is quoted for elsewhere in
+     * this file, arrived at a second time from the other direction: nothing
+     * re-enters `updateView` on its own, so any state set outside it must carry
+     * itself to completion.
+     */
+    private startExportWatchdog(context: ComponentFramework.Context<IInputs>, dataset: DataSet): void {
+        this.clearExportWatchdog();
+
+        this.exportWatchdog = setTimeout(() => {
+            const state = this.exportState;
+
+            if (state.phase !== 'collecting') {
+                return;
+            }
+
+            // Write what there is and put the reader back. A short file that
+            // says why beats a control that never comes back.
+            this.finishExport(context, dataset, state, this.exportFailure
+                .replace('{0}', String(state.awaitingPage ?? state.nextPage))
+                .replace('{1}', String(state.rows.length)));
+        }, EXPORT_TIMEOUT_MS) as unknown as number;
+    }
+
+    private clearExportWatchdog(): void {
+        if (this.exportWatchdog !== null) {
+            clearTimeout(this.exportWatchdog);
+            this.exportWatchdog = null;
+        }
+    }
+
+    /** Write what was collected, then put the reader back where they were. */
+    private finishExport(
+        context: ComponentFramework.Context<IInputs>,
+        dataset: DataSet,
+        state: Collecting,
+        note?: string,
+    ): void {
+        this.clearExportWatchdog();
+
+        const capped = wasCapped(state);
+
+        this.exportState = { phase: 'idle' };
+        // `note` is the watchdog's reason. Passed in rather than set on the
+        // instance beforehand, because this line used to clear it again.
+        this.exportNote = note !== undefined
+            ? note
+            : capped
+                ? context.resources.getString('DataTable_ExportCapped').replace('{0}', String(state.rows.length))
+                : '';
+
+        if (state.rows.length > 0) {
+            this.writeCsv(context, dataset, state.headers, state.rows);
+        }
+
+        this.putBack(dataset, restorePlan(state));
+        this.notifyOutputChanged();
+    }
+
+    /**
+     * Restore the page size and the page.
+     *
+     * **Always, however the export ended** — finished, cancelled or failed. It
+     * moved the reader off their page and raised their page size to 250 to do
+     * its job, and leaving them there would be a side effect of asking for a
+     * file.
+     *
+     * One more round trip, unavoidable. On a host without `loadExactPage` the
+     * page cannot be restored at all and the reader lands on page one; that is
+     * named in `docs/limitations.md` rather than hidden.
+     */
+    private putBack(dataset: DataSet, restore: { page: number; pageSize: number }): void {
+        const paging = dataset.paging as { loadExactPage?: (page: number) => void };
+
+        // The page size is no longer touched by an export, so there is nothing
+        // to put back but the page. Calling `setPageSize` here anyway would
+        // re-introduce the very state change that broke paging past page one.
+        this.appliedPageSize = restore.pageSize;
+
+        if (restore.page > 1 && typeof paging.loadExactPage === 'function') {
+            this.page = restore.page;
+            paging.loadExactPage(restore.page);
+
+            return;
+        }
+
+        this.page = 1;
+        dataset.refresh();
+    }
+
+    /**
+     * Start a full-view export, or write the loaded rows and be done.
+     *
+     * The `loaded` scope is 0.5.0's behaviour untouched: no loop, no page
+     * movement, no state machine.
+     *
+     * **`view` no longer raises the page size, and that is the fix for the
+     * whole saga.** It used to ask for 250 — measured honoured, echoed back,
+     * not clamped — to keep the round trips down. Page one duly arrived at 250.
+     * Every request after it failed: `loadExactPage(2)` was ignored outright,
+     * `loadNextPage(true)` threw into the platform's own global error handler,
+     * and both left the dataset holding page one with `loading: false`.
+     * Traced on a real subgrid, 2026-09-21.
+     *
+     * The reader's pager walks this same view without trouble, and `goToPage`
+     * calls exactly what the export calls. The single difference was the
+     * resize. So the export stops deviating: it pages the view the way the
+     * reader already pages it, at the size already in effect, and the platform
+     * state it walks over is the state the platform is already happy with.
+     *
+     * The cost is round trips, and it is a real cost — a view of 1,222 records
+     * at a page size of 25 is 49 of them rather than 5. That is what the page
+     * counter and the Stop button are for, and a maker who minds can raise
+     * `pageSizeOptions`. A slow export that is correct beats a fast one that
+     * silently drops a page, which is what the last three attempts shipped.
+     */
+    private beginExport(context: ComponentFramework.Context<IInputs>, dataset: DataSet): void {
+        if (this.exportState.phase === 'collecting') {
+            return;
+        }
+
+        const columns = visibleColumns(dataset.columns ?? []);
+        const headers = columns.map((column) => column.displayName);
+
+        if (rawInput(context, 'exportScope') !== 'view') {
+            this.exportCsv(context, dataset);
+
+            return;
+        }
+
+        this.exportNote = '';
+        this.exportFailure = context.resources.getString('DataTable_ExportFailed');
+        this.exportState = begin(headers, {
+            page: this.page,
+            pageSize: this.appliedPageSize,
+        });
+
+        this.askForExportPage(context, dataset, 1);
+        this.notifyOutputChanged();
+    }
+
+    /**
+     * Stop collecting.
+     *
+     * **It cannot abort the fetch in flight** — the platform offers no way to —
+     * so the page already asked for still arrives and is discarded. That is why
+     * the button reports *stopping* rather than *stopped*: a control that said
+     * it had stopped and then sat there for another round trip would read as
+     * broken. Said in `docs/limitations.md` too.
+     */
+    private cancelExport(context: ComponentFramework.Context<IInputs>, dataset: DataSet): void {
+        const state = this.exportState;
+
+        if (state.phase !== 'collecting') {
+            return;
+        }
+
+        /*
+         * **Stop stops.** It used to set `cancelled` and wait for the page in
+         * flight to arrive before writing anything — which is fine while pages
+         * are arriving and a hang when they are not. Observed on a real
+         * subgrid, 2026-09-21: the export stalled, and Stop then did nothing at
+         * all, because the only thing that acted on `cancelled` was the arrival
+         * of a page that was never coming.
+         *
+         * There is nothing to wait for. The file can be written now, from what
+         * has been collected; the page still in flight arrives to an idle
+         * machine and is ignored, which is what `shouldHarvest` is for. The
+         * platform offers no way to abort the request itself — that part of
+         * `docs/limitations.md` stands — but nothing about it needs to be
+         * waited on.
+         */
+        this.clearExportWatchdog();
+        this.finishExport(context, dataset, state);
+    }
+
     public getOutputs(): IOutputs {
         return {
             selectedRecordIds: this.selected.join('\n'),
@@ -1070,6 +2052,13 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
             this.filterTimer = null;
         }
 
+        /*
+         * The export's per-page watchdog, for the same reason: a form the
+         * reader navigated away from mid-export would otherwise fire a timer
+         * into a control that no longer exists.
+         */
+        this.clearExportWatchdog();
+
         this.metadata.clear();
         this.relationships = null;
         this.targets.clear();
@@ -1101,7 +2090,23 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
          * need to know how big a page is — reading it is not the same as asking
          * for it. See the manifest for why the default was removed.
          */
-        if (raw === null || raw === undefined) {
+        /*
+         * **Zero is "unset", not "one row per page".**
+         *
+         * The comment below has said that about `paging.pageSize` since 0.2.0,
+         * and the clamp underneath disagreed with it about the *property*: a
+         * raw `0` fell past this branch into `Math.max(…, 1)` and became a page
+         * size of one.
+         *
+         * That is not a hypothetical. **A canvas app shows an unset whole
+         * number as `0`** — seen in a real studio, 2026-09-21, with `Page size`
+         * reading `0` on a control nobody had configured — so the trap was
+         * waiting for every canvas maker who left the property alone: twenty
+         * rows fetched and one drawn, looking like the control could not page.
+         *
+         * A negative is the same statement and gets the same answer.
+         */
+        if (raw === null || raw === undefined || raw <= 0) {
             // `0` is "the host did not say", not "one row per page". A fallback
             // of `1` is a page size the platform never has, and the slice would
             // cut the view down to it — twenty rows arriving and one drawn.
@@ -1171,10 +2176,23 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
             .filter((record) => Boolean(record))
             .map((record) => columns.map((column) => record.getFormattedValue(column.name) ?? ''));
 
-        const csv = toCsv(
-            columns.map((column) => column.displayName),
-            rows,
-        );
+        this.writeCsv(context, dataset, columns.map((column) => column.displayName), rows);
+    }
+
+    /**
+     * Turn headers and rows into a file, by whichever route the host allows.
+     *
+     * Split out of `exportCsv` so the full-view path can hand it rows that
+     * came from forty fetches rather than from the dataset as it stands. Every
+     * decision below is 0.5.0's, unchanged.
+     */
+    private writeCsv(
+        context: ComponentFramework.Context<IInputs>,
+        dataset: DataSet,
+        headers: string[],
+        rows: string[][],
+    ): void {
+        const csv = toCsv(headers, rows);
 
         const name = `${dataset.getTitle() || 'records'}.csv`;
 
@@ -1287,7 +2305,24 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
      * ORDER BY. Replacing rather than appending is what keeps three clicks from
      * building a three-deep sort nobody asked for.
      */
-    private sortBy(dataset: DataSet, columnName: string): void {
+    /**
+     * Order by one column.
+     *
+     * `additive` appends to the order instead of replacing it, which the
+     * platform honours: **measured 2026-09-20**, two entries pushed and
+     * refreshed reordered the rows within the first column's ties, and
+     * flipping only the second entry's direction reversed them. The array
+     * survived `paging.reset()` and a page turn, and four entries were retained
+     * with no ceiling found.
+     *
+     * That measurement took two attempts and the first was a false pass. The
+     * probe sorted by a column whose every value was distinct, so the primary
+     * sort never produced a tie and the secondary had nothing to break — rows
+     * agreeing with the request is not evidence the request was honoured. The
+     * second attempt grouped the sort by a four-value Choice and flipped only
+     * the second entry.
+     */
+    private sortBy(dataset: DataSet, columnName: string, additive: boolean): void {
         const sorting = dataset.sorting;
 
         /*
@@ -1303,13 +2338,36 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
             return;
         }
 
-        const current = sorting.find((status) => status.name === columnName);
-        const direction: SortDirection = current
-            ? nextDirection(current.sortDirection)
-            : ASCENDING;
+        const at = sorting.findIndex((status) => status.name === columnName);
+        const current = at === -1 ? undefined : sorting[at];
 
-        sorting.length = 0;
-        sorting.push({ name: columnName, sortDirection: direction });
+        if (!additive) {
+            /*
+             * The 0.5.0 behaviour, unchanged and deliberately the default: a
+             * plain click replaces the order rather than adding to it. Every
+             * existing installation clicks a header the same way it always did.
+             */
+            const direction: SortDirection = current ? nextDirection(current.sortDirection) : ASCENDING;
+
+            sorting.length = 0;
+            sorting.push({ name: columnName, sortDirection: direction });
+        } else if (at === -1) {
+            sorting.push({ name: columnName, sortDirection: ASCENDING });
+        } else if (current && current.sortDirection === ASCENDING) {
+            sorting[at] = { name: columnName, sortDirection: nextDirection(current.sortDirection) };
+        } else {
+            /*
+             * **The third activation removes it**, rather than cycling back to
+             * ascending.
+             *
+             * With a rank on screen there is a meaningful "not sorted by this"
+             * state, and no other way to reach it — a column added to a
+             * multi-column sort by mistake would otherwise be stuck in the
+             * order forever. A single-column sort has no such state, which is
+             * why the plain path above still cycles.
+             */
+            sorting.splice(at, 1);
+        }
 
         // A new order makes "page 4" meaningless.
         this.page = 1;
@@ -1446,11 +2504,42 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
             return;
         }
 
-        const expression = buildFilter(
+        const filterRow = buildFilter(
             this.filters,
             visibleColumns(dataset.columns ?? []),
             this.filterOps,
         );
+
+        /*
+         * **Expanding a group is a filter, not a scroll**, and this is where
+         * the two meet.
+         *
+         * The expansion's conditions are ANDed onto whatever the filter row
+         * already says, so a maker's filter and a reader's expansion compose
+         * rather than replace each other. Everything downstream — paging,
+         * sorting, the pager — then works inside the group untouched, which is
+         * what dissolves "a group whose members span pages": that question is
+         * never asked, because the control never asks for *the rows of group X
+         * within page N*.
+         */
+        const expression = this.expansion.length === 0
+            ? filterRow
+            : {
+                /*
+                 * One cast, at the one place the pure side meets the platform
+                 * side. `query/fetchXml.ts` declares its own `Condition`
+                 * rather than importing `ConditionExpression`, so that the
+                 * module stays loadable by `dev/modules.js` with no platform
+                 * types in reach — the purity boundary that suite enforces.
+                 * The two shapes are the same three fields; only the operator
+                 * is an enum on one side and a number on the other.
+                 */
+                conditions: (filterRow ? filterRow.conditions : [])
+                    .concat(this.expansion as unknown as NonNullable<typeof filterRow>['conditions']),
+                filterOperator: 0,
+                ...(filterRow && filterRow.filters ? { filters: filterRow.filters } : {}),
+            } as typeof filterRow;
+
         const signature = expression === null ? 'none' : JSON.stringify(expression);
 
         if (signature === this.appliedFilter) {

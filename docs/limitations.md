@@ -36,9 +36,58 @@ order: 7
 
 ## What the CSV export covers
 
-- **It exports the rows loaded so far, not the whole view.** The dataset holds
-  the pages that have been fetched; pages nobody has opened are not in it. Read
-  a bigger page size, or page through, before exporting a long view.
+- **What it covers is a setting.** *Export covers* is **the rows loaded so
+  far** by default — the dataset holds the pages that have been fetched, and
+  pages nobody opened are not in it. Set it to **the whole view** and the
+  control reads the rest first.
+- **Reading the whole view costs one request per page, at the view's own page
+  size — and that page size is often very small.** A model-driven subgrid was
+  measured at **four rows a page**, which turned 1,222 records into **306
+  requests**. The export does not change it, for the reason in the next bullet.
+- **Set `Page size` if you export large views.** It is the lever: it raises the
+  page the *grid* uses, so the same 1,222 records become 13 requests at 100 a
+  page or 5 at 250. It is applied when the grid loads rather than changed
+  underneath it, which is the distinction that matters here.
+- **At most 500 requests.** Whichever ceiling is reached first — 10,000 rows or
+  500 pages — ends the export, and the file says it holds the first N rows
+  rather than the view. Rows bound the file; pages bound the server, and at four
+  rows a page the row ceiling alone would have permitted 2,500 round trips.
+- **While it runs, the table is replaced by a page counter and a Stop.** The
+  rows are not drawn at all. They would be pages nobody asked to see, replaced
+  every round trip — and at a page size of 250 the table grew past the viewport
+  faster than a reader could scroll, carrying **Stop** (which sits below the
+  table, in the pager) off the bottom of the screen with it. The rows come back
+  on the page you started from as soon as the file is written.
+- **The export pages the view exactly as you do, and never resizes it.** It
+  asks for the same pages, through the same call, at the same size the pager is
+  already using. Measured on a real subgrid, 2026-09-21: after the export raised
+  the page size to 250, page one arrived and **every request after it failed** —
+  a jump to page two was ignored outright, and a step to the next page threw
+  inside the platform. The same view pages perfectly from the pager. The resize
+  was the only difference, so the resize is gone.
+- **An export never asks for a page it has not been answered about.** The
+  platform serves the most recent request and says nothing about the ones it
+  dropped, so a control that asked for page 3 while page 2 was still in flight
+  would simply never receive page 2 — and would write a file that looks
+  complete. Each page is confirmed to have arrived, by `firstPageNumber`, before
+  the next is requested.
+- **Stop writes the file immediately.** The platform offers no way to abort the
+  request already in flight, so the page being read still arrives — but nothing
+  needs to wait for it: it arrives to a finished export and is discarded. The
+  file holds what had been collected at the moment you pressed Stop.
+- **A page that never arrives ends the export after 30 seconds.** The file is
+  still written, holding what there was, and the control says which page it was
+  waiting for. `loadExactPage` returns nothing to wait on and reports no error,
+  so a timer is the only failure signal available.
+- **At most 10,000 rows.** Past that the export stops and says so, and the file
+  holds the first 10,000. The limit is the number of round trips rather than
+  the size of the file.
+- **Wherever it stops, you are put back on your page.** The export moves
+  through the view to do its job; leaving a reader somewhere else would be a
+  side effect of asking for a file. The page size is never touched, so there is
+  nothing there to restore.
+  On a host without `loadExactPage` the page cannot be restored and the reader
+  lands on page one.
 - **Values are the formatted ones**, matching the table rather than the raw
   values underneath — so a choice exports as its label and a currency with its
   symbol.
@@ -69,6 +118,10 @@ order: 7
   lookup column stages nothing — measured, five value shapes, every save
   refused — so a lookup pick is written with `webAPI.updateRecord` instead,
   which a canvas app does not have. On canvas, lookup cells stay read-only.
+  Canvas **publishes** `page.getClientUrl` and throws `Method not implemented.`
+  when it is called, so the control asks and takes the refusal for an answer;
+  until 0.6.12 the throw escaped and the studio rendered *Error loading
+  control* instead of the table.
   The write also needs the organisation URL to read the table's relationship
   metadata from; a host that withholds it, such as the hub's demo, gets the
   same read-only cell.
@@ -79,18 +132,38 @@ order: 7
   The form is where the business rules and required fields live; an inline row
   would have to bypass both. The table needs *Allow quick create* on and a
   quick create form, and the button is model-driven only.
-- **0.4.0 asks for one permission at import: Utility.** It buys the option
-  lists the choice editor and choice filter are built from. No Web API: writes
-  still go through the dataset record, and the New button uses a navigation
-  call no feature gates.
+- **Two permissions are asked for at import: Utility and Web API.** `Utility`
+  arrived in 0.4.0 and buys the option lists the choice editor and choice
+  filter are built from. `WebAPI` arrived in 0.5.0 and buys exactly one call,
+  `updateRecord`, for lookup cells only — every other column still writes
+  through the dataset record, and the New button uses a navigation call no
+  feature gates. Both are declared `required="false"`, so an environment that
+  declines one loses only what that one buys.
 - **Editing writes one cell at a time.** There is no row-level Save/Cancel and
   no batching: leaving a cell commits it. A column that is part of a rule
   spanning several columns is better edited on the form.
 - **Columns can only be pinned from the ends.** `Pinned columns (start)` and
   `Pinned columns (end)` take counts, so a column out of the middle of the view
   cannot be pinned without moving it in the view designer first.
-- **No multi-column sort.** Sorting one column replaces the order rather than
-  adding to it, which is what the view's own `ORDER BY` holds.
+- **Sorting by several columns is off until a maker turns it on.** With
+  **Allow sorting by several columns** on, shift-clicking a heading adds that
+  column to the order after the ones already in it; a plain click still
+  replaces the whole order, so every existing installation behaves exactly as
+  it did. A rank appears beside each arrow once more than one column is in play.
+- **Shift-click is the only way in, and it is not discoverable.** There is no
+  visible affordance for adding a column to the sort — a reader who does not
+  know the gesture will not find it. Accepted for this release rather than
+  solved.
+- **A third shift-click removes a column from the order** rather than cycling
+  back to ascending. With a rank on screen there is a meaningful "not sorted by
+  this" state and no other way to reach it; a single-column sort has no such
+  state, which is why a plain click still cycles.
+- **The rank is in the heading's accessible name, not in `aria-sort`.** That
+  attribute takes ascending, descending or none and carries no position, so a
+  screen reader told only `aria-sort` would hear several columns each "sorted
+  ascending" and nothing about which one wins.
+- **Unverified in a canvas app.** Whether `dataset.sorting` is honoured there at
+  all, let alone with several entries, has not been measured.
 
 ## Behaviour worth knowing
 

@@ -6,9 +6,11 @@ order: 1
 
 # Data Table
 
-A sortable, filterable table over any Dataverse view, with inline editing, pinned columns and a New button.
+A sortable, filterable table over any Dataverse view — with grouping and totals, inline editing, pinned columns and a New button.
 
 ::image{src=media/screenshot.png alt="Data Table over an Accounts view: a checkbox column, eight columns with a filter row beneath the headings, five rows of formatted currency and dates, and a pager reading 1 to 5 of 24 with a Go to page box" zoom}
+
+::image{src=media/screenshot-grouped.png alt="The same table grouped by Industry: one header per industry showing its record count and the sum and average of Annual revenue, a blank group for the record with no industry, and a caption reading 5 groups, 12 records, the whole view" zoom}
 
 ::image{src=media/screenshot-pinned.png alt="The same table scrolled sideways in a narrow container: Account name held at the left with a hairline seam and the scrolled columns passing underneath it, Modified on held at the right with its own seam, and Annual revenue, City and Owner moved between them" zoom}
 
@@ -32,6 +34,12 @@ form's command bar what the ribbon should act on.
   so they apply across the whole result set. A control that sorts in the browser
   reorders the page you can see — twenty-five rows out of two hundred and forty
   — which is a wrong answer that looks right.
+- **It answers about the whole view, and says when it cannot.** Grouping asks
+  the server for one aggregate over every record, so *14 groups · 4,120 records
+  · the whole view* means all 4,120 — and when that query is not available the
+  caption reads *the records loaded so far* instead. A page-sized total
+  presented as a whole-view total is a wrong answer that looks right, and the
+  caption exists so that it cannot happen quietly.
 - **It is a real table.** `<table>`, `<th scope="col">`, `aria-sort`, a focusable
   control in every cell that does something. Screen readers and keyboards get
   the structure for free, rather than an emulation of it.
@@ -53,6 +61,12 @@ on screen — so it narrows a 4,000-row view rather than the twenty-five rows in
 front of you. Text, numeric and date columns get a box everywhere; choice
 columns get one on a model-driven app; lookups do not, and
 [Limitations](limitations.md) says why.
+
+Grouping draws one header per group with its count and any measures you ask
+for, and expanding a group filters the view to it rather than scrolling to it —
+so a group never spans a page boundary. Sorting by several columns is off until
+a maker turns it on, and the CSV export covers the loaded pages by default or
+the whole view on request.
 
 Inline editing covers text, number, yes/no, date and — on a model-driven app —
 choice and lookup cells, one cell at a time. Every column but a lookup writes

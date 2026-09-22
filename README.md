@@ -40,13 +40,15 @@ than on `ds.paging.pageSize`, because the platform's own value does not equal
 the requested one until the refresh lands. Without it, the control spins. See
 [SPEC.md](SPEC.md).
 
-One `<feature-usage>`, declared in 0.4.0 after three releases of none:
-`Utility`, for `getEntityMetadata`. It buys the option list a choice column's
-editor and filter box are built from, which the platform hands a dataset
-control no other way. Nothing here touches Web API or device, and
-`openDatasetItem()` and `navigation.openForm()` sit on surfaces no feature
-gates — so the prompt at import is one item long, and declining it costs only
-the choice cells.
+Two `<feature-usage>` entries, both `required="false"`. `Utility` was declared
+in 0.4.0 after three releases of none, for `getEntityMetadata`: it buys the
+option list a choice column's editor and filter box are built from, which the
+platform hands a dataset control no other way. `WebAPI` followed in 0.5.0, for
+exactly one call — `updateRecord`, for lookup cells, and nothing else. Device
+is untouched, and `openDatasetItem()` and `navigation.openForm()` sit on
+surfaces no feature gates. So the prompt at import is two items long, and
+declining either costs only what that one buys: the choice cells, or the
+lookup editor.
 
 **Editing still asks nothing of the environment, which is the whole reason it
 is built the way it is.** The write goes through `record.setValue()` and
@@ -82,7 +84,7 @@ is refused.
 | ↳ `cds-data-set-options` | manifest attribute | — | all three on | Keeps the model-driven subgrid's command bar, view selector and quick find. Design-time only; not a maker-facing property |
 | `pageSize` | Whole.None | input | *(unset)* | Rows requested per page, clamped to 1–250. Unset adopts the host's own page size and never calls `setPageSize` |
 | `pageSizeOptions` | SingleLine.Text | input | *(unset)* | A comma-separated list, e.g. `10,25,50`, offered as a rows-per-page picker. Unset means no picker |
-| `enableFiltering` | TwoOptions | input | `true` | A filter box under each text and numeric column heading, applied server-side |
+| `enableFiltering` | TwoOptions | input | `true` | A filter box under each text, numeric, date and — in a model-driven app — choice column heading, applied server-side |
 | `enableExport` | TwoOptions | input | `false` | An **Export CSV** button covering the rows loaded so far |
 | `selectionMode` | Enum | input | `single` | `none`, `single` or `multiple` |
 | `enableSorting` | TwoOptions | input | `true` | Show sort controls on the columns the view allows sorting on |
@@ -91,11 +93,25 @@ is refused.
 | `pinnedEnd` | Whole.None | input | *(unset)* | The same at the other end. One column is always left unpinned, and pinning drops itself entirely where it would leave nothing to scroll |
 | `enableEditing` | TwoOptions | input | `false` | Edit a cell in place and save it. Only cells the platform reports as editable are offered |
 | `editableColumns` | SingleLine.Text | input | *(unset)* | A comma-separated allow-list of logical names. It narrows what the platform permits; it never widens it |
+| `enableCreate` | TwoOptions | input | `false` | A **New** button that opens the table's quick create form. Model-driven only: canvas has no form to open |
+| `groupBy` | SingleLine.Text | input | *(unset)* | Comma-separated logical names to group the rows by. Unset renders exactly as 0.5.0 did |
+| `aggregates` | SingleLine.Text | input | *(unset)* | Per-group measures as `aggregate:column`, e.g. `sum:revenue, avg:revenue`. A record count is always shown |
+| `groupSort` | Enum | input | `label` | Order group headers by their `label` or by their record `count` |
+| `parentLookup` | SingleLine.Text | input | *(unset)* | The lookup pointing at the record a subgrid sits under. Normally unset; set it where the table has several lookups to the same table, or `none` where the subgrid is unrelated |
+| `enableMultiSort` | TwoOptions | input | `false` | Shift-click a heading to add that column to the sort order. Off by default, so a plain click behaves exactly as it did |
+| `exportScope` | Enum | input | `loaded` | Whether **Export CSV** writes the rows already loaded or reads `view` — the whole view — first, at one request per page |
 | `editedRecordId` | SingleLine.Text | output | — | The row most recently saved by an inline edit |
+| `createdRecordId` | SingleLine.Text | output | — | The row most recently created through the New button |
 | `selectedRecordIds` | Multiple | output | — | Selected row IDs, one per line |
 | `openedRecordId` | SingleLine.Text | output | — | The row most recently opened |
 
-Strings ship in English (1033) only. React and Fluent UI come from the platform
+Strings ship in five languages — English (1033), German (1031), French (1036),
+Japanese (1041) and Spanish (3082) — all carrying the same 117 keys. The four
+translations are machine-generated and have not been read by a native speaker;
+`npm run check` proves every key and every `{0}` placeholder is present in each,
+and proves nothing about the wording. Corrections are welcome as a patch.
+
+React and Fluent UI come from the platform
 as `<platform-library>` entries rather than from the bundle — the build confirms
 it, emitting `Reactv16` and `FluentUIReactv940` as webpack externals.
 

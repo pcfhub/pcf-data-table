@@ -7,6 +7,73 @@ appliesTo: ">=0.2.0"
 
 # Migration
 
+## 0.5.x → 0.6.0
+
+0.6.0 adds grouping with totals, sorting by several columns, and a CSV export
+that can cover the whole view. **Nothing was renamed, nothing was removed, no
+property changed its default, and no new permission is asked for at import.**
+
+### What changes on upgrade without touching anything
+
+Nothing you can see. All six new properties default to off or unset:
+
+| Property | Default | Until you set it |
+| --- | --- | --- |
+| `groupBy` | *(unset)* | The table is ungrouped, exactly as before |
+| `aggregates` | *(unset)* | No measures; only relevant with `groupBy` |
+| `groupSort` | `label` | Only relevant with `groupBy` |
+| `parentLookup` | *(unset)* | The control resolves it, and withholds the whole-view count when it cannot |
+| `enableMultiSort` | `false` | A heading click replaces the sort, as it always did |
+| `exportScope` | `loaded` | Export writes the pages already fetched, as in 0.2.0 |
+
+### Nothing new is asked of the environment
+
+`Utility` arrived in 0.4.0 and `WebAPI` in 0.5.0, both declared
+`required="false"`. **0.6.0 adds neither**, so the import prompts exactly as
+0.5.0 did. Grouping's whole-view query uses the `WebAPI` your environment
+already granted or declined; where it was declined, grouping still works over
+the loaded rows and the caption says so.
+
+### Turning grouping on
+
+Set **Group by** to one or more logical column names — `industrycode`, or
+`industrycode, ownerid`. Add **Aggregates** as `function:column` pairs to put
+measures in the group headers.
+
+Two things to check the first time:
+
+- **The caption.** *the whole view* means the totals cover every record;
+  *the records loaded so far* means they cover the fetched pages. Both are
+  honest; only one is what most people assume.
+- **A subgrid's parent.** If a grouped subgrid shows a count far larger than
+  the rows beneath it, the parent relationship was not resolved — set
+  **Parent lookup** to the lookup that points at the host record.
+
+A `groupBy` naming a column the view does not have renders an ordinary
+ungrouped table and warns once in the console, rather than failing.
+
+### Turning multi-column sort on
+
+Set **Allow sorting by several columns**. Shift-clicking a heading then appends
+that column to the order; a plain click still replaces it. Be aware that
+shift-click is the only way in and has no visible affordance — worth a line in
+whatever your users read.
+
+### If you already use the CSV export
+
+Its default is unchanged: *the rows loaded so far*. Setting **Export covers** to
+*the whole view* makes it read the rest first, one request per page **at the
+page size the view is already using** — it does not change your page size.
+
+That last point has a practical consequence worth planning for. A model-driven
+subgrid often pages four rows at a time, so a 1,200-record view is 300 requests
+and takes a couple of minutes. Raising **Page size** to 100 makes the same
+export 12 requests. There is a ceiling of 500 requests or 10,000 rows, whichever
+comes first, and the file says when it was reached.
+
+While an export runs the table is replaced by a page counter and a **Stop**, and
+wherever it stops the reader is put back on the page they started from.
+
 ## 0.4.x → 0.5.0
 
 0.5.0 adds a lookup editor. **Nothing was renamed, nothing was removed, and no

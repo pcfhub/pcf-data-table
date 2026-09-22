@@ -24,7 +24,13 @@ const SKIP_DIRS = new Set(['.git', 'node_modules', 'out', 'bin', 'obj', 'generat
 // The adoption scripts name every token they replace, so they always "contain
 // placeholders" — they are the things that remove them. setup.mjs deletes
 // adopt.mjs on adoption, but a repo may still be mid-flight when this runs.
-const SKIP_PATHS = new Set(['scripts/setup.mjs', 'scripts/adopt.mjs', 'scripts/check-template.mjs']);
+// `scripts/templates/` holds donor pages that `version.mjs` writes when a
+// release needs one — they carry `__VERSION__` for the same reason the
+// adoption scripts carry `__CONTROL__`: they are the thing that fills it in.
+const SKIP_PATHS = new Set([
+    'scripts/setup.mjs', 'scripts/adopt.mjs', 'scripts/add-control.mjs', 'scripts/check-template.mjs',
+    'scripts/version.mjs', 'scripts/release.mjs', 'scripts/templates/migration.md',
+]);
 
 const SKIP_EXTENSIONS = /\.(png|jpe?g|gif|webp|avif|mp4|webm|zip|ico|woff2?)$/i;
 
@@ -155,8 +161,86 @@ if (hub.reachable) {
 // API reference — every release imports with no properties at all.
 const manifestPath = manifest.control?.manifestPath;
 
+/*
+ * Every control in the repository, not just the one the hub publishes.
+ *
+ * These two are different numbers, and that is the whole point. `pcfhub.json`
+ * holds a single `control` object and the hub reads a single manifest from the
+ * repository root, so **at most one control per repository is ever published**.
+ * But `pcf-scripts` builds every directory containing a
+ * `ControlManifest.Input.xml`, and all of them ship inside the one solution.
+ *
+ * So the checks below split in two. The shape cross-check stays pointed at
+ * `manifestPath`, because that is the manifest the hub actually reads and
+ * re-derives `control.type` from. Everything else — the resx completeness, the
+ * declared features, the external-service licensing cost — is a property of a
+ * control that is being *installed*, and applies to every one of them. A
+ * sibling with a missing translation or an undeclared feature is shipped to the
+ * same customer as the published one, and before this loop nothing looked at it.
+ */
+const controlDirs = findControlFolders(root);
+
+if (controlDirs.length === 0) {
+    problems.push('No */ControlManifest.Input.xml anywhere, so this repository builds no control at all.');
+}
+
+/*
+ * A note rather than a problem. Shipping more controls than the hub can publish
+ * is a legitimate shape — a field control and its dataset sibling in one
+ * solution — and the author has to know the hub shows one of them, but it is
+ * not a mistake to be failed for.
+ */
+if (controlDirs.length > 1) {
+    warnings.push(
+        `This repository builds ${controlDirs.length} controls (${controlDirs.join(', ')}), and PCFHub `
+        + 'publishes one component per repository — one pcfhub.json, one slug, one control, one demo '
+        + `bundle. ${manifest.control?.constructor ?? 'The declared control'} is the one that appears on `
+        + 'the hub; the rest ship inside the same solution and are invisible there. Say so in docs/ and '
+        + 'in demo.limitations, or the download page describes half of what it installs.',
+    );
+}
+
 if (manifestPath && !exists(join(root, manifestPath))) {
     problems.push(`pcfhub.json points control.manifestPath at "${manifestPath}", which does not exist.`);
+}
+
+/*
+ * Hosts against the docs on disk.
+ *
+ * The one host rule the hub cannot apply, and a good example of what this
+ * script is still for now that the manifest rules live on the hub: the hub
+ * validates a JSON document it was handed, and cannot see which files a
+ * repository ships.
+ *
+ * It matters because the two feed each other. A repository that declares no
+ * `hosts` has them derived from exactly these files, so a `docs/canvas.md` left
+ * behind by a template is a canvas claim nobody made — and a `hosts` naming
+ * canvas with no canvas page sends a reader from the docs nav to nothing.
+ *
+ * Warnings, not problems. Either state can be right briefly — a page being
+ * written, a host being added — and a check that fails a release over
+ * documentation one commit behind is a check people disable.
+ */
+if (Array.isArray(manifest.hosts)) {
+    for (const host of ['canvas', 'model-driven']) {
+        const claims = manifest.hosts.includes(host);
+        const documented = exists(join(root, 'docs', `${host}.md`));
+
+        if (claims && !documented) {
+            warnings.push(
+                `pcfhub.json declares the "${host}" host, but docs/${host}.md is missing. The hub `
+                + 'publishes a documentation section per host, and a reader who picks that tab gets nothing.',
+            );
+        }
+
+        if (!claims && documented) {
+            warnings.push(
+                `docs/${host}.md exists, but pcfhub.json does not list "${host}" in hosts. Every catalog `
+                + 'card says where a control runs, and this one will not say it runs there — add the host, '
+                + 'or delete the page.',
+            );
+        }
+    }
 }
 
 // ------------------------------------------------------- the control shape
@@ -169,7 +253,7 @@ if (manifestPath && !exists(join(root, manifestPath))) {
 //
 // Still a light structural read: the manifest is matched, not parsed.
 
-const TYPES = ['field', 'dataset', 'virtual'];
+const TYPES = ['field', 'dataset', 'virtual', 'grid_customizer'];
 const FRAMEWORKS = ['standard', 'react', 'react_virtual'];
 
 const type = manifest.control?.type;
@@ -196,7 +280,36 @@ if (manifestPath && exists(join(root, manifestPath))) {
           ? 'virtual'
           : 'field';
 
-    if (type !== undefined && TYPES.includes(type) && type !== derived) {
+    /*
+     * `grid_customizer` is the exception, and the reason is structural rather
+     * than an oversight: a grid customizer's manifest is control-type="virtual"
+     * with no <data-set> and one bound property — which is, character for
+     * character, what a React virtual *field* control looks like. **The
+     * manifest cannot tell the two apart**, so comparing against `derived`
+     * here would report every customizer in the catalogue as a mistake.
+     *
+     * What this checks instead is the half that IS knowable from the file: a
+     * customizer is virtual, and it is not a dataset control. If the hub's
+     * parser has gained a rule that separates the two, mirror it here — that is
+     * the only way this file and the hub can keep agreeing.
+     */
+    if (type === 'grid_customizer') {
+        if (declared !== 'virtual') {
+            problems.push(
+                `pcfhub.json says control.type is "grid_customizer", but ${manifestPath} has ` +
+                `control-type="${declared}". A grid customizer returns React elements by contract, so its ` +
+                'manifest is control-type="virtual".',
+            );
+        }
+
+        if (/<data-set[\s>]/.test(xml)) {
+            problems.push(
+                `pcfhub.json says control.type is "grid_customizer", but ${manifestPath} declares a ` +
+                '<data-set>. A customizer binds nothing — the grid hands it renderers to return, and a '
+                + 'dataset property means this is an ordinary dataset control.',
+            );
+        }
+    } else if (type !== undefined && TYPES.includes(type) && type !== derived) {
         problems.push(
             `pcfhub.json says control.type is "${type}", but ${manifestPath} describes a "${derived}" control. ` +
             'The hub derives it from the manifest at every release, so the manifest wins.',
@@ -239,16 +352,17 @@ if (manifestPath && exists(join(root, manifestPath))) {
 
 const ACCESSORS = { WebAPI: 'webAPI', Utility: 'utils' };
 
-if (manifestPath && exists(join(root, manifestPath))) {
+for (const controlDir of controlDirs) {
+    const relative = `${controlDir}/ControlManifest.Input.xml`;
+
     // Comments stripped first. A commented-out <uses-feature> is not declared,
     // and this template ships its examples inside a comment — scanning the raw
     // file would warn about every freshly scaffolded control, which is the
     // fastest way to teach people to ignore the warning.
-    const xml = readFileSync(join(root, manifestPath), 'utf8').replace(/<!--[\s\S]*?-->/g, '');
+    const xml = readFileSync(join(root, relative), 'utf8').replace(/<!--[\s\S]*?-->/g, '');
     const declared = [...xml.matchAll(/<uses-feature\s+name="([^"]+)"/g)].map((match) => match[1]);
 
     if (declared.length > 0) {
-        const controlDir = manifestPath.split(/[\\/]/)[0];
         let sources = '';
 
         for (const path of walk(join(root, controlDir))) {
@@ -268,9 +382,113 @@ if (manifestPath && exists(join(root, manifestPath))) {
 
         if (unused.length > 0) {
             warnings.push(
-                `${manifestPath} declares ${unused.length} <uses-feature> that nothing appears to use: ` +
+                `${relative} declares ${unused.length} <uses-feature> that nothing appears to use: ` +
                 `${unused.join(', ')}. Each one is an install-time permission prompt for the customer. ` +
                 'Delete the ones the control does not call.',
+            );
+        }
+
+        // A Device.* feature declared required="true" is not a stronger
+        // guarantee, it is a narrower one: on a host without the native bridge
+        // the component fails to load outright rather than degrading. Since
+        // every host that is not a phone lacks the bridge — a model-driven form
+        // in a browser included — that is nearly always the wrong attribute.
+        //
+        // Power Pages settles it: it supports no Device.* API at all and
+        // documents that <uses-feature> must not be set to true there.
+        //
+        // A warning rather than a problem, because it is occasionally right: a
+        // control that *is* the feature, like a barcode scanner with no manual
+        // entry path, may as well fail loudly.
+        const hardDevice = [...xml.matchAll(/<uses-feature\s+name="(Device\.[^"]+)"\s+required="true"/g)]
+            .map((match) => match[1]);
+
+        if (hardDevice.length > 0) {
+            warnings.push(
+                `${relative} declares ${hardDevice.join(', ')} as required="true". A host without the ` +
+                'native bridge then fails to load the component rather than degrading, and that is most '
+                + 'hosts — canvas in a browser, a model-driven form on the web, and Power Pages, which '
+                + 'supports no Device API at all. Use required="false" and feature-detect unless the control '
+                + 'is nothing but this feature.',
+            );
+        }
+    }
+}
+
+// ---------------------------------------------- property names FormXML owns
+//
+// The classic form designer writes every configured property under the
+// cell's <parameters> as an element named after the property, and the
+// publish step scans the form's XML for <labels> elements to publish their
+// translations. So a property named `labels` turns `<labels>auto</labels>`
+// into a label owner, the publisher walks up to the cell's GUID, finds
+// `parameters` is not a node it knows, and publishing the form fails with
+// "XML node parameters is one that has an id of <guid> but is one that we
+// don't recognize as having a valid LabelTypeCode" — measured on the
+// Accounts form 2026-09-19 (pcf-chart-view 0.0.1). An entity view has no
+// FormXML, which is why the same control published on the grid and why the
+// failure looks like a subgrid problem. That one is a failure here.
+//
+// The other names are FormXML's own container elements. None has been seen
+// to break a publish — `label` (singular) ships on two controls and
+// publishes — so they warn rather than fail, and the warning says so.
+
+const FORMXML_FAILS = ['labels'];
+const FORMXML_WARNS = ['label', 'parameters', 'tabs', 'tab', 'columns', 'column', 'sections', 'section', 'rows', 'row', 'cell', 'control', 'events', 'event', 'header', 'footer', 'Navigation', 'displayConditions'];
+
+for (const controlDir of controlDirs) {
+    const relative = `${controlDir}/ControlManifest.Input.xml`;
+    const xml = readFileSync(join(root, relative), 'utf8').replace(/<!--[\s\S]*?-->/g, '');
+    const names = [...xml.matchAll(/<property(?:-set)?\s+name="([^"]+)"/g)].map((match) => match[1]);
+
+    for (const name of names) {
+        if (FORMXML_FAILS.includes(name)) {
+            problems.push(
+                `${relative} names a property "${name}", which is a FormXML element: the classic form designer ` +
+                'writes it under <parameters> and publishing the form fails with "…don\'t recognize as having a ' +
+                'valid LabelTypeCode" (measured 2026-09-19). Rename it — valueLabels, markLabels, anything FormXML does not own.',
+            );
+        } else if (FORMXML_WARNS.includes(name)) {
+            warnings.push(
+                `${relative} names a property "${name}", which is also a FormXML element. Only "labels" is known to ` +
+                'break publishing; this one has not been seen to, but the classic designer writes it under ' +
+                '<parameters> by that name, and a rename now is free.',
+            );
+        }
+    }
+}
+
+// ------------------------------------------------- external service usage
+//
+// Enabling this makes the control **premium**: every end user of an app that
+// contains it needs a Power Apps licence rather than an Office 365 one. That is
+// a cost imposed on whoever installs the control, decided by one XML attribute,
+// and it is invisible everywhere else — nothing fails, no build warns, and the
+// bill lands on somebody who never read the manifest.
+//
+// So this is checked in both directions: enabled with no domains is a problem,
+// and enabled at all is worth saying out loud once per run.
+
+for (const controlDir of controlDirs) {
+    const relative = `${controlDir}/ControlManifest.Input.xml`;
+    const xml = readFileSync(join(root, relative), 'utf8').replace(/<!--[\s\S]*?-->/g, '');
+    const node = xml.match(/<external-service-usage\s+enabled="(true|false)"\s*(\/>|>([\s\S]*?)<\/external-service-usage>)/);
+
+    if (node && node[1] === 'true') {
+        const domains = [...(node[3] || '').matchAll(/<domain>\s*([^<\s][^<]*?)\s*<\/domain>/g)].map((m) => m[1]);
+
+        if (domains.length === 0) {
+            problems.push(
+                `${relative} sets external-service-usage enabled="true" with no <domain> child. The ` +
+                'schema expects every domain the control talks to to be listed, so this declares the '
+                + 'licensing cost without declaring what it buys. Add the domains, or set enabled="false".',
+            );
+        } else {
+            warnings.push(
+                `${relative} sets external-service-usage enabled="true" (${domains.join(', ')}). This ` +
+                'makes the control premium: end users of any app containing it need a Power Apps licence. '
+                + 'Confirm that is intended and say so in docs/limitations.md — it is a cost to whoever '
+                + 'installs the control, not to whoever wrote it.',
             );
         }
     }
@@ -303,6 +521,127 @@ if (exists(join(root, docsPath))) {
     }
 } else {
     problems.push(`No ${docsPath}/ directory, so this component would publish with no documentation.`);
+}
+
+// ------------------------------------------------------------ localisation
+//
+// Three failures, all of them silent, all of them found by a customer rather
+// than by a build:
+//
+//   1. A .resx on disk that the manifest does not list is never packed. The
+//      repository looks bilingual and the control runs in English.
+//   2. A key present in 1033 and missing from another language falls back to
+//      the *key name* — in that language only. Nobody who reads English ever
+//      sees "CopyField_Copied" where a sentence should be.
+//   3. A placeholder dropped in translation. `"Copy {0}"` translated as a bare
+//      verb loses the field name, and the string that loses it is usually an
+//      accessible name, which is exactly the one nobody looks at.
+//
+// All three are cheap to read off the files, and none of them is caught by
+// anything else in the pipeline.
+
+for (const controlDir of controlDirs) {
+    const stringsDir = join(root, controlDir, 'strings');
+    const xml = readFileSync(join(root, controlDir, 'ControlManifest.Input.xml'), 'utf8')
+        .replace(/<!--[\s\S]*?-->/g, '');
+
+    const declared = [...xml.matchAll(/<resx\s+path="([^"]+)"/g)].map((match) => match[1]);
+    const onDisk = exists(stringsDir)
+        ? readdirSync(stringsDir).filter((name) => name.endsWith('.resx'))
+        : [];
+
+    for (const name of onDisk) {
+        if (!declared.some((path) => path.split(/[\\/]/).pop() === name)) {
+            problems.push(
+                `${controlDir}/strings/${name} exists but no <resx path=…> in the manifest lists it, ` +
+                    `so it is never packed and that locale silently falls back to English.`,
+            );
+        }
+    }
+
+    for (const path of declared) {
+        if (!exists(join(root, controlDir, path))) {
+            problems.push(
+                `${controlDir}'s manifest declares <resx path="${path}">, which does not exist.`,
+            );
+        }
+    }
+
+    /*
+     * 1033 is the baseline because it is what the platform falls back to for
+     * any locale not shipped. A repository that ships only 1033 has nothing to
+     * compare and skips the rest of this — shipping one language is a choice,
+     * not a mistake.
+     */
+    const keysOf = (name) => {
+        const text = readFileSync(join(stringsDir, name), 'utf8');
+
+        return new Map(
+            [...text.matchAll(/<data name="([^"]+)"[^>]*>\s*<value>([\s\S]*?)<\/value>/g)].map(
+                (match) => [match[1], match[2]],
+            ),
+        );
+    };
+
+    const baseName = onDisk.find((name) => name.endsWith('.1033.resx'));
+
+    if (baseName) {
+        const base = keysOf(baseName);
+
+        for (const name of onDisk) {
+            if (name === baseName) {
+                continue;
+            }
+
+            const other = keysOf(name);
+            const missing = [...base.keys()].filter((key) => !other.has(key));
+            const extra = [...other.keys()].filter((key) => !base.has(key));
+
+            if (missing.length > 0) {
+                problems.push(
+                    `${name} is missing ${missing.length} key(s) present in ${baseName}: ${missing.join(', ')}. ` +
+                        `Each one renders as the key name in that language.`,
+                );
+            }
+
+            /*
+             * A warning, not a failure. An extra key is dead weight rather than
+             * a visible bug — but it is nearly always the trace of a key that
+             * was renamed in 1033 and not in the translations, which *is* one.
+             */
+            if (extra.length > 0) {
+                warnings.push(
+                    `${name} has ${extra.length} key(s) not in ${baseName}: ${extra.join(', ')}. ` +
+                        `Usually a rename that only landed in one language.`,
+                );
+            }
+
+            for (const [key, value] of base) {
+                const translated = other.get(key);
+
+                if (translated === undefined) {
+                    continue;
+                }
+
+                /*
+                 * Compared as a set, not by position or count. German and
+                 * Japanese both move `{0}` to the other end of the sentence,
+                 * which is the entire reason these strings are templates —
+                 * flagging that would train people to write worse translations.
+                 */
+                const tokens = (text) => [...new Set(text.match(/\{\d+\}/g) ?? [])].sort();
+                const wanted = tokens(value);
+                const got = tokens(translated);
+
+                if (wanted.join() !== got.join()) {
+                    problems.push(
+                        `${name} key "${key}" has placeholders ${got.join(' ') || '(none)'} ` +
+                            `where ${baseName} has ${wanted.join(' ') || '(none)'}.`,
+                    );
+                }
+            }
+        }
+    }
 }
 
 // ------------------------------------------------------------------- media
@@ -427,6 +766,114 @@ if (fidelity && fidelity !== 'none' && exists(join(root, 'out'))) {
     }
 }
 
+/*
+ * The version, in every place the repository keeps one.
+ *
+ * `release-reusable.yml` already checks this — against every manifest in the
+ * tree *and* against `Solution.xml` — but it does so on a Windows runner,
+ * after the pack, on a tag that has already been pushed. So the failure mode
+ * it produces is: delete the tag locally and remotely, fix, retag. That is the
+ * same check, two seconds earlier, before any of that is possible.
+ *
+ * A failure rather than a warning, because a disagreement has no benign
+ * reading: one of the three files was edited and the others were not, and
+ * whichever way round that is, the next tag fails.
+ *
+ * `variants/` is excluded. Its manifests are donor sources pinned at 0.1.0 —
+ * where a scaffolded control starts — and `setup.mjs` deletes the directory on
+ * adoption anyway.
+ */
+const versions = new Map();
+
+if (exists(join(root, 'package.json'))) {
+    let declared = null;
+
+    try {
+        declared = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).version ?? null;
+    } catch {
+        // An unparseable package.json fails the build long before this matters.
+    }
+
+    versions.set('package.json', declared);
+}
+
+for (const path of walk(root)) {
+    if (basename(path) !== 'ControlManifest.Input.xml' || path.split(/[\\/]/).includes('variants')) {
+        continue;
+    }
+
+    // Anchored to the <control> element: a manifest also carries a <resx>
+    // version and one per <platform-library>, and none of those is this.
+    const element = /<control\b[^>]*>/.exec(readFileSync(path, 'utf8'))?.[0] ?? '';
+
+    versions.set(
+        path.slice(root.length + 1).replace(/\\/g, '/'),
+        /\bversion\s*=\s*"([^"]*)"/.exec(element)?.[1] ?? null,
+    );
+}
+
+const solutionXml = findSolutionXml();
+
+if (solutionXml) {
+    versions.set(
+        solutionXml.slice(root.length + 1).replace(/\\/g, '/'),
+        /<Version>([^<]+)<\/Version>/.exec(readFileSync(solutionXml, 'utf8'))?.[1] ?? null,
+    );
+}
+
+const declaredVersions = [...new Set(versions.values())];
+
+if (versions.size > 1 && declaredVersions.length > 1) {
+    problems.push(
+        'The version disagrees across the files that carry it, so the next tag fails in CI:\n' +
+        [...versions].map(([where, value]) => `      ${String(value).padEnd(10)} ${where}`).join('\n') +
+        '\n    Fix with: npm run bump -- <version>',
+    );
+}
+
+/*
+ * The bundle against the Dataverse web-resource ceiling, when a build has run.
+ *
+ * Both CI workflows gate on this, and both need the Windows msbuild pack to
+ * have happened — so before this, the first time anyone saw the number was on
+ * a runner. The 90% line is the workflows' own: a bundle rarely grows in small
+ * steps, it grows when a library arrives, so the useful warning is the one
+ * before the step that would cross the line.
+ *
+ * A warning at 90% and a *problem* past the ceiling, matching the workflows.
+ * Note the figure here is usually the development bundle, which is roughly
+ * four times the packed one — so passing here is not a promise, and a warning
+ * here is worth checking against a real pack rather than acted on directly.
+ */
+const BUNDLE_LIMIT = 5 * 1024 * 1024;
+const controlsOut = join(root, 'out', 'controls');
+
+if (exists(controlsOut)) {
+    for (const entry of readdirSync(controlsOut)) {
+        const bundle = join(controlsOut, entry, 'bundle.js');
+
+        if (!exists(bundle)) {
+            continue;
+        }
+
+        const bytes = statSync(bundle).size;
+        const used = Math.round((bytes / BUNDLE_LIMIT) * 1000) / 10;
+
+        if (bytes > BUNDLE_LIMIT) {
+            problems.push(
+                `out/controls/${entry}/bundle.js is ${bytes} bytes, over the ${BUNDLE_LIMIT}-byte ` +
+                'Dataverse web-resource limit. It will not import into a default environment.',
+            );
+        } else if (used >= 90) {
+            warnings.push(
+                `out/controls/${entry}/bundle.js is at ${used}% of the ${BUNDLE_LIMIT}-byte web-resource ` +
+                'limit. Trim it before it stops importing — look for a dependency that could be ' +
+                'externalised or lazy-loaded. (This is likely the development bundle; confirm against a pack.)',
+            );
+        }
+    }
+}
+
 if (problems.length > 0) {
     console.error('');
     for (const problem of problems) {
@@ -446,6 +893,29 @@ console.log(
 );
 
 // ------------------------------------------------------------------ helpers
+
+/*
+ * The solution's own version lives at <solution-dir>/src/Other/Solution.xml,
+ * and the solution directory is named by the repository rather than fixed —
+ * `Solution` in the template, `CodeEditorSolution` in one adopted repo. Found
+ * by the `.cdsproj` beside it, the way `adopt.mjs` finds it.
+ */
+function findSolutionXml() {
+    for (const entry of readdirSync(root)) {
+        if (SKIP_DIRS.has(entry) || !exists(join(root, entry)) || !statSync(join(root, entry)).isDirectory()) {
+            continue;
+        }
+
+        const hasProject = readdirSync(join(root, entry)).some((file) => file.endsWith('.cdsproj'));
+        const xml = join(root, entry, 'src', 'Other', 'Solution.xml');
+
+        if (hasProject && exists(xml)) {
+            return xml;
+        }
+    }
+
+    return null;
+}
 
 function* walk(dir) {
     for (const entry of readdirSync(dir).sort()) {
@@ -471,6 +941,36 @@ function exists(path) {
     } catch {
         return false;
     }
+}
+
+/**
+ * The controls in this repository, found the way `pcf-scripts` finds them.
+ *
+ * Mirrors `findControlFolders` in `node_modules/pcf-scripts/buildContext.js`: a
+ * control folder is one containing a `ControlManifest.Input.xml`, and a folder
+ * that is one is not descended into. Deriving it any other way — a top-level
+ * glob, or trusting `pcfhub.json` — is how this script ends up disagreeing with
+ * the build about what the repository contains, and the disagreement would show
+ * up as a control that ships unchecked.
+ */
+function findControlFolders(dir, base = dir, found = []) {
+    if (exists(join(dir, 'ControlManifest.Input.xml'))) {
+        found.push(dir === base ? '.' : dir.slice(base.length + 1).replace(/\\/g, '/'));
+
+        return found;
+    }
+
+    for (const entry of readdirSync(dir).sort()) {
+        if (SKIP_DIRS.has(entry)) {
+            continue;
+        }
+
+        if (statSync(join(dir, entry)).isDirectory()) {
+            findControlFolders(join(dir, entry), base, found);
+        }
+    }
+
+    return found;
 }
 
 function fail(message) {

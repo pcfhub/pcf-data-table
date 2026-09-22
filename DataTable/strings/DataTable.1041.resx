@@ -6,8 +6,9 @@
     what appear in the component's API reference on the hub as well as in the
     maker's properties pane.
 
-    Copy this file to add a language — DataTable.3082.resx for Spanish, and so
-    on — then list it under <resources> in the manifest.
+    Japanese (1041). Translated from DataTable.1033.resx, which is the
+    source of truth: every key here exists there, carrying the same {0}
+    placeholders. check-template.mjs enforces both.
   -->
   <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
     <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
@@ -70,372 +71,372 @@
 
 
   <data name="DataTable_Name" xml:space="preserve">
-    <value>Data Table</value>
+    <value>データ テーブル</value>
   </data>
   <data name="DataTable_Desc" xml:space="preserve">
-    <value>A sortable, filterable table over any Dataverse view, with inline editing and pinned columns.</value>
+    <value>任意の Dataverse ビューを並べ替え・フィルター可能なテーブルとして表示します。インライン編集と列の固定に対応します。</value>
   </data>
 
   <data name="Records_DataSet_Name" xml:space="preserve">
-    <value>Records</value>
+    <value>レコード</value>
   </data>
 
   <data name="PageSize_Name" xml:space="preserve">
-    <value>Page size</value>
+    <value>ページ サイズ</value>
   </data>
   <data name="PageSize_Desc" xml:space="preserve">
-    <value>How many rows to request per page. The platform may clamp large values.</value>
+    <value>1 ページあたりに要求する行数です。プラットフォームが大きな値を制限する場合があります。</value>
   </data>
 
   <data name="PageSizeOptions_Name" xml:space="preserve">
-    <value>Rows-per-page choices</value>
+    <value>1 ページあたりの行数の選択肢</value>
   </data>
   <data name="PageSizeOptions_Desc" xml:space="preserve">
-    <value>A comma-separated list of page sizes to offer the reader, such as 10,25,50,100. Leave empty for no picker.</value>
+    <value>読み手に提示するページ サイズのコンマ区切りリストです。例: 10,25,50,100。空欄にすると選択肢を表示しません。</value>
   </data>
 
   <data name="SelectionMode_Name" xml:space="preserve">
-    <value>Selection</value>
+    <value>選択</value>
   </data>
   <data name="SelectionMode_Desc" xml:space="preserve">
-    <value>Whether rows can be selected, and whether more than one at a time.</value>
+    <value>行を選択できるかどうか、また同時に複数選択できるかどうかです。</value>
   </data>
   <data name="SelectionMode_None_Name" xml:space="preserve">
-    <value>No selection</value>
+    <value>選択なし</value>
   </data>
   <data name="SelectionMode_Single_Name" xml:space="preserve">
-    <value>Single row</value>
+    <value>単一行</value>
   </data>
   <data name="SelectionMode_Multiple_Name" xml:space="preserve">
-    <value>Multiple rows</value>
+    <value>複数行</value>
   </data>
 
   <data name="EnableSorting_Name" xml:space="preserve">
-    <value>Allow sorting</value>
+    <value>並べ替えを許可</value>
   </data>
   <data name="EnableSorting_Desc" xml:space="preserve">
-    <value>Show a sort control on each column the view allows sorting on.</value>
+    <value>ビューが並べ替えを許可している各列に並べ替えコントロールを表示します。</value>
   </data>
 
   <data name="EnableFiltering_Name" xml:space="preserve">
-    <value>Allow filtering</value>
+    <value>フィルターを許可</value>
   </data>
   <data name="EnableFiltering_Desc" xml:space="preserve">
-    <value>Show a filter box under each column heading that can carry one: text, numbers, dates, and — in a model-driven app — choices. Filtering is applied by the server, across every page.</value>
+    <value>フィルターを設定できる各列見出しの下にフィルター ボックスを表示します。対象はテキスト、数値、日付、およびモデル駆動型アプリの場合は選択肢です。フィルターはサーバー側で全ページに適用されます。</value>
   </data>
 
   <data name="EnableExport_Name" xml:space="preserve">
-    <value>Allow CSV export</value>
+    <value>CSV エクスポートを許可</value>
   </data>
   <data name="EnableExport_Desc" xml:space="preserve">
-    <value>Show a button that saves the loaded rows as a CSV file. It exports the pages read so far, not the whole view.</value>
+    <value>読み込み済みの行を CSV ファイルとして保存するボタンを表示します。エクスポートされるのはこれまでに読み込んだページであり、ビュー全体ではありません。</value>
   </data>
 
   <data name="OpenOnRowClick_Name" xml:space="preserve">
-    <value>Open on row click</value>
+    <value>行クリックで開く</value>
   </data>
   <data name="OpenOnRowClick_Desc" xml:space="preserve">
-    <value>Open the record when its row is clicked, as well as from the primary column.</value>
+    <value>主要列からだけでなく、行をクリックしたときにもレコードを開きます。</value>
   </data>
 
   <data name="PinnedStart_Name" xml:space="preserve">
-    <value>Pinned columns (start)</value>
+    <value>固定列 (先頭)</value>
   </data>
   <data name="PinnedStart_Desc" xml:space="preserve">
-    <value>How many of the view's first columns stay in place while the table scrolls sideways. Leave empty to pin none.</value>
+    <value>テーブルを横スクロールしても固定したままにする、ビューの先頭からの列数です。空欄にすると固定しません。</value>
   </data>
   <data name="PinnedEnd_Name" xml:space="preserve">
-    <value>Pinned columns (end)</value>
+    <value>固定列 (末尾)</value>
   </data>
   <data name="PinnedEnd_Desc" xml:space="preserve">
-    <value>How many of the view's last columns stay in place while the table scrolls sideways. Leave empty to pin none.</value>
+    <value>テーブルを横スクロールしても固定したままにする、ビューの末尾からの列数です。空欄にすると固定しません。</value>
   </data>
 
   <data name="EnableEditing_Name" xml:space="preserve">
-    <value>Inline editing</value>
+    <value>インライン編集</value>
   </data>
   <data name="EnableEditing_Desc" xml:space="preserve">
-    <value>Let readers edit a cell in place and save it. Only columns the platform reports as editable for that record are offered.</value>
+    <value>セルをその場で編集して保存できるようにします。そのレコードに対してプラットフォームが編集可能と報告した列のみが対象です。</value>
   </data>
   <data name="EditableColumns_Name" xml:space="preserve">
-    <value>Editable columns</value>
+    <value>編集可能な列</value>
   </data>
   <data name="EditableColumns_Desc" xml:space="preserve">
-    <value>A comma-separated list of column logical names to limit editing to. Leave empty for every column the platform says is editable. This list can only narrow that, never widen it.</value>
+    <value>編集を許可する列の論理名のコンマ区切りリストです。空欄にすると、プラットフォームが編集可能とする列すべてが対象になります。このリストは範囲を狭めることしかできず、広げることはできません。</value>
   </data>
   <data name="EditedRecordId_Name" xml:space="preserve">
-    <value>Edited record ID</value>
+    <value>編集されたレコード ID</value>
   </data>
   <data name="EditedRecordId_Desc" xml:space="preserve">
-    <value>The ID of the row most recently saved by an inline edit.</value>
+    <value>インライン編集によって直近に保存された行の ID です。</value>
   </data>
   <data name="GroupBy_Name" xml:space="preserve">
-    <value>Group by</value>
+    <value>グループ化</value>
   </data>
   <data name="GroupBy_Desc" xml:space="preserve">
-    <value>Column logical names, comma separated, to group the rows by. Leave empty for an ungrouped table.</value>
+    <value>行をグループ化する列の論理名のコンマ区切りリストです。空欄にするとグループ化しません。</value>
   </data>
   <data name="Aggregates_Name" xml:space="preserve">
-    <value>Aggregates</value>
+    <value>集計</value>
   </data>
   <data name="Aggregates_Desc" xml:space="preserve">
-    <value>Measures per group, as aggregate:column — for example sum:revenue, avg:revenue. A record count is always shown.</value>
+    <value>グループごとの集計値を 集計関数:列 の形式で指定します。例: sum:revenue, avg:revenue。レコード件数は常に表示されます。</value>
   </data>
   <data name="GroupSort_Name" xml:space="preserve">
-    <value>Order groups by</value>
+    <value>グループの並べ替え基準</value>
   </data>
   <data name="GroupSort_Desc" xml:space="preserve">
-    <value>Whether group headers are ordered by their label or by how many records each holds.</value>
+    <value>グループ見出しをラベル順に並べるか、含まれるレコード件数順に並べるかです。</value>
   </data>
   <data name="GroupSort_Label" xml:space="preserve">
-    <value>Label</value>
+    <value>ラベル</value>
   </data>
   <data name="GroupSort_Count" xml:space="preserve">
-    <value>Record count</value>
+    <value>レコード件数</value>
   </data>
   <data name="ParentLookup_Name" xml:space="preserve">
-    <value>Parent lookup</value>
+    <value>親参照列</value>
   </data>
   <data name="ParentLookup_Desc" xml:space="preserve">
-    <value>The lookup pointing at the record this subgrid sits on. Usually left empty; set it where the table has several lookups to the same table, or to "none" where the subgrid is unrelated.</value>
+    <value>このサブグリッドが配置されているレコードを指す参照列です。通常は空欄のままにします。同じテーブルへの参照列が複数ある場合に指定し、サブグリッドが関連していない場合は "none" を指定します。</value>
   </data>
   <data name="DataTable_GroupBlank" xml:space="preserve">
-    <value>(blank)</value>
+    <value>(空白)</value>
   </data>
   <data name="DataTable_GroupRecords" xml:space="preserve">
-    <value>{0} records</value>
+    <value>{0} 件のレコード</value>
   </data>
   <data name="DataTable_GroupRecord" xml:space="preserve">
-    <value>1 record</value>
+    <value>1 件のレコード</value>
   </data>
   <data name="DataTable_GroupExpand" xml:space="preserve">
-    <value>Show the records in {0}</value>
+    <value>{0} のレコードを表示</value>
   </data>
   <data name="DataTable_GroupCollapse" xml:space="preserve">
-    <value>Hide the records in {0}</value>
+    <value>{0} のレコードを非表示</value>
   </data>
   <data name="DataTable_CaptionAll" xml:space="preserve">
-    <value>{0} groups · {1} records · the whole view</value>
+    <value>{0} グループ · {1} 件のレコード · ビュー全体</value>
   </data>
   <data name="DataTable_CaptionLoaded" xml:space="preserve">
-    <value>{0} groups · the {1} records loaded so far</value>
+    <value>{0} グループ · これまでに読み込んだ {1} 件のレコード</value>
   </data>
   <data name="DataTable_CaptionRefused" xml:space="preserve">
-    <value>{0} groups · the records loaded so far — the whole view could not be counted</value>
+    <value>{0} グループ · これまでに読み込んだレコード — ビュー全体は集計できませんでした</value>
   </data>
   <data name="DataTable_GroupsLoading" xml:space="preserve">
-    <value>Counting the whole view…</value>
+    <value>ビュー全体を集計しています…</value>
   </data>
   <data name="DataTable_GroupsEmpty" xml:space="preserve">
-    <value>No records to group.</value>
+    <value>グループ化するレコードがありません。</value>
   </data>
   <data name="EnableMultiSort_Name" xml:space="preserve">
-    <value>Allow sorting by several columns</value>
+    <value>複数列での並べ替えを許可</value>
   </data>
   <data name="EnableMultiSort_Desc" xml:space="preserve">
-    <value>Shift-click a column heading, or use its add-to-sort control, to order by it after the columns already sorted.</value>
+    <value>列見出しを Shift キーを押しながらクリックすると、既に並べ替えている列の後に、その列が並べ替え順に追加されます。</value>
   </data>
   <data name="DataTable_SortRank" xml:space="preserve">
-    <value>Sorted by {0}, {1} of {2}</value>
+    <value>{0} で並べ替え、{2} 件中 {1} 番目</value>
   </data>
   <data name="ExportScope_Name" xml:space="preserve">
-    <value>Export covers</value>
+    <value>エクスポートの範囲</value>
   </data>
   <data name="ExportScope_Desc" xml:space="preserve">
-    <value>Whether Export CSV writes the rows already loaded, or reads the whole view first. Reading the whole view costs one request per page.</value>
+    <value>CSV エクスポートで、読み込み済みの行のみを書き出すか、先にビュー全体を読み取るかです。ビュー全体の読み取りはページごとに 1 回の要求が必要です。</value>
   </data>
   <data name="ExportScope_Loaded" xml:space="preserve">
-    <value>The rows loaded so far</value>
+    <value>これまでに読み込んだ行</value>
   </data>
   <data name="ExportScope_View" xml:space="preserve">
-    <value>The whole view</value>
+    <value>ビュー全体</value>
   </data>
   <data name="DataTable_ExportProgress" xml:space="preserve">
-    <value>Reading page {0} — {1} rows so far</value>
+    <value>ページ {0} を読み取り中 — 現在 {1} 行</value>
   </data>
   <data name="DataTable_ExportCancel" xml:space="preserve">
-    <value>Stop</value>
+    <value>停止</value>
   </data>
   <data name="DataTable_ExportStopping" xml:space="preserve">
-    <value>Stopping after this page…</value>
+    <value>このページの後に停止します…</value>
   </data>
   <data name="DataTable_ExportCapped" xml:space="preserve">
-    <value>The first {0} rows were exported; the view holds more.</value>
+    <value>最初の {0} 行をエクスポートしました。ビューにはさらに行があります。</value>
   </data>
   <data name="DataTable_ExportFailed" xml:space="preserve">
-    <value>The view could not be read past page {0}. {1} rows were collected.</value>
+    <value>ページ {0} より先を読み取れませんでした。{1} 行を収集しました。</value>
   </data>
   <data name="EnableCreate_Name" xml:space="preserve">
-    <value>Allow adding rows</value>
+    <value>行の追加を許可</value>
   </data>
   <data name="EnableCreate_Desc" xml:space="preserve">
-    <value>Show a New button that opens the table's quick create form. The table needs quick create enabled and a quick create form. Model-driven apps only.</value>
+    <value>テーブルのクイック作成フォームを開く [新規] ボタンを表示します。テーブルでクイック作成が有効になっており、クイック作成フォームが必要です。モデル駆動型アプリのみ対応します。</value>
   </data>
   <data name="CreatedRecordId_Name" xml:space="preserve">
-    <value>Created record ID</value>
+    <value>作成されたレコード ID</value>
   </data>
   <data name="CreatedRecordId_Desc" xml:space="preserve">
-    <value>The ID of the row most recently added through the New button.</value>
+    <value>[新規] ボタンから直近に追加された行の ID です。</value>
   </data>
 
   <data name="DataTable_EditCell" xml:space="preserve">
-    <value>Edit {0}</value>
+    <value>{0} を編集</value>
   </data>
   <data name="DataTable_EditEmpty" xml:space="preserve">
-    <value>(empty)</value>
+    <value>(空)</value>
   </data>
   <data name="DataTable_Saving" xml:space="preserve">
-    <value>Saving…</value>
+    <value>保存しています…</value>
   </data>
   <data name="DataTable_SaveFailed" xml:space="preserve">
-    <value>{0} could not be saved. {1}</value>
+    <value>{0} を保存できませんでした。{1}</value>
   </data>
   <data name="DataTable_SaveFailedGeneric" xml:space="preserve">
-    <value>The platform refused the change.</value>
+    <value>プラットフォームが変更を拒否しました。</value>
   </data>
   <data name="DataTable_SaveTimedOut" xml:space="preserve">
-    <value>The platform did not confirm this change. It may not have been saved — reload the form to see the stored value.</value>
+    <value>プラットフォームがこの変更を確認しませんでした。保存されていない可能性があります。フォームを再読み込みして、保存されている値を確認してください。</value>
   </data>
   <data name="DataTable_NotANumber" xml:space="preserve">
-    <value>That is not a number, so nothing was saved.</value>
+    <value>数値ではないため、保存されませんでした。</value>
   </data>
   <data name="DataTable_Yes" xml:space="preserve">
-    <value>Yes</value>
+    <value>はい</value>
   </data>
   <data name="DataTable_No" xml:space="preserve">
-    <value>No</value>
+    <value>いいえ</value>
   </data>
   <data name="DataTable_NoValue" xml:space="preserve">
-    <value>(none)</value>
+    <value>(なし)</value>
   </data>
   <data name="DataTable_LookupChoose" xml:space="preserve">
-    <value>Choose…</value>
+    <value>選択…</value>
   </data>
   <data name="DataTable_LookupClear" xml:space="preserve">
-    <value>Clear</value>
+    <value>クリア</value>
   </data>
   <data name="DataTable_LookupCancel" xml:space="preserve">
-    <value>Cancel</value>
+    <value>キャンセル</value>
   </data>
   <data name="DataTable_New" xml:space="preserve">
-    <value>New</value>
+    <value>新規</value>
   </data>
   <data name="DataTable_NewHint" xml:space="preserve">
-    <value>Add a row using the quick create form.</value>
+    <value>クイック作成フォームを使用して行を追加します。</value>
   </data>
   <data name="DataTable_CreateFailed" xml:space="preserve">
-    <value>The quick create form could not be opened.</value>
+    <value>クイック作成フォームを開けませんでした。</value>
   </data>
 
   <data name="SelectedRecordIds_Name" xml:space="preserve">
-    <value>Selected record IDs</value>
+    <value>選択されたレコード ID</value>
   </data>
   <data name="SelectedRecordIds_Desc" xml:space="preserve">
-    <value>The IDs of the currently selected rows, one per line.</value>
+    <value>現在選択されている行の ID です。1 行に 1 件ずつ出力します。</value>
   </data>
 
   <data name="OpenedRecordId_Name" xml:space="preserve">
-    <value>Opened record ID</value>
+    <value>開かれたレコード ID</value>
   </data>
   <data name="OpenedRecordId_Desc" xml:space="preserve">
-    <value>The ID of the row most recently opened.</value>
+    <value>直近に開かれた行の ID です。</value>
   </data>
 
   <data name="DataTable_Loading" xml:space="preserve">
-    <value>Loading records…</value>
+    <value>レコードを読み込んでいます…</value>
   </data>
   <data name="DataTable_Empty" xml:space="preserve">
-    <value>No records.</value>
+    <value>レコードがありません。</value>
   </data>
   <data name="DataTable_NoColumns" xml:space="preserve">
-    <value>No columns are selected for this table.</value>
+    <value>このテーブルに列が選択されていません。</value>
   </data>
   <data name="DataTable_Error" xml:space="preserve">
-    <value>This view could not be loaded.</value>
+    <value>このビューを読み込めませんでした。</value>
   </data>
   <data name="DataTable_Previous" xml:space="preserve">
-    <value>Previous page</value>
+    <value>前のページ</value>
   </data>
   <data name="DataTable_Next" xml:space="preserve">
-    <value>Next page</value>
+    <value>次のページ</value>
   </data>
   <data name="DataTable_PageStatus" xml:space="preserve">
-    <value>Page {0}</value>
+    <value>ページ {0}</value>
   </data>
   <data name="DataTable_RangeStatus" xml:space="preserve">
-    <value>{0}–{1} of {2}</value>
+    <value>{2} 件中 {0}–{1}</value>
   </data>
   <data name="DataTable_Export" xml:space="preserve">
-    <value>Export CSV</value>
+    <value>CSV をエクスポート</value>
   </data>
   <data name="DataTable_ExportHint" xml:space="preserve">
-    <value>Save the rows loaded so far as a CSV file. Pages you have not opened are not included.</value>
+    <value>これまでに読み込んだ行を CSV ファイルとして保存します。開いていないページは含まれません。</value>
   </data>
 
   <data name="DataTable_RowsPerPage" xml:space="preserve">
-    <value>Rows per page</value>
+    <value>1 ページあたりの行数</value>
   </data>
   <data name="DataTable_GoToPage" xml:space="preserve">
-    <value>Go to page</value>
+    <value>ページへ移動</value>
   </data>
   <data name="DataTable_OfPages" xml:space="preserve">
-    <value>of {0}</value>
+    <value>/ {0}</value>
   </data>
 
   <data name="DataTable_SortBy" xml:space="preserve">
-    <value>Sort by {0}</value>
+    <value>{0} で並べ替え</value>
   </data>
   <data name="DataTable_FilterColumn" xml:space="preserve">
-    <value>Filter by {0}</value>
+    <value>{0} でフィルター</value>
   </data>
   <data name="DataTable_FilterNumberHint" xml:space="preserve">
-    <value>Filter by {0}. Type a number, or a comparison such as &gt;1000.</value>
+    <value>{0} でフィルターします。数値、または &gt;1000 のような比較を入力してください。</value>
   </data>
   <data name="DataTable_FilterPlaceholder" xml:space="preserve">
-    <value>Filter</value>
+    <value>フィルター</value>
   </data>
   <data name="DataTable_FilterNumberPlaceholder" xml:space="preserve">
-    <value>e.g. &gt;1000</value>
+    <value>例: &gt;1000</value>
   </data>
   <data name="DataTable_Unfilterable" xml:space="preserve">
-    <value>{0} cannot be filtered here. Lookups are filtered by the view; a choice needs table metadata this host does not provide.</value>
+    <value>{0} はここではフィルターできません。参照列はビュー側でフィルターしてください。選択肢列にはこのホストが提供しないテーブル メタデータが必要です。</value>
   </data>
   <data name="DataTable_FilterDateHint" xml:space="preserve">
-    <value>Filter by {0}. Pick a day; the button beside it chooses on, from or until that day.</value>
+    <value>{0} でフィルターします。日付を選択してください。隣のボタンで、その日に一致・以降・以前のいずれかを選びます。</value>
   </data>
   <data name="DataTable_DateOn" xml:space="preserve">
-    <value>On</value>
+    <value>一致</value>
   </data>
   <data name="DataTable_DateFrom" xml:space="preserve">
-    <value>From</value>
+    <value>以降</value>
   </data>
   <data name="DataTable_DateUntil" xml:space="preserve">
-    <value>Until</value>
+    <value>以前</value>
   </data>
   <data name="DataTable_DateOpHint" xml:space="preserve">
-    <value>Change how {0} is compared: on, from or until the chosen day</value>
+    <value>{0} の比較方法を変更します: 選択した日に一致・以降・以前</value>
   </data>
   <data name="DataTable_FilterAny" xml:space="preserve">
-    <value>Any</value>
+    <value>すべて</value>
   </data>
 
   <data name="DataTable_ClearFilter" xml:space="preserve">
-    <value>Clear the filter on {0}</value>
+    <value>{0} のフィルターをクリア</value>
   </data>
   <data name="DataTable_ClearFilters" xml:space="preserve">
-    <value>Clear filters</value>
+    <value>フィルターをクリア</value>
   </data>
   <data name="DataTable_NoMatches" xml:space="preserve">
-    <value>No records match these filters.</value>
+    <value>これらのフィルターに一致するレコードはありません。</value>
   </data>
 
   <data name="DataTable_SelectRow" xml:space="preserve">
-    <value>Select {0}</value>
+    <value>{0} を選択</value>
   </data>
   <data name="DataTable_SelectAll" xml:space="preserve">
-    <value>Select all rows on this page</value>
+    <value>このページのすべての行を選択</value>
   </data>
   <data name="DataTable_OpenRecord" xml:space="preserve">
-    <value>Open {0}</value>
+    <value>{0} を開く</value>
   </data>
 </root>

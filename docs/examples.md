@@ -122,6 +122,42 @@ Two things pinning is not. It does not let a reader drag a column somewhere else
 cannot pin a column out of the middle: the properties take counts from each end,
 so a column you want pinned has to be a column the view puts first or last.
 
+## A grouped view someone reads for the totals
+
+A manager who wants the shape of a pipeline rather than the rows in it: how much
+is in each stage, and how many deals that is.
+
+| Property | Value |
+| --- | --- |
+| `groupBy` | `industrycode` |
+| `aggregates` | `sum:revenue, avg:revenue` |
+| `groupSort` | `count` |
+| `enableExport` | `true` |
+| `exportScope` | `view` |
+
+::image{src=media/screenshot-grouped.png alt="A table grouped by Industry: one header per industry with its record count and the sum and average of Annual revenue, and a caption reading 5 groups, 12 records, the whole view" zoom}
+
+`groupSort` set to `count` puts the biggest group first, which is usually what
+someone reading for totals wants. Leave it at `label` when the groups have a
+natural order people already know.
+
+**Check the caption before you quote a number.** *the whole view* means the
+totals cover every record. *the records loaded so far* means they cover the
+pages in the browser, and the difference is the whole reason the caption is
+there.
+
+:::callout{type=info}
+**Expanding a group filters the view to it.** The rows arrive paged as usual
+with the pager scoped to that group, so a group never spans a page boundary and
+you never have to hunt for the rest of it. One group is open at a time.
+:::
+
+Pairing this with `exportScope: view` is deliberate: someone who reads totals
+usually wants the rows behind them next, and the export covers the whole view
+rather than the page. It costs one request per page at the view's own page
+size, so raise **Page size** if the view is large — a subgrid paging four rows
+at a time makes that expensive.
+
 ## A subgrid people correct without opening records
 
 A team triaging rows: most of the work is fixing a name or a number, and opening
