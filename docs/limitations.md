@@ -95,11 +95,41 @@ order: 7
   because a spreadsheet treats them as formulas. Numbers are left alone, so a
   negative figure stays a number.
 
+## What grouping covers
+
+- **The whole view only in a model-driven app, and only when three things
+  hold.** The Web API was granted at import, the view's FetchXML can be read,
+  and — in a subgrid — the lookup to the parent record can be resolved. Miss
+  any one and the table groups the rows loaded so far instead, and the caption
+  says so. See [Model-driven apps](model-driven.md).
+- **Multi-select choice columns cannot be grouped.** The server refuses them,
+  and its refusal arrives as a message it never finished writing, so the
+  control refuses first, before any query is sent. Text, number, choice,
+  yes/no, lookup and date columns group.
+- **A measure has to suit its column.** `sum` and `avg` take number and
+  currency columns; `min` and `max` take those and dates. A record count is
+  always shown, so `count` is not a measure you add.
+- **No grand total.** Each group carries its own count and measures, and the
+  caption carries the total record count — there is no row summing the
+  measures across every group.
+- **One group is open at a time.** Opening a group filters the view to it, and
+  two open groups would mean two filters ORed together with their rows
+  interleaved.
+- **A group bigger than a page pages within itself.** A header reading *5
+  records* can sit above four rows, with the pager reading *1–4 of 5*: the
+  group's rows are ordinary rows, and rows page. Raise **Page size** if your
+  groups are routinely larger than a page.
+- **A group whose value cannot be written as a filter has no chevron**, rather
+  than one that opens nothing.
+- **A view past 50,000 records has not been measured.** Dataverse refuses an
+  aggregate over that many rows; the control is built to fall back to the
+  loaded rows and say so in the caption, but no table here has been large
+  enough to watch it happen.
+
 ## Not in this release
 
 - **No column resizing or reordering by the user.** The widths and order are the
   view's, and changing them is a view-designer job.
-- **No grouping and no aggregate row.**
 - **Inline editing covers text, number, yes/no, date and — in a model-driven
   app — choice columns.** The choice editor is a dropdown of the column's
   options, read from entity metadata; state and status columns look like
@@ -224,6 +254,9 @@ order: 7
 - Choice cells and choice filters are read-only, and there is no New button:
   canvas has neither entity metadata nor a quick create form to open. The date
   box appears — it needs no metadata — and has not been verified there.
+- Grouping always covers the rows loaded so far, never the whole view: the
+  whole-view answer is a Web API query, and canvas has no Web API. The caption
+  says which.
 - Column widths are the browser's, because canvas reports no
   `visualSizeFactor`.
 - Columns come from the Fields flyout on `Items`. Pick none and the control says
@@ -232,7 +265,8 @@ order: 7
 ## In the hub's demo
 
 The demo runs against a fixed 24-row fixture with no server behind it, so
-paging, sorting, filtering and selection cannot do what they do on a real view.
+paging, sorting, filtering, selection and opening a group cannot do what they
+do on a real view.
 Each dead interaction is named on the component's demo page.
 
 Filtering is the one worth calling out, because it is the feature that most
