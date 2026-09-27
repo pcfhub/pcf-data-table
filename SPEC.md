@@ -3452,6 +3452,12 @@ reported no width, because nothing outside the circle bounds it there. With
 `?fit=1`, a narrowing now leaves the box at 1,368px and five Shift+→ on the
 last column scroll the table to 1,688px and stay there.
 
+**Promoted to the skill** (pcfhub-controls 0.62.0): the loop as *A width
+measured from your own box is a loop*, the `calc()` on a `<col>` as a
+correction under *Pinning a column while the rest scrolls*, and the rounding and
+first-drag rules under *Resizing a column* — all in
+`references/dataset-writing-and-layout.md`, with review-checklist items.
+
 A pinned column dragged wider stops where one budget column of table would be
 left to scroll — the line `pinPlan` unpins at. Stopping short is gentler than
 unpinning mid-drag.
