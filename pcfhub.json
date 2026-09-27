@@ -79,7 +79,12 @@
                     "selectionMode": "multiple",
                     "enableSorting": true,
                     "enableFiltering": true,
-                    "openOnRowClick": true
+                    "openOnRowClick": true,
+                    "enableExport": false,
+                    "enableEditing": false,
+                    "enableCreate": false,
+                    "enableMultiSort": false,
+                    "lockColumnWidths": false
                 },
                 "isDefault": true
             },
@@ -95,7 +100,12 @@
                     "selectionMode": "none",
                     "enableSorting": true,
                     "enableFiltering": true,
-                    "openOnRowClick": true
+                    "openOnRowClick": true,
+                    "enableExport": false,
+                    "enableEditing": false,
+                    "enableCreate": false,
+                    "enableMultiSort": false,
+                    "lockColumnWidths": false
                 }
             },
             {
@@ -109,7 +119,12 @@
                     "selectionMode": "multiple",
                     "enableSorting": true,
                     "enableFiltering": true,
-                    "openOnRowClick": true
+                    "openOnRowClick": true,
+                    "enableExport": false,
+                    "enableEditing": false,
+                    "enableCreate": false,
+                    "enableMultiSort": false,
+                    "lockColumnWidths": false
                 }
             },
             {
@@ -123,7 +138,10 @@
                     "selectionMode": "none",
                     "enableSorting": true,
                     "enableFiltering": true,
-                    "openOnRowClick": false
+                    "openOnRowClick": false,
+                    "enableExport": false,
+                    "enableMultiSort": false,
+                    "lockColumnWidths": false
                 }
             },
             {
@@ -137,7 +155,11 @@
                     "enableSorting": true,
                     "enableFiltering": true,
                     "enableExport": true,
-                    "openOnRowClick": true
+                    "openOnRowClick": true,
+                    "enableEditing": false,
+                    "enableCreate": false,
+                    "enableMultiSort": false,
+                    "lockColumnWidths": false
                 }
             }
         ]
