@@ -130,7 +130,8 @@ function), and it rebuilds the whole dataset on every render, so mutations to
 pass.
 
 So paging is inert, sorting moves the arrow but not the rows, and
-`openDatasetItem` logs a mock call. Each one is named in `demo.limitations`.
+`openDatasetItem` opens nothing — the event log under the demo names the record
+instead. Each one is named in `demo.limitations`.
 
 That is the line between this control and `pcf-tag-list`, which is `mocked`:
 TagList's interactions genuinely work against its fixture, because a chip that is

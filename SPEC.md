@@ -200,8 +200,16 @@ every render, so `createDataSet` runs again and any mutation to
 `dataset.sorting` or through `setSelectedRecordIds` is discarded.
 
 So paging is inert, sorting moves the arrow but not the rows, selection does not
-survive a re-render, and `openDatasetItem` logs a mock call. Each is named in
-`demo.limitations`.
+survive a re-render, and `openDatasetItem` opens nothing — the event log names
+the record instead. Each is named in `demo.limitations`.
+
+**Export CSV made no file on the hub until 2026-09-27, while `demo.limitations`
+said it did.** The control prefers `navigation.openFile` wherever it exists, and
+the harness defined it as a call that refused, so the export never reached its
+browser-download fallback. The limitation had been written from reasoning
+("building one needs nothing but the records already on the page") rather than
+from pressing the button on the live page. The hub now hands `openFile` to the
+page, which offers the file as a download (pcfhub/pcfhub#44).
 
 **The line between `limited` and `mocked`, stated once so the next control does
 not have to rediscover it:** `pcf-tag-list` is `mocked` because its interactions
