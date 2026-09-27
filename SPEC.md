@@ -211,6 +211,23 @@ browser-download fallback. The limitation had been written from reasoning
 from pressing the button on the live page. The hub now hands `openFile` to the
 page, which offers the file as a download (pcfhub/pcfhub#44).
 
+**Since 2026-09-27 the fixture carries a stand-in Dataverse, and the lookup
+editor runs on the hub.** `demo/records.json` gained a `dataverse` section — the
+account table, a contact table of 28 rows, and `account_primary_contact` binding
+`primarycontactid` — and *Primary contact* became a `Lookup.Simple` column held
+as `_primarycontactid_value`, where it had been a text column carrying the name.
+The editor needed three things the harness did not do, and the hub gained all
+three for this: the dataset's rows read from the store, so a `record.save()`
+survives the next render (a `dataverse` section had until then cost every
+inline edit on the following pass); a lookup column read as the reference a form
+hands over; and `getEntityMetadata(table, [column])` answering the column's
+`Targets` from the relationship. Checked with 0.6.20's published bundle against
+the edited harness: Choose… opened the dialog over the contacts, the pick wrote
+through `updateRecord` and showed on the refresh, Clear emptied the cell, a city
+edit survived both, New named `account`'s quick create form, grouping still
+counted by the browser route with the stand-in's FetchXML refusal in its
+caption, and Export CSV carried the contact names.
+
 **The line between `limited` and `mocked`, stated once so the next control does
 not have to rediscover it:** `pcf-tag-list` is `mocked` because its interactions
 genuinely work against the fixture — a chip in the fixture can be clicked,

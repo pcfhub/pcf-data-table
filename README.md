@@ -133,12 +133,20 @@ So paging is inert, sorting moves the arrow but not the rows, and
 `openDatasetItem` opens nothing — the event log under the demo names the record
 instead. Each one is named in `demo.limitations`.
 
+What does not call back into the dataset works. `demo/records.json` carries a
+stand-in Dataverse — the account table, a contact table and the
+`primarycontactid` lookup between them — so an inline edit writes through and
+survives the next render, *Primary contact* edits through the platform's own
+route (`utils.lookupObjects`, the relationship metadata, `webAPI.updateRecord`
+with `@odata.bind`), and New asks `navigation.openForm` for a quick create form,
+which the event log names. Nothing leaves the browser.
+
 That is the line between this control and `pcf-tag-list`, which is `mocked`:
 TagList's interactions genuinely work against its fixture, because a chip that is
 in the fixture can be clicked and read back. This one asks the harness to do
 something it only pretends to do.
 
-Three presets, against a 24-row account fixture. Their `pageSize` is 25 — above
+Five presets, against a 24-row account fixture. Their `pageSize` is 25 — above
 the row count — deliberately: the harness serves every row regardless of page size
 and the control correctly does not slice client-side, so a smaller page size
 would render 24 rows under a pager reading "1–10 of 24", which reads as a bug in

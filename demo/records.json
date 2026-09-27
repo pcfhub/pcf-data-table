@@ -21,10 +21,10 @@
             "isReadOnly": true
         },
         {
-            "name": "primarycontactname",
+            "name": "primarycontactid",
             "displayName": "Primary contact",
-            "dataType": "SingleLine.Text",
-            "alias": "primarycontactname",
+            "dataType": "Lookup.Simple",
+            "alias": "primarycontactid",
             "order": 2,
             "visualSizeFactor": 150
         },
@@ -75,7 +75,7 @@
             "values": {
                 "name": "Fabrikam Manufacturing",
                 "accountnumber": "ACC-1042",
-                "primarycontactname": "Dana Whitfield",
+                "_primarycontactid_value": "c0a1e5d2-7b3f-4e8a-9c61-000000000001",
                 "revenue": 2450000,
                 "address1_city": "Redmond",
                 "owneridname": "Priya Raman",
@@ -88,7 +88,7 @@
             "values": {
                 "name": "Contoso Logistics",
                 "accountnumber": "ACC-1087",
-                "primarycontactname": "Ravi Menon",
+                "_primarycontactid_value": "c0a1e5d2-7b3f-4e8a-9c61-000000000002",
                 "revenue": 1875000,
                 "address1_city": "Portland",
                 "owneridname": "Owen Brackett",
@@ -101,7 +101,7 @@
             "values": {
                 "name": "Northwind Traders",
                 "accountnumber": "ACC-1103",
-                "primarycontactname": "Erin Boyle",
+                "_primarycontactid_value": "c0a1e5d2-7b3f-4e8a-9c61-000000000003",
                 "revenue": 960000,
                 "address1_city": "Chicago",
                 "owneridname": "Alice Nakamura",
@@ -114,7 +114,7 @@
             "values": {
                 "name": "Adventure Works Cycles",
                 "accountnumber": "ACC-1155",
-                "primarycontactname": "Marcus Feld",
+                "_primarycontactid_value": "c0a1e5d2-7b3f-4e8a-9c61-000000000004",
                 "revenue": 3120000,
                 "address1_city": "Denver",
                 "owneridname": "Priya Raman",
@@ -127,7 +127,7 @@
             "values": {
                 "name": "Litware Consulting",
                 "accountnumber": "ACC-1178",
-                "primarycontactname": "Iris Halloran",
+                "_primarycontactid_value": "c0a1e5d2-7b3f-4e8a-9c61-000000000005",
                 "revenue": 540000,
                 "address1_city": "Austin",
                 "owneridname": "Tomas Ehrlich",
@@ -140,7 +140,7 @@
             "values": {
                 "name": "Tailspin Toys",
                 "accountnumber": "ACC-1201",
-                "primarycontactname": "Anders Vik",
+                "_primarycontactid_value": "c0a1e5d2-7b3f-4e8a-9c61-000000000006",
                 "revenue": 415000,
                 "address1_city": "Redmond",
                 "owneridname": "Tomas Ehrlich",
@@ -153,7 +153,7 @@
             "values": {
                 "name": "Proseware Systems",
                 "accountnumber": "ACC-1233",
-                "primarycontactname": "Talia Mercer",
+                "_primarycontactid_value": "c0a1e5d2-7b3f-4e8a-9c61-000000000007",
                 "revenue": 1290000,
                 "address1_city": "Portland",
                 "owneridname": "Owen Brackett",
@@ -166,7 +166,7 @@
             "values": {
                 "name": "Wingtip Analytics",
                 "accountnumber": "ACC-1260",
-                "primarycontactname": "Bruno Castellan",
+                "_primarycontactid_value": "c0a1e5d2-7b3f-4e8a-9c61-000000000008",
                 "revenue": 780000,
                 "address1_city": "Chicago",
                 "owneridname": "Alice Nakamura",
@@ -179,7 +179,7 @@
             "values": {
                 "name": "Coho Vineyard",
                 "accountnumber": "ACC-1288",
-                "primarycontactname": "Nia Adeyemi",
+                "_primarycontactid_value": "c0a1e5d2-7b3f-4e8a-9c61-000000000009",
                 "revenue": 225000,
                 "address1_city": "Denver",
                 "owneridname": "Sofia Marchetti",
@@ -192,7 +192,7 @@
             "values": {
                 "name": "Alpine Ski House",
                 "accountnumber": "ACC-1304",
-                "primarycontactname": "Jens Halvorsen",
+                "_primarycontactid_value": "c0a1e5d2-7b3f-4e8a-9c61-000000000010",
                 "revenue": 1640000,
                 "address1_city": "Austin",
                 "owneridname": "Owen Brackett",
@@ -205,7 +205,7 @@
             "values": {
                 "name": "Blue Yonder Airlines",
                 "accountnumber": "ACC-1337",
-                "primarycontactname": "Nadia Osei",
+                "_primarycontactid_value": "c0a1e5d2-7b3f-4e8a-9c61-000000000011",
                 "revenue": 5230000,
                 "address1_city": "Redmond",
                 "owneridname": "Priya Raman",
@@ -218,7 +218,7 @@
             "values": {
                 "name": "Trey Research",
                 "accountnumber": "ACC-1362",
-                "primarycontactname": "Gordon Sayles",
+                "_primarycontactid_value": "c0a1e5d2-7b3f-4e8a-9c61-000000000012",
                 "revenue": 1105000,
                 "address1_city": "Portland",
                 "owneridname": "Owen Brackett",
@@ -231,7 +231,7 @@
             "values": {
                 "name": "Woodgrove Bank",
                 "accountnumber": "ACC-1390",
-                "primarycontactname": "Ines Duarte",
+                "_primarycontactid_value": "c0a1e5d2-7b3f-4e8a-9c61-000000000013",
                 "revenue": 4470000,
                 "address1_city": "Chicago",
                 "owneridname": "Priya Raman",
@@ -244,7 +244,7 @@
             "values": {
                 "name": "Lucerne Publishing",
                 "accountnumber": "ACC-1415",
-                "primarycontactname": "Hugh Ferrers",
+                "_primarycontactid_value": "c0a1e5d2-7b3f-4e8a-9c61-000000000014",
                 "revenue": 335000,
                 "address1_city": "Denver",
                 "owneridname": "Tomas Ehrlich",
@@ -257,7 +257,7 @@
             "values": {
                 "name": "Fourth Coffee",
                 "accountnumber": "ACC-1441",
-                "primarycontactname": "Mei-Lin Zhao",
+                "_primarycontactid_value": "c0a1e5d2-7b3f-4e8a-9c61-000000000015",
                 "revenue": 690000,
                 "address1_city": "Austin",
                 "owneridname": "Alice Nakamura",
@@ -270,7 +270,7 @@
             "values": {
                 "name": "Graphic Design Institute",
                 "accountnumber": "ACC-1470",
-                "primarycontactname": "Peter Okonkwo",
+                "_primarycontactid_value": "c0a1e5d2-7b3f-4e8a-9c61-000000000016",
                 "revenue": 148000,
                 "address1_city": "Seattle",
                 "owneridname": "Sofia Marchetti",
@@ -283,7 +283,7 @@
             "values": {
                 "name": "Humongous Insurance",
                 "accountnumber": "ACC-1498",
-                "primarycontactname": "Clara Bengtsson",
+                "_primarycontactid_value": "c0a1e5d2-7b3f-4e8a-9c61-000000000017",
                 "revenue": 6810000,
                 "address1_city": "Redmond",
                 "owneridname": "Priya Raman",
@@ -296,7 +296,7 @@
             "values": {
                 "name": "Margies Travel",
                 "accountnumber": "ACC-1520",
-                "primarycontactname": "Diego Salinas",
+                "_primarycontactid_value": "c0a1e5d2-7b3f-4e8a-9c61-000000000018",
                 "revenue": 512000,
                 "address1_city": "Portland",
                 "owneridname": "Tomas Ehrlich",
@@ -309,7 +309,7 @@
             "values": {
                 "name": "Southridge Video",
                 "accountnumber": "ACC-1554",
-                "primarycontactname": "Amara Nwosu",
+                "_primarycontactid_value": "c0a1e5d2-7b3f-4e8a-9c61-000000000019",
                 "revenue": 298000,
                 "address1_city": "Chicago",
                 "owneridname": "Alice Nakamura",
@@ -322,7 +322,7 @@
             "values": {
                 "name": "Consolidated Messenger",
                 "accountnumber": "ACC-1583",
-                "primarycontactname": "Felix Lindqvist",
+                "_primarycontactid_value": "c0a1e5d2-7b3f-4e8a-9c61-000000000020",
                 "revenue": 2075000,
                 "address1_city": "Denver",
                 "owneridname": "Priya Raman",
@@ -335,7 +335,7 @@
             "values": {
                 "name": "School of Fine Art",
                 "accountnumber": "ACC-1607",
-                "primarycontactname": "Yuki Tanabe",
+                "_primarycontactid_value": "c0a1e5d2-7b3f-4e8a-9c61-000000000021",
                 "revenue": 87000,
                 "address1_city": "Austin",
                 "owneridname": "Sofia Marchetti",
@@ -348,7 +348,7 @@
             "values": {
                 "name": "City Power and Light",
                 "accountnumber": "ACC-1639",
-                "primarycontactname": "Rosa Delgado",
+                "_primarycontactid_value": "c0a1e5d2-7b3f-4e8a-9c61-000000000022",
                 "revenue": 3960000,
                 "address1_city": "Seattle",
                 "owneridname": "Priya Raman",
@@ -361,7 +361,7 @@
             "values": {
                 "name": "VanArsdel Ltd",
                 "accountnumber": "ACC-1662",
-                "primarycontactname": "Kwame Asante",
+                "_primarycontactid_value": "c0a1e5d2-7b3f-4e8a-9c61-000000000023",
                 "revenue": 1430000,
                 "address1_city": "Redmond",
                 "owneridname": "Owen Brackett",
@@ -374,7 +374,7 @@
             "values": {
                 "name": "The Phone Company",
                 "accountnumber": "ACC-1690",
-                "primarycontactname": "Lena Vogel",
+                "_primarycontactid_value": "c0a1e5d2-7b3f-4e8a-9c61-000000000024",
                 "revenue": 2680000,
                 "address1_city": "Seattle",
                 "owneridname": "Owen Brackett",
@@ -382,5 +382,199 @@
                 "modifiedon": "2026-06-29"
             }
         }
-    ]
+    ],
+    "dataverse": {
+        "tables": {
+            "account": {
+                "entitySet": "accounts",
+                "primaryId": "accountid",
+                "primaryName": "name"
+            },
+            "contact": {
+                "entitySet": "contacts",
+                "primaryId": "contactid",
+                "primaryName": "fullname",
+                "rows": [
+                    {
+                        "id": "c0a1e5d2-7b3f-4e8a-9c61-000000000001",
+                        "values": {
+                            "fullname": "Dana Whitfield"
+                        }
+                    },
+                    {
+                        "id": "c0a1e5d2-7b3f-4e8a-9c61-000000000002",
+                        "values": {
+                            "fullname": "Ravi Menon"
+                        }
+                    },
+                    {
+                        "id": "c0a1e5d2-7b3f-4e8a-9c61-000000000003",
+                        "values": {
+                            "fullname": "Erin Boyle"
+                        }
+                    },
+                    {
+                        "id": "c0a1e5d2-7b3f-4e8a-9c61-000000000004",
+                        "values": {
+                            "fullname": "Marcus Feld"
+                        }
+                    },
+                    {
+                        "id": "c0a1e5d2-7b3f-4e8a-9c61-000000000005",
+                        "values": {
+                            "fullname": "Iris Halloran"
+                        }
+                    },
+                    {
+                        "id": "c0a1e5d2-7b3f-4e8a-9c61-000000000006",
+                        "values": {
+                            "fullname": "Anders Vik"
+                        }
+                    },
+                    {
+                        "id": "c0a1e5d2-7b3f-4e8a-9c61-000000000007",
+                        "values": {
+                            "fullname": "Talia Mercer"
+                        }
+                    },
+                    {
+                        "id": "c0a1e5d2-7b3f-4e8a-9c61-000000000008",
+                        "values": {
+                            "fullname": "Bruno Castellan"
+                        }
+                    },
+                    {
+                        "id": "c0a1e5d2-7b3f-4e8a-9c61-000000000009",
+                        "values": {
+                            "fullname": "Nia Adeyemi"
+                        }
+                    },
+                    {
+                        "id": "c0a1e5d2-7b3f-4e8a-9c61-000000000010",
+                        "values": {
+                            "fullname": "Jens Halvorsen"
+                        }
+                    },
+                    {
+                        "id": "c0a1e5d2-7b3f-4e8a-9c61-000000000011",
+                        "values": {
+                            "fullname": "Nadia Osei"
+                        }
+                    },
+                    {
+                        "id": "c0a1e5d2-7b3f-4e8a-9c61-000000000012",
+                        "values": {
+                            "fullname": "Gordon Sayles"
+                        }
+                    },
+                    {
+                        "id": "c0a1e5d2-7b3f-4e8a-9c61-000000000013",
+                        "values": {
+                            "fullname": "Ines Duarte"
+                        }
+                    },
+                    {
+                        "id": "c0a1e5d2-7b3f-4e8a-9c61-000000000014",
+                        "values": {
+                            "fullname": "Hugh Ferrers"
+                        }
+                    },
+                    {
+                        "id": "c0a1e5d2-7b3f-4e8a-9c61-000000000015",
+                        "values": {
+                            "fullname": "Mei-Lin Zhao"
+                        }
+                    },
+                    {
+                        "id": "c0a1e5d2-7b3f-4e8a-9c61-000000000016",
+                        "values": {
+                            "fullname": "Peter Okonkwo"
+                        }
+                    },
+                    {
+                        "id": "c0a1e5d2-7b3f-4e8a-9c61-000000000017",
+                        "values": {
+                            "fullname": "Clara Bengtsson"
+                        }
+                    },
+                    {
+                        "id": "c0a1e5d2-7b3f-4e8a-9c61-000000000018",
+                        "values": {
+                            "fullname": "Diego Salinas"
+                        }
+                    },
+                    {
+                        "id": "c0a1e5d2-7b3f-4e8a-9c61-000000000019",
+                        "values": {
+                            "fullname": "Amara Nwosu"
+                        }
+                    },
+                    {
+                        "id": "c0a1e5d2-7b3f-4e8a-9c61-000000000020",
+                        "values": {
+                            "fullname": "Felix Lindqvist"
+                        }
+                    },
+                    {
+                        "id": "c0a1e5d2-7b3f-4e8a-9c61-000000000021",
+                        "values": {
+                            "fullname": "Yuki Tanabe"
+                        }
+                    },
+                    {
+                        "id": "c0a1e5d2-7b3f-4e8a-9c61-000000000022",
+                        "values": {
+                            "fullname": "Rosa Delgado"
+                        }
+                    },
+                    {
+                        "id": "c0a1e5d2-7b3f-4e8a-9c61-000000000023",
+                        "values": {
+                            "fullname": "Kwame Asante"
+                        }
+                    },
+                    {
+                        "id": "c0a1e5d2-7b3f-4e8a-9c61-000000000024",
+                        "values": {
+                            "fullname": "Lena Vogel"
+                        }
+                    },
+                    {
+                        "id": "c0a1e5d2-7b3f-4e8a-9c61-000000000025",
+                        "values": {
+                            "fullname": "Hana Kobayashi"
+                        }
+                    },
+                    {
+                        "id": "c0a1e5d2-7b3f-4e8a-9c61-000000000026",
+                        "values": {
+                            "fullname": "Luis Ortega"
+                        }
+                    },
+                    {
+                        "id": "c0a1e5d2-7b3f-4e8a-9c61-000000000027",
+                        "values": {
+                            "fullname": "Grace Adeyemi"
+                        }
+                    },
+                    {
+                        "id": "c0a1e5d2-7b3f-4e8a-9c61-000000000028",
+                        "values": {
+                            "fullname": "Tomas Novak"
+                        }
+                    }
+                ]
+            }
+        },
+        "relationships": [
+            {
+                "kind": "oneToMany",
+                "schemaName": "account_primary_contact",
+                "referencedEntity": "contact",
+                "referencingEntity": "account",
+                "referencingAttribute": "primarycontactid",
+                "referencingNavigationProperty": "primarycontactid"
+            }
+        ]
+    }
 }

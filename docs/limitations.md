@@ -153,8 +153,7 @@ order: 7
   until 0.6.12 the throw escaped and the studio rendered *Error loading
   control* instead of the table.
   The write also needs the organisation URL to read the table's relationship
-  metadata from; a host that withholds it, such as the hub's demo, gets the
-  same read-only cell.
+  metadata from; a host that withholds it gets the same read-only cell.
 - **Owner lookups and multi-select choices stay read-only.** An owner column
   points at two tables through a navigation property no measurement has
   watched, and a multi-select has no editor yet.
@@ -264,12 +263,15 @@ order: 7
 
 ## In the hub's demo
 
-The demo runs against a fixed 24-row fixture with no server behind it, so
-paging, sorting, filtering, selection and opening a group cannot do what they
-do on a real view.
+The demo runs against a 24-row fixture over a small stand-in Dataverse, all in
+the browser. Editing a cell — the *Primary contact* lookup included — writes to
+it and shows, and New names the quick create form it would open. Paging,
+sorting, filtering, selection and opening a group cannot do what they do on a
+real view, because each asks for the view to be queried again, and nothing
+behind the demo re-runs it.
 Each dead interaction is named on the component's demo page.
 
 Filtering is the one worth calling out, because it is the feature that most
 looks like it should work in a browser: it is applied by the server across every
-page, and there is no server behind the demo. Typing in a filter box there
+page, and nothing behind the demo applies it. Typing in a filter box there
 narrows nothing.
