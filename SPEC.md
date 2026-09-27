@@ -3361,3 +3361,127 @@ host whose `hasNextPage` never goes false.
   on the probe subgrid; no page has ever actually stalled.
 - **Whether `loadExactPage` is throttled in a tight loop.** E1 measured eight
   pages with a settle between each; forty in a row is a different regime.
+
+## 0.7.0 — resizable columns
+
+Ported from `pcf-row-commands` 0.2.0, which measured the platform half on a
+real subgrid and main grid before building it (its P4–P6): `getViewId()` is
+present and stable on both hosts, `localStorage` is readable and writable and
+not framed, `visualSizeFactor` is pixels, and a press on a header reaches the
+control with `setPointerCapture` holding for the length of the drag. None of
+that is re-measured here — this control runs on the same hosts — so what 0.7.0
+had to settle was the half that is this control's own: the layout.
+
+The code: `layout/widths.ts` (the arithmetic and storage, asserted by
+`npm run widths`), `useColumnSizing` and `ColumnResizer` in the component, and
+one new input, `lockColumnWidths`, off by default.
+
+### Two width systems became one, where it matters
+
+This table lays itself out in `<colgroup>` percentages, and a dragged width has
+to draw at the number dragged to — which a percentage of a `width: 100%` table
+cannot do. So once anything is resized, `sizeColumns` lays out every column in
+pixels and the table's width is set outright.
+
+**The first drag must move one column and nothing else**, so the pixel layout
+has to reproduce the percentages exactly. Measured in `dev/preview.html`
+2026-09-27 against 0.6.20: the browser draws each column at
+`share × (table − 40)`, where the table is the larger of the box and the
+100px-per-column minimum — 260.39 … 130.25 at a 1,368px box, and the same
+shares of 800 at the 840px minimum. `sizeColumns` reproduces both to within a
+pixel (the fixtures in `dev/widths.js` are those numbers), and a real drag of
++99px on the second column moved it 144 → 243 with every other column within a
+pixel of where it was.
+
+Rounding had to be at the running edge. Flooring each share and giving the
+remainder to the last column summed exactly and put the last column 7px wide of
+the browser's.
+
+### The pinned layout was wrong, and nothing could see it
+
+`pinPlan` gave the loose columns beside a pinned one
+`calc((100% - 240px) * share)`. **A browser ignores a `calc()` mixing a
+percentage and a length on a `<col>`**: measured in the preview at a 1,368px box,
+pinned 1 + 1, every loose column drew at 171.33px — an equal share, whatever the
+view said. Every assertion was over markup, and the markup was exactly what was
+intended; only a measured width could show it.
+
+So a pinned table at a known width is laid out by `sizeColumns` too, whether or
+not anything is resized, and the loose columns now divide what is left in the
+view's proportions. `pinPlan` still decides *which* columns pin and whether
+pinning switches off; its widths stand only on a host that reported no width,
+where there is nothing to lay out in. This changes how a pinned table looks on
+upgrade, and `docs/migration.md` says so.
+
+### The surplus goes to the last column
+
+`pcf-row-commands` gives a narrowed column's surplus to every column nobody
+resized. Read before porting, that has a cost: the columns *before* the one
+being dragged widen, which moves its left edge, and the handle drifts from the
+pointer — by half the drag, for a column between two free ones. Here the last
+loose column takes all of it: every column that grows is after the one being
+dragged, so its edge stays under the pointer. Measured: a −99px drag on the
+first column moved it −99px, the handle sat under the pointer at the end, and
+the table's right edge stayed on the box's.
+
+### The first build let the table end short, and on a form that looped
+
+The first build left a narrowed table short of its box — "as the platform's
+own grid does" — and measured the box's `clientWidth` as the room to lay out
+in. Reported from a real subgrid the same day: narrowing a column left white
+space at the end, and widening the last column to cover it gave **Error
+loading control**.
+
+**A form section is a shrink-to-fit parent, so the box was sized by the table
+it measured.** Reproduced in the preview with the host made `fit-content`
+(`?fit=1` now): a 64px narrowing took the box from 1,368 to 1,042px, because
+the table ended short, the box shrank to it, the room shrank with the box, and
+every column shrank again. Widening ran the same loop upward, and the preview
+logged `ResizeObserver loop completed with undelivered notifications`. It did
+not crash there, because the page caps the host at the viewport; on the form
+nothing capped the climb — plausibly a host that reported no
+`allocatedWidth`, which the first build fell back to measuring outright —
+until React stopped re-rendering. That the crash was this loop is inferred from
+the reproduction, not read off the form's console.
+
+Two changes, each of which closes half of it. **The table fills**: the last
+loose column takes any slack, so the box can never report less than the room
+the table was sized in. **The measurement only lowers the host's number**:
+`min(clientWidth, allocatedWidth)`, and no measurement at all where the host
+reported no width, because nothing outside the circle bounds it there. With
+`?fit=1`, a narrowing now leaves the box at 1,368px and five Shift+→ on the
+last column scroll the table to 1,688px and stay there.
+
+A pinned column dragged wider stops where one budget column of table would be
+left to scroll — the line `pinPlan` unpins at. Stopping short is gentler than
+unpinning mid-drag.
+
+### Measured in the preview, 2026-09-27
+
+Pointer drags (real mouse events, both directions), arrow keys and Shift+arrows,
+Home, a real double-click, **Reset column widths** (focus moves to the first
+handle; "Column widths reset." in a live region), a reload restoring the stored
+width under `pcfhub.datatable.widths:account:<view id>`, a pinned column widened
+and still sticky after a 300px scroll, `lockColumnWidths` drawing the view's
+widths with the stored ones left intact and coming back on unlock, and a grouped
+table keeping its handles. `pointerdown` → `pointerup` → `lostpointercapture`
+arrived in that order, and a press that never moved stored nothing.
+
+### Verified on a real form
+
+**2026-09-27, 0.6.21** (the measurement build carrying this fix): resizing
+reported working in a model-driven app — the Site Visits subgrid the loop was
+found on — and in a canvas app. What was watched there is the user's report,
+not a console reading; no widths or storage keys were pasted.
+
+### Not verified in 0.7.0
+
+- **The box's `clientWidth` on a real host.** The pixel layout divides the
+  scroll box, lowered to it from `allocatedWidth`. That the two agree on a
+  subgrid and a main grid is reasoned; that the loop is gone is reported, not
+  measured.
+- **Right-to-left.** The arrow keys and the drag are mirrored in code and the
+  offsets are logical insets, but the preview cannot render RTL.
+- **A touch drag on a phone**, which is the same open item Row Commands has.
+- **The hub's demo**, whose storage is the hub's origin. Resizing needs no
+  platform call, so it should work there; it has not been looked at.

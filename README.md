@@ -102,6 +102,7 @@ is refused.
 | `parentLookup` | SingleLine.Text | input | *(unset)* | The lookup pointing at the record a subgrid sits under. Normally unset; set it where the table has several lookups to the same table, or `none` where the subgrid is unrelated |
 | `enableMultiSort` | TwoOptions | input | `false` | Shift-click a heading to add that column to the sort order. Off by default, so a plain click behaves exactly as it did |
 | `exportScope` | Enum | input | `loaded` | Whether **Export CSV** writes the rows already loaded or reads `view` — the whole view — first, at one request per page |
+| `lockColumnWidths` | TwoOptions | input | `false` | Stop users resizing columns. Unlocked, a user drags a header's edge (or uses the arrow keys on it) and the width is remembered in their browser, per table and view |
 | `editedRecordId` | SingleLine.Text | output | — | The row most recently saved by an inline edit |
 | `createdRecordId` | SingleLine.Text | output | — | The row most recently created through the New button |
 | `selectedRecordIds` | Multiple | output | — | Selected row IDs, one per line |

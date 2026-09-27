@@ -1,6 +1,6 @@
 {
   "name": "pcf-data-table",
-  "version": "0.6.20",
+  "version": "0.7.0",
   "description": "A sortable, filterable table over any Dataverse view, with inline editing, pinned columns and a New button.",
   "license": "MIT",
   "private": true,
@@ -14,8 +14,9 @@
     "rebuild": "pcf-scripts rebuild",
     "start": "pcf-scripts start",
     "refreshTypes": "pcf-scripts refreshTypes",
-    "smoke": "node dev/grouping.js && node dev/styles.js && node dev/rig.js && node dev/smoke.js",
+    "smoke": "node dev/grouping.js && node dev/widths.js && node dev/styles.js && node dev/rig.js && node dev/smoke.js",
     "grouping": "node dev/grouping.js",
+    "widths": "node dev/widths.js",
     "styles": "node dev/styles.js",
     "lint": "eslint DataTable --ext .ts,.tsx",
     "preview": "node dev/serve.js",

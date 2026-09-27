@@ -181,6 +181,75 @@
 }
 
 /*
+ * Resizing, since 0.7.0 — `pcf-row-commands`' handle, in this table's tokens.
+ *
+ * An 8px strip on the header's trailing edge, drawn as a 2px line only while
+ * it is wanted: hovered, focused or held. Always visible, a line down every
+ * header reads as grid lines nobody asked for.
+ *
+ * The strip is positioned against its own header cell. A pinned header is
+ * already `position: sticky`, which is a containing block for it; any other
+ * header becomes `relative` — and **only** the others, because `relative` on a
+ * pinned cell would quietly unpin it.
+ */
+.DataTable-table th.is-resizable {
+    padding-inline-end: calc(var(--spacingHorizontalM, 12px) + 4px);
+}
+
+.DataTable-table th.is-resizable:not(.is-pinned) {
+    position: relative;
+}
+
+.DataTable-resizer {
+    position: absolute;
+    inset-block: 0;
+    inset-inline-end: 0;
+    width: 8px;
+    cursor: col-resize;
+    touch-action: none;
+    user-select: none;
+    outline-style: none;
+    /* Above the pinned seam, which sits on the same edge. */
+    z-index: 1;
+}
+
+.DataTable-resizer::after {
+    content: '';
+    position: absolute;
+    top: 25%;
+    bottom: 25%;
+    inset-inline-end: 3px;
+    width: 2px;
+    border-radius: 1px;
+    background-color: transparent;
+}
+
+.DataTable-resizer:hover::after {
+    background-color: var(--colorNeutralStroke1Hover, #c7c7c7);
+}
+
+/* The focus ring is the line itself, full height and in the focus colour —
+   an outline around an 8px strip is a smudge. */
+.DataTable-resizer:focus-visible::after,
+.DataTable-resizer.is-dragging::after {
+    top: 0;
+    bottom: 0;
+    background-color: var(--colorStrokeFocus2, #000000);
+}
+
+.DataTable-resizer.is-dragging::after {
+    background-color: var(--colorBrandStroke1, #0f6cbd);
+}
+
+@media (forced-colors: active) {
+    .DataTable-resizer:hover::after,
+    .DataTable-resizer:focus-visible::after,
+    .DataTable-resizer.is-dragging::after {
+        background-color: Highlight;
+    }
+}
+
+/*
  * **The stray dot beside every checkbox was an ellipsis, and this is the fix.**
  *
  * The rule above gives every `th` and `td` `overflow: hidden` with
@@ -669,6 +738,19 @@
 }
 
 .DataTable-pager .DataTable-export:hover:not(:disabled) {
+    color: var(--colorNeutralForeground1, #242424);
+    background-color: var(--colorNeutralBackground1Hover, #f5f5f5);
+}
+
+/* Reset column widths: a tool, drawn as Export is and for the same reason. */
+.DataTable-pager .DataTable-resetWidths {
+    padding: var(--spacingVerticalXS, 4px) var(--spacingHorizontalS, 8px);
+    color: var(--colorNeutralForeground2, #424242);
+    background-color: transparent;
+    border-color: transparent;
+}
+
+.DataTable-pager .DataTable-resetWidths:hover {
     color: var(--colorNeutralForeground1, #242424);
     background-color: var(--colorNeutralBackground1Hover, #f5f5f5);
 }

@@ -7,7 +7,7 @@
   -->
   <control namespace="PCFHub"
            constructor="DataTable"
-           version="0.6.20"
+           version="0.7.0"
            display-name-key="DataTable_Name"
            description-key="DataTable_Desc"
            control-type="virtual">
@@ -425,6 +425,24 @@
               of-type="SingleLine.Text"
               usage="input"
               required="false" />
+
+    <!--
+      Since 0.7.0 the user can drag a column's edge, or focus it and press the
+      arrow keys, and the width is remembered for them in this browser, per
+      view. On by default, and named for the unusual choice as pcf-row-commands
+      names it: a handle changes nothing until somebody uses it, so an upgraded
+      form draws the columns it drew before.
+
+      Locking draws the view's widths whatever a user stored, and leaves what
+      they stored alone - unlock, and their widths come back.
+    -->
+    <property name="lockColumnWidths"
+              display-name-key="LockColumnWidths_Name"
+              description-key="LockColumnWidths_Desc"
+              of-type="TwoOptions"
+              usage="input"
+              required="false"
+              default-value="false" />
 
     <!--
       Two outputs rather than one. "Which rows are ticked" and "which row was

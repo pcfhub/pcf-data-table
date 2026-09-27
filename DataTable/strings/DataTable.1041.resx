@@ -439,4 +439,19 @@
   <data name="DataTable_OpenRecord" xml:space="preserve">
     <value>{0} を開く</value>
   </data>
+  <data name="LockColumnWidths_Name" xml:space="preserve">
+    <value>列幅を固定する</value>
+  </data>
+  <data name="LockColumnWidths_Desc" xml:space="preserve">
+    <value>ユーザーによる列幅の変更を禁止します。既定では、ユーザーは列の端をドラッグでき、その幅はこのブラウザーでこのビューについて記憶されます。</value>
+  </data>
+  <data name="DataTable_ResizeColumn" xml:space="preserve">
+    <value>{0} のサイズを変更</value>
+  </data>
+  <data name="DataTable_ResetWidths" xml:space="preserve">
+    <value>列幅をリセット</value>
+  </data>
+  <data name="DataTable_WidthsReset" xml:space="preserve">
+    <value>列幅をリセットしました。</value>
+  </data>
 </root>

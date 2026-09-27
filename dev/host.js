@@ -182,6 +182,8 @@
         DataTable_PageStatus: "Page {0}",
         DataTable_Previous: "Previous page",
         DataTable_RangeStatus: "{0}–{1} of {2}",
+        DataTable_ResetWidths: "Reset column widths",
+        DataTable_ResizeColumn: "Resize {0}",
         DataTable_RowsPerPage: "Rows per page",
         DataTable_SaveFailed: "{0} could not be saved. {1}",
         DataTable_SaveFailedGeneric: "The platform refused the change.",
@@ -192,6 +194,7 @@
         DataTable_SortBy: "Sort by {0}",
         DataTable_SortRank: "Sorted by {0}, {1} of {2}",
         DataTable_Unfilterable: "{0} cannot be filtered here. Lookups are filtered by the view; a choice needs table metadata this host does not provide.",
+        DataTable_WidthsReset: "Column widths reset.",
         DataTable_Yes: "Yes",
     };
 
@@ -903,6 +906,7 @@ var DEFAULTS = {
         aggregates: 'SingleLine.Text',
         groupSort: 'Enum',
         parentLookup: 'SingleLine.Text',
+        lockColumnWidths: 'TwoOptions',
     };
 
     var state = {

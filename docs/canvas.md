@@ -74,8 +74,10 @@ empty grid.
 
 Two consequences worth knowing before you file a bug:
 
-- **Column widths are the browser's.** Canvas reports no `visualSizeFactor`, so
-  there is nothing to distribute and the table lays itself out from its content.
+- **Columns start at equal widths.** Canvas reports no `visualSizeFactor`, so
+  there is nothing to distribute. A user can still drag them, and the widths
+  are remembered per table and set of columns, since a canvas app has no view
+  to key them by.
 - **Column order is the flyout's order**, not something you can set on the
   control.
 

@@ -439,4 +439,19 @@
   <data name="DataTable_OpenRecord" xml:space="preserve">
     <value>{0} öffnen</value>
   </data>
+  <data name="LockColumnWidths_Name" xml:space="preserve">
+    <value>Spaltenbreiten sperren</value>
+  </data>
+  <data name="LockColumnWidths_Desc" xml:space="preserve">
+    <value>Verhindert, dass Benutzer die Spaltenbreite ändern. Standardmäßig kann ein Benutzer den Rand einer Spalte ziehen, und die Breite wird in diesem Browser für diese Ansicht gespeichert.</value>
+  </data>
+  <data name="DataTable_ResizeColumn" xml:space="preserve">
+    <value>Größe von {0} ändern</value>
+  </data>
+  <data name="DataTable_ResetWidths" xml:space="preserve">
+    <value>Spaltenbreiten zurücksetzen</value>
+  </data>
+  <data name="DataTable_WidthsReset" xml:space="preserve">
+    <value>Spaltenbreiten wurden zurückgesetzt.</value>
+  </data>
 </root>

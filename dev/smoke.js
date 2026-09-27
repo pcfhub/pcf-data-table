@@ -173,6 +173,11 @@ const INPUTS = {
      * nobody configured must not offer to create rows.
      */
     enableCreate: false,
+    /*
+     * Unlocked, the manifest default: a handle on every header, drawing
+     * nothing until somebody uses it.
+     */
+    lockColumnWidths: false,
 };
 
 /**
@@ -943,6 +948,145 @@ check(
         && pinnedOneMarkup.includes('inset-inline-start'),
     'inset-inline-start, no physical left',
 );
+
+/* ---------------------------------------------------------------- resizing */
+
+/*
+ * 0.7.0. The arithmetic is `npm run widths`; what is asserted here is that the
+ * control draws it — a handle where the maker allowed one, the view's own
+ * percentages where nobody has dragged anything, pixels where somebody has,
+ * and storage read under the right key and survived when it throws.
+ *
+ * Rendered with `react-dom/server`, so no drag happens here: a pointer's route
+ * through the handle is the preview's to show, and a real form's to prove.
+ */
+const separators = (markup) => (markup.match(/role="separator"/g) || []).length;
+
+check(
+    'every data column has a handle, and the select column none',
+    separators(narrowMarkup) === VISIBLE
+        && (narrowMarkup.match(/class="is-resizable"/g) || []).length === VISIBLE,
+    `${separators(narrowMarkup)} handles for ${VISIBLE} columns`,
+);
+
+check(
+    'a handle is a separator a screen reader can name and read a width from',
+    /role="separator"[^>]*aria-orientation="vertical"/.test(narrowMarkup)
+        && narrowMarkup.includes('aria-label="resx:DataTable_ResizeColumn"')
+        && /aria-valuenow="\d+"/.test(narrowMarkup)
+        && /tabindex="0"/.test(narrowMarkup),
+    (narrowMarkup.match(/<span role="separator"[^>]*>/) || ['absent'])[0],
+);
+
+check(
+    'a locked control draws no handle at all',
+    separators(renderDeep(bind({ inputs: { lockColumnWidths: true } }).driven.element)) === 0,
+    'lockColumnWidths: true',
+);
+
+/*
+ * **The upgrade assertion.** A handle nobody has used must change nothing, so
+ * an unresized, unpinned table keeps the percentage `<colgroup>` and the bare
+ * minimum width it has drawn since 0.2.0 — at a measured width too, which is
+ * the host every real form is.
+ */
+const unresizedMarkup = renderDeep(bind({ width: 1400 }).driven.element);
+
+check(
+    'nobody has dragged anything, so the view\'s percentages stand',
+    /<col style="width:[\d.]+%"/.test(unresizedMarkup)
+        && !/<table[^>]*style="width:/.test(unresizedMarkup)
+        && !unresizedMarkup.includes('resx:DataTable_ResetWidths'),
+    (unresizedMarkup.match(/<table[^>]*>/) || ['absent'])[0],
+);
+
+/*
+ * Pinned at a measured width, the layout is pixels — the fix for loose columns
+ * the browser drew equally, because it ignores `calc(% - px)` on a `<col>`.
+ */
+const pinnedWideMarkup = renderDeep(bind({ width: 1400, inputs: { pinnedStart: 1 } }).driven.element);
+
+check(
+    'pinned at a measured width, every column is pixels and none is calc()',
+    !pinnedWideMarkup.includes('calc(')
+        && pinnedWideMarkup.includes('<col style="width:200px"')
+        && /<table[^>]*style="width:1400px/.test(pinnedWideMarkup),
+    (pinnedWideMarkup.match(/<colgroup>.*?<\/colgroup>/) || ['absent'])[0].slice(0, 160),
+);
+
+/*
+ * Stored widths, read back. `localStorage` is a global the bundle reaches
+ * through `globalThis`, so the stand-in goes there, and every key the control
+ * asks for is recorded — the key is table + view, and a key built from the
+ * wrong one would read another view's widths.
+ */
+const asked = [];
+
+global.localStorage = {
+    getItem: (key) => {
+        asked.push(key);
+
+        return JSON.stringify({ statecode: 260 });
+    },
+    setItem: () => undefined,
+    removeItem: () => undefined,
+};
+
+const storedMarkup = renderDeep(bind({ width: 1400 }).driven.element);
+
+check(
+    'widths are read under this table and this view',
+    asked.includes('pcfhub.datatable.widths:account:50901766-ba1b-46e0-850b-e1a3991ade2e'),
+    asked[0] || 'never asked',
+);
+
+check(
+    'a stored width is drawn at exactly that width, and the table is laid out in pixels',
+    storedMarkup.includes('<col style="width:260px"')
+        && !/<col style="width:[\d.]+%"/.test(storedMarkup)
+        && /<table[^>]*style="width:\d+px/.test(storedMarkup),
+    (storedMarkup.match(/<table[^>]*>/) || ['absent'])[0],
+);
+
+check(
+    'and Reset column widths is offered while there is something to reset',
+    storedMarkup.includes('resx:DataTable_ResetWidths'),
+    'reset button',
+);
+
+check(
+    'a locked control draws the view\'s widths whatever was stored',
+    !renderDeep(bind({ width: 1400, inputs: { lockColumnWidths: true } }).driven.element).includes('width:260px'),
+    'locked, stored width ignored',
+);
+
+/*
+ * Blocked site data throws on the *access*, not on a method — the case the
+ * accessor function exists for. The control has to render as though nothing
+ * were stored.
+ */
+Object.defineProperty(global, 'localStorage', {
+    configurable: true,
+    get: () => {
+        throw new Error('SecurityError: access denied');
+    },
+});
+
+let blockedMarkup = '';
+
+try {
+    blockedMarkup = renderDeep(bind({ width: 1400 }).driven.element);
+} catch (error) {
+    blockedMarkup = `threw: ${error.message}`;
+}
+
+check(
+    'storage that throws on access is no widths, not a broken control',
+    separators(blockedMarkup) === VISIBLE && /<col style="width:[\d.]+%"/.test(blockedMarkup),
+    blockedMarkup.startsWith('threw') ? blockedMarkup : 'rendered, percentages',
+);
+
+delete global.localStorage;
 
 /* --------------------------------------------------------------- filtering */
 

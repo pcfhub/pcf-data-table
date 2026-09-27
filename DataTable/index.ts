@@ -43,6 +43,7 @@ import {
 import { describesPlan, toGroupReading } from './query/rows';
 import { ParentReading, ParentResolution, resolveParentLookup, rowsConfirm, withholdsRoute } from './data/parent';
 import { loadAggregate, readViewFetchXml, Refusal, WebApiReader } from './data/GroupData';
+import { storageKey } from './layout/widths';
 
 /**
  * How long one export page may take before the machine gives up on it.
@@ -222,6 +223,17 @@ function ask<T>(call: () => T): T | undefined {
     } catch {
         return undefined;
     }
+}
+
+/**
+ * The view's id, bare and lower-case, or `''` where the host has none — canvas
+ * has no saved view, and the method is absent from some hosts' datasets.
+ */
+function viewIdOf(dataset: ComponentFramework.PropertyTypes.DataSet): string {
+    const loose = dataset as { getViewId?: () => unknown };
+    const raw = typeof loose.getViewId === 'function' ? ask(() => loose.getViewId!()) : null;
+
+    return typeof raw === 'string' ? raw.replace(/[{}]/g, '').toLowerCase() : '';
 }
 
 interface LookupHost {
@@ -826,6 +838,15 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
                 context.mode.allocatedWidth,
                 mode !== 'none',
             ),
+            /*
+             * Resizing, since 0.7.0. The component owns the widths — a drag
+             * repaints, and only React state can cause that — so all it needs
+             * from here is whether the maker locked them and where this view's
+             * widths are stored. The key is table + view; `getViewId` goes
+             * through `ask()` for the reason the grouping route's does.
+             */
+            resizable: !boolInput(context, 'lockColumnWidths'),
+            widthKey: storageKey(entity, viewIdOf(dataset), columns),
             pageIds,
             selected: this.selected,
             selectionMode: mode,
@@ -1492,9 +1513,7 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
 
         const plan = aliasPlan(spec);
         const host = lookupHost(context);
-        const loose = dataset as { getViewId?: () => unknown };
-        const rawViewId = typeof loose.getViewId === 'function' ? ask(() => loose.getViewId!()) : null;
-        const viewId = typeof rawViewId === 'string' ? rawViewId.replace(/[{}]/g, '').toLowerCase() : '';
+        const viewId = viewIdOf(dataset);
         const parent = this.parentReading(context, dataset, spec.entity);
 
         return {

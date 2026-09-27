@@ -7,6 +7,31 @@ appliesTo: ">=0.2.0"
 
 # Migration
 
+## 0.6.x → 0.7.0
+
+0.7.0 lets users resize columns. **Nothing was renamed, nothing was removed, no
+property changed its default, and no new permission is asked for at import.**
+One property is new: `lockColumnWidths`, off by default.
+
+### What changes on upgrade without touching anything
+
+- **Every column header has a resize handle on its trailing edge.** It is
+  invisible until hovered or focused, and it draws nothing until somebody
+  uses it, so an unpinned table lays its columns out exactly as 0.6.x did. The
+  header text gives up 4 pixels at its end to make room for it. Set **Lock
+  column widths** to take the handles away.
+- **A table with pinned columns lays out its other columns in the view's
+  proportions.** 0.6.x meant to, and on a real browser drew them all at an
+  equal width instead — the `calc()` widths it wrote are ones a browser ignores
+  on a table column. If a pinned table looks different after the upgrade, it
+  now matches the widths set in the view designer.
+
+### Where the widths go
+
+In the user's browser, in `localStorage`, per table and view. Nothing is
+written to Dataverse and nothing is shared between users; see
+[Resizing columns](api.md#resizing-columns).
+
 ## 0.5.x → 0.6.0
 
 0.6.0 adds grouping with totals, sorting by several columns, and a CSV export

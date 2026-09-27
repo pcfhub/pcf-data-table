@@ -438,4 +438,19 @@
   <data name="DataTable_OpenRecord" xml:space="preserve">
     <value>Open {0}</value>
   </data>
+  <data name="LockColumnWidths_Name" xml:space="preserve">
+    <value>Lock column widths</value>
+  </data>
+  <data name="LockColumnWidths_Desc" xml:space="preserve">
+    <value>Stops users resizing columns. By default a user can drag a column edge, and the width is remembered for them in this browser, for this view.</value>
+  </data>
+  <data name="DataTable_ResizeColumn" xml:space="preserve">
+    <value>Resize {0}</value>
+  </data>
+  <data name="DataTable_ResetWidths" xml:space="preserve">
+    <value>Reset column widths</value>
+  </data>
+  <data name="DataTable_WidthsReset" xml:space="preserve">
+    <value>Column widths reset.</value>
+  </data>
 </root>

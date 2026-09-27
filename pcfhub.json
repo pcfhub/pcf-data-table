@@ -14,6 +14,7 @@
         "grid",
         "editing",
         "pinned-columns",
+        "resizable-columns",
         "paging",
         "quick-create",
         "choice",

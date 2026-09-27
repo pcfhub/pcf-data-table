@@ -104,6 +104,16 @@
         var params = new URLSearchParams(window.location.search);
         var root = document.getElementById('root');
 
+        /*
+          `?fit=1`: a shrink-to-fit host, which is what a form section is — it
+          takes its width from the control. 0.7.0's first build looped there,
+          because the box it measured was sized by the table it drew; nothing
+          else in this page could show it.
+        */
+        if (params.get('fit') === '1') {
+            root.style.width = 'fit-content';
+        }
+
         if (typeof registration.ctor !== 'function') {
             root.textContent = 'The bundle registered no control. Run npm run build.';
 
@@ -205,6 +215,8 @@
                 parentLookup: params.get('parentLookup'),
                 enableMultiSort: params.get('multiSort') === '1',
                 exportScope: params.get('exportScope') || 'loaded',
+                // 0.7.0. Unlocked unless asked, as a fresh install is.
+                lockColumnWidths: params.get('lock') === '1',
             },
             // A form subgrid's parent, so New seeds the relationship the way
             // the measured form did. The rig only logs it.

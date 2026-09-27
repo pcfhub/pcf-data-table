@@ -439,4 +439,19 @@
   <data name="DataTable_OpenRecord" xml:space="preserve">
     <value>Ouvrir {0}</value>
   </data>
+  <data name="LockColumnWidths_Name" xml:space="preserve">
+    <value>Verrouiller la largeur des colonnes</value>
+  </data>
+  <data name="LockColumnWidths_Desc" xml:space="preserve">
+    <value>Empêche les utilisateurs de redimensionner les colonnes. Par défaut, un utilisateur peut faire glisser le bord d’une colonne, et la largeur est mémorisée dans ce navigateur, pour cette vue.</value>
+  </data>
+  <data name="DataTable_ResizeColumn" xml:space="preserve">
+    <value>Redimensionner {0}</value>
+  </data>
+  <data name="DataTable_ResetWidths" xml:space="preserve">
+    <value>Réinitialiser la largeur des colonnes</value>
+  </data>
+  <data name="DataTable_WidthsReset" xml:space="preserve">
+    <value>Largeur des colonnes réinitialisée.</value>
+  </data>
 </root>

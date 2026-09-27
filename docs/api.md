@@ -50,7 +50,34 @@ Three pieces of column metadata change what you see:
 | --- | --- |
 | `isPrimary` | That cell becomes the open-record button, and its value is the row's accessible name. Falls back to the first visible column. |
 | `disableSorting` | No sort control on that column, and no `aria-sort`. |
-| `visualSizeFactor` | Distributed as percentage widths. When every factor is 0 — which canvas reports — the browser lays the table out instead. A **pinned** column reads the same number as a pixel width, because Dataverse stores it in `layoutxml` as one, and a sticky column cannot take a share of a width it is holding still against. |
+| `visualSizeFactor` | Distributed as percentage widths. When every factor is 0 — which canvas reports — the columns share the width equally. A **pinned** column reads the same number as a pixel width, because Dataverse stores it in `layoutxml` as one, and a sticky column cannot take a share of a width it is holding still against; the columns beside it divide what is left in the same proportions. |
+
+## Resizing columns
+
+Since 0.7.0 a user can drag the edge of any column header to resize it, or
+focus the edge and use the keyboard:
+
+| Key | Does |
+| --- | --- |
+| → / ← | 16 pixels wider or narrower (mirrored in a right-to-left form) |
+| Shift + → / ← | 64 pixels |
+| Home | The view's width back, for that column |
+
+Double-clicking an edge does what Home does, and **Reset column widths** beside
+the pager puts every column back. A column is never narrower than 64 pixels or
+wider than 800.
+
+A resized column draws at exactly the width it was given, and the others keep
+the width the view gives them. Narrow a column and the last one takes up the
+space, so the table still reaches the edge; widen one and the table scrolls.
+
+Widths are remembered **in this browser, for this user, per table and view**,
+in `localStorage`: the same view on another form opens at the same widths, and
+another view of the table starts from its own. Nothing is written to Dataverse.
+
+Set `lockColumnWidths` to turn resizing off. A locked control draws the view's
+widths whatever a user stored, and leaves what they stored alone — unlock it
+and their widths come back.
 
 ## Grouping in practice
 

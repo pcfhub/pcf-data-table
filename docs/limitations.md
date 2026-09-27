@@ -128,8 +128,9 @@ order: 7
 
 ## Not in this release
 
-- **No column resizing or reordering by the user.** The widths and order are the
-  view's, and changing them is a view-designer job.
+- **No column reordering by the user.** The order is the view's, and changing
+  it is a view-designer job. Widths are the user's to change since 0.7.0 — see
+  *Resizing columns* below.
 - **Inline editing covers text, number, yes/no, date and — in a model-driven
   app — choice columns.** The choice editor is a dropdown of the column's
   options, read from entity metadata; state and status columns look like
@@ -231,6 +232,29 @@ order: 7
   set it reports `-1`, and the pager reads "Page 3" instead of "51–75 of 240".
   That is the platform declining to count, not the control failing to.
 
+## Resizing columns
+
+- **Widths are remembered in this browser only.** They live in `localStorage`,
+  per table and view, so the same user on another browser or machine sees the
+  view's widths, and clearing site data forgets them. Nothing is written to
+  Dataverse, and a maker cannot set them for other users — that is still the
+  view designer.
+- **Where site data is blocked, a resize lasts until the page closes.** Nothing
+  is reported: the drag works, and there is simply nowhere to keep it.
+- **Narrowing a column widens the last one, and only the last one.** The table
+  always reaches the edge, and because every column that grows is after the
+  one you are dragging, that column's edge stays under your pointer. The last
+  column can be widened but not narrowed away from the edge — it is the edge.
+- **A pinned column stops short of eating the view.** Dragged wider, it stops
+  where one ordinary column's worth of table would be left to scroll — the
+  same line that decides whether pinning switches itself off.
+- **Reset column widths sits beside the pager**, so while a grouped table has no
+  group open — and so no pager — the way back is Home or a double-click on each
+  column's edge.
+- **Not verified on a phone.** The handle is 8 pixels wide and takes touch
+  (`touch-action: none`), but no touch drag on a real device has been
+  watched.
+
 ## On a narrow host
 
 - **The table scrolls sideways rather than squeezing the columns.** Below about
@@ -256,8 +280,9 @@ order: 7
 - Grouping always covers the rows loaded so far, never the whole view: the
   whole-view answer is a Web API query, and canvas has no Web API. The caption
   says which.
-- Column widths are the browser's, because canvas reports no
-  `visualSizeFactor`.
+- Columns start at equal widths, because canvas reports no
+  `visualSizeFactor`. They resize as they do in a model-driven app, remembered
+  per table and set of columns, since a canvas app has no view.
 - Columns come from the Fields flyout on `Items`. Pick none and the control says
   so rather than rendering an empty grid.
 

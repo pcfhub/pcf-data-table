@@ -6,6 +6,8 @@
  * plain values and returns plain values.
  */
 
+import { COLUMN_BUDGET, SELECT_WIDTH } from '../layout/widths';
+
 type Column = ComponentFramework.PropertyHelper.DataSetApi.Column;
 type SortDirection = ComponentFramework.PropertyHelper.DataSetApi.Types.SortDirection;
 type FilterExpression = ComponentFramework.PropertyHelper.DataSetApi.FilterExpression;
@@ -377,9 +379,12 @@ export function headerCheckState(
  *
  * 40px is the select column, which holds a fixed-size checkbox and does not
  * take part in the proportions.
+ *
+ * Both live in `layout/widths.ts` since 0.7.0, because the pixel layout a
+ * resized or pinned table uses has to agree with this one to the pixel.
  */
-const MIN_COLUMN_WIDTH = 100;
-const SELECT_COLUMN_WIDTH = 40;
+const MIN_COLUMN_WIDTH = COLUMN_BUDGET;
+const SELECT_COLUMN_WIDTH = SELECT_WIDTH;
 
 /**
  * The width below which the table should scroll rather than squeeze.

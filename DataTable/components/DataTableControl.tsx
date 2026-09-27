@@ -27,6 +27,17 @@ import {
     SelectionMode,
     tableMinWidth,
 } from './resolve';
+import {
+    clampWidth,
+    MAX_WIDTH,
+    MIN_WIDTH,
+    nudge,
+    Overrides,
+    readOverrides,
+    sizeColumns,
+    StorageLike,
+    writeOverrides,
+} from '../layout/widths';
 
 /** A pencil, on the same 20×20 grid as the chevrons. */
 const PENCIL_GLYPH = 'M4 16v-3l8-8 3 3-8 8H4zM12.5 4.5l3 3';
@@ -338,6 +349,278 @@ function pinCell(
 const SELECT_PIN: PinnedColumn = { pinned: 'start', width: null, offset: 0, edge: false };
 
 /**
+ * `localStorage`, read through a function because **the access itself can
+ * throw** where site data is blocked — so the only place that throw is caught
+ * is inside `layout/widths.ts`'s own `try`, where this is called.
+ */
+const browserStorage = (): StorageLike | undefined =>
+    typeof globalThis.localStorage === 'undefined' ? undefined : globalThis.localStorage;
+
+/** What the table needs from the widths a user dragged. */
+interface ColumnSizer {
+    /** Dragged widths for the columns in view; `{}` on a locked control. */
+    overrides: Overrides;
+    /** The scroll box's own width, or the host's where it has not been measured yet. */
+    available: number;
+    /** A callback ref for the scroll box, which is what gets measured. */
+    boxRef: (box: HTMLDivElement | null) => void;
+    box: HTMLDivElement | null;
+    resize: (name: string, width: number) => void;
+    /** Store what `resize` did — once per drag, not once per pixel. */
+    commit: () => void;
+    reset: (name: string) => void;
+    resetAll: () => void;
+}
+
+/**
+ * The widths a user dragged, and the width they are laid out in.
+ *
+ * **React state, for the reason `useEditing` gives:** a drag has to repaint,
+ * and the control class cannot cause a repaint. Storage is read once per view —
+ * the key is table + view, so switching views on a subgrid starts from that
+ * view's widths — and written once per gesture.
+ *
+ * A locked control keys on nothing and so holds nothing, **and leaves storage
+ * alone**: a maker who locks widths after users have dragged them gets the view
+ * they designed, and unlocking gives the users theirs back.
+ */
+function useColumnSizing(props: IProps): ColumnSizer {
+    const { resizable, widthKey, columns } = props;
+    const wanted = resizable ? widthKey : '';
+
+    const [stored, setStored] = React.useState(() => ({
+        key: wanted,
+        overrides: wanted ? readOverrides(browserStorage, wanted, columns) : ({} as Overrides),
+    }));
+
+    // Derived from a prop, the way React documents it for a function
+    // component: a view switch re-reads storage in this same render rather
+    // than painting the old view's widths once first.
+    let current = stored;
+
+    if (stored.key !== wanted) {
+        current = { key: wanted, overrides: wanted ? readOverrides(browserStorage, wanted, columns) : {} };
+        setStored(current);
+    }
+
+    // The handlers read this rather than `current`, so a key press straight
+    // after a drag sees the drag's width and not the render before it.
+    const latest = React.useRef(current);
+
+    latest.current = current;
+
+    /*
+     * **The scroll box's `clientWidth`, not `allocatedWidth`.** The host's
+     * number can overstate the room — the hub's demo counted its own padding
+     * into it, and a vertical scrollbar takes its width out of the box without
+     * telling anyone — and the percentage layout this has to agree with divides
+     * the box, not the allocation. `allocatedWidth` stands in until the first
+     * measurement, which is before the first paint.
+     */
+    const [box, boxRef] = React.useState<HTMLDivElement | null>(null);
+    const [measured, setMeasured] = React.useState(0);
+
+    // Before the first paint, and again whenever the host reports a new
+    // width. Everything between those — a scrollbar arriving, a pane dragged —
+    // is the observer's below.
+    React.useLayoutEffect(() => {
+        const width = box ? box.clientWidth : 0;
+
+        if (width > 0 && width !== measured) {
+            setMeasured(width);
+        }
+    }, [box, measured, props.maxWidth]);
+
+    React.useEffect(() => {
+        if (!box || typeof ResizeObserver === 'undefined') {
+            return undefined;
+        }
+
+        const observer = new ResizeObserver(() => setMeasured(box.clientWidth));
+
+        observer.observe(box);
+
+        return (): void => observer.disconnect();
+    }, [box]);
+
+    const replace = (overrides: Overrides): void => {
+        latest.current = { key: latest.current.key, overrides };
+        setStored(latest.current);
+    };
+
+    /*
+     * **The host's number, lowered by the measurement and never raised by
+     * it.** A form section is a shrink-to-fit parent, so the box is sized
+     * *from* the table and a measurement of it is partly a measurement of
+     * what this control drew. Trusted outright, that is a loop: the first
+     * build of 0.7.0 fed the table's width back into the room it was laid
+     * out in, and a widened column grew every column on every pass until
+     * React gave up and the platform showed "Error loading control".
+     *
+     * Bounded by `allocatedWidth`, the loop has nowhere to go: the table
+     * fills at least the room it was given (see `sizeColumns`), so the box
+     * can only report that room or more, and the ceiling stops the "more".
+     * A host that reported no width gets no measurement at all — `0`, the
+     * budget layout — because nothing outside the circle bounds it there.
+     */
+    const allocated = props.maxWidth ?? 0;
+
+    return {
+        overrides: current.overrides,
+        available: allocated > 0 ? (measured > 0 ? Math.min(measured, allocated) : allocated) : 0,
+        boxRef,
+        box,
+        resize: (name, width): void => {
+            if (latest.current.overrides[name] !== width) {
+                replace({ ...latest.current.overrides, [name]: width });
+            }
+        },
+        commit: (): void => {
+            if (latest.current.key) {
+                writeOverrides(browserStorage, latest.current.key, latest.current.overrides);
+            }
+        },
+        reset: (name): void => {
+            if (!(name in latest.current.overrides)) {
+                return;
+            }
+
+            const next = { ...latest.current.overrides };
+
+            delete next[name];
+            replace(next);
+            writeOverrides(browserStorage, latest.current.key, next);
+        },
+        resetAll: (): void => {
+            replace({});
+            writeOverrides(browserStorage, latest.current.key, {});
+        },
+    };
+}
+
+/**
+ * The handle on a column's trailing edge.
+ *
+ * A `separator` with a value, because that is what a resizer is to assistive
+ * technology: focusable, announced with its width, moved by the arrow keys.
+ * The pointer route and the keyboard route write the same override.
+ *
+ * **The handle alone takes the press.** `pcf-row-commands` measured it on a
+ * subgrid, 2026-09-25 (its P6): a press on a header reaches the control,
+ * `setPointerCapture` holds for the length of the drag, and `pointerup` and
+ * `lostpointercapture` follow. Every listener is on the handle and nowhere
+ * else, because `pcf-calendar-view` found that a second `pointerup` listener
+ * on a parent commits a drag twice.
+ */
+function ColumnResizer(props: {
+    label: string;
+    width: number;
+    rtl: boolean;
+    onResize: (width: number) => void;
+    onCommit: () => void;
+    onReset: () => void;
+}): React.ReactElement {
+    const drag = React.useRef<{ startX: number; startWidth: number; moved: boolean } | null>(null);
+    const [dragging, setDragging] = React.useState(false);
+
+    const end = (): void => {
+        const held = drag.current;
+
+        if (!held) {
+            return;
+        }
+
+        drag.current = null;
+        setDragging(false);
+
+        // A width changes only on a move, so a press that never moved has
+        // nothing to store — and storage is not rewritten for nothing.
+        if (held.moved) {
+            props.onCommit();
+        }
+    };
+
+    return (
+        <span
+            role="separator"
+            aria-orientation="vertical"
+            aria-label={props.label}
+            aria-valuemin={MIN_WIDTH}
+            aria-valuemax={MAX_WIDTH}
+            aria-valuenow={props.width}
+            tabIndex={0}
+            className={dragging ? 'DataTable-resizer is-dragging' : 'DataTable-resizer'}
+            onPointerDown={(event): void => {
+                if (event.button !== 0 || drag.current) {
+                    return;
+                }
+
+                // No text selection and no native drag for the length of it.
+                event.preventDefault();
+                drag.current = { startX: event.clientX, startWidth: props.width, moved: false };
+
+                try {
+                    event.currentTarget.setPointerCapture(event.pointerId);
+                } catch {
+                    // A host that refuses capture still gets the drag while
+                    // the pointer stays on the handle; the release ends it.
+                }
+
+                setDragging(true);
+            }}
+            onPointerMove={(event): void => {
+                const held = drag.current;
+
+                if (!held) {
+                    return;
+                }
+
+                const width = clampWidth(held.startWidth + (event.clientX - held.startX) * (props.rtl ? -1 : 1));
+
+                if (width === held.startWidth && !held.moved) {
+                    return;
+                }
+
+                held.moved = true;
+                props.onResize(width);
+            }}
+            onPointerUp={end}
+            onPointerCancel={end}
+            onLostPointerCapture={end}
+            // The header's sort button is a sibling, not an ancestor, so a
+            // press here cannot sort — but a row-click handler further out
+            // would still hear it without this.
+            onClick={(event): void => event.stopPropagation()}
+            // The view's width back for this one column: a double-click, as
+            // in every grid that has resizers, and Home from the keyboard.
+            onDoubleClick={(event): void => {
+                event.stopPropagation();
+                props.onReset();
+            }}
+            onKeyDown={(event): void => {
+                if (event.key === 'Home') {
+                    event.preventDefault();
+                    props.onReset();
+
+                    return;
+                }
+
+                if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') {
+                    return;
+                }
+
+                event.preventDefault();
+
+                const wider = (event.key === 'ArrowRight') !== props.rtl;
+
+                props.onResize(nudge(props.width, wider ? 1 : -1, event.shiftKey));
+                props.onCommit();
+            }}
+        />
+    );
+}
+
+/**
  * How long to wait for a write before giving up on it.
  *
  * **A promise that never settles is not a hypothetical.** 0.3.1 on a real
@@ -521,6 +804,10 @@ export interface IProps {
     onExpand: (conditions: Condition[] | null) => void;
     /** Which columns stick, how wide they are, and how far in they sit. */
     pins: PinPlan;
+    /** Whether a user may drag a column's width — the maker's `lockColumnWidths`, inverted. */
+    resizable: boolean;
+    /** Where this view's dragged widths are stored: table + view. */
+    widthKey: string;
     pageIds: string[];
     selected: string[];
     selectionMode: SelectionMode;
@@ -1216,6 +1503,24 @@ export function DataTableControl(props: IProps): React.ReactElement | null {
      * grouping from having to be reconciled.
      */
     const groups = useGroups(props);
+    const sizer = useColumnSizing(props);
+    // Said aloud once the widths are reset, since the button that did it goes.
+    const [widthNote, setWidthNote] = React.useState('');
+    const focusAfterReset = React.useRef(false);
+
+    React.useEffect(() => {
+        if (!focusAfterReset.current) {
+            return;
+        }
+
+        focusAfterReset.current = false;
+
+        // The Reset button has just removed itself, taking focus with it. The
+        // first handle is the nearest thing to what was reset.
+        const handle = sizer.box?.querySelector('.DataTable-resizer') as HTMLElement | null;
+
+        handle?.focus();
+    });
     const grouped = Boolean(props.groupPlan) && props.groupPlan!.groups.length > 0;
     const [expandedKey, setExpandedKey] = React.useState<string | null>(null);
     const { groupPlan, onExpand } = props;
@@ -1710,22 +2015,51 @@ export function DataTableControl(props: IProps): React.ReactElement | null {
     const primary = primaryColumn(columns);
     const selectable = props.selectionMode !== 'none';
     const multiple = props.selectionMode === 'multiple';
-    const pins = props.pins;
-
     /*
      * **Two width systems, and only one of them is in force at a time.**
      *
-     * Unpinned, this is exactly what 0.2.0 did: `columnWidths` turns
-     * `visualSizeFactor` into percentages, or returns `null` where the host set
-     * no factors at all and the browser's own table layout is the better answer.
+     * Unresized and unpinned, this is exactly what 0.2.0 did: `columnWidths`
+     * turns `visualSizeFactor` into percentages, or returns `null` where the
+     * host set no factors at all and the browser's own table layout is the
+     * better answer.
      *
-     * Pinned, the plan owns every width — because a pinned column needs pixels
-     * for its sticky offset to mean anything, and the loose columns then have to
-     * divide what is left rather than the whole table. Mixing the two by hand at
-     * this level is how the layout drifts wider on every render.
+     * Resized or pinned, `sizeColumns` owns every width, in pixels — a dragged
+     * width has to draw at the number dragged to, and a pinned column needs
+     * pixels for its sticky offset to mean anything. Before 0.7.0 a pinned
+     * table gave its loose columns `calc(% - px)`, which a browser ignores on a
+     * `<col>`; see `layout/widths.ts`. `pinPlan`'s own widths remain the answer
+     * only where no width is known to lay out in.
+     *
+     * The pixel sizing is computed either way, because the handle needs a
+     * column's drawn width to start a drag from, and with no overrides it is
+     * the width the percentages draw — measured, not assumed.
      */
-    const widths = pins.none ? columnWidths(columns) : pins.columns.map((pin) => pin.width);
-    const minWidth = pins.none ? tableMinWidth(columns.length, selectable) : pins.minWidth;
+    const sizing = sizeColumns(
+        columns,
+        props.pins.columns.map((pin) => pin.pinned),
+        sizer.overrides,
+        selectable,
+        props.pins.selectPinned,
+        sizer.available,
+    );
+    const resized = Object.keys(sizer.overrides).length > 0;
+    const pixels = resized || (!props.pins.none && sizer.available > 0);
+    const pins: PinPlan = pixels
+        ? {
+            columns: sizing.columns.map((column) => ({
+                pinned: column.pinned,
+                width: `${column.width}px`,
+                offset: column.offset,
+                edge: column.edge,
+            })),
+            selectPinned: props.pins.selectPinned,
+            minWidth: sizing.table,
+            none: props.pins.none,
+        }
+        : props.pins;
+
+    const widths = pins.none && !pixels ? columnWidths(columns) : pins.columns.map((pin) => pin.width);
+    const minWidth = pixels ? sizing.table : pins.none ? tableMinWidth(columns.length, selectable) : pins.minWidth;
     const selectPin = pins.selectPinned ? SELECT_PIN : undefined;
 
     const toggleRow = (id: string): void => {
@@ -1807,16 +2141,26 @@ export function DataTableControl(props: IProps): React.ReactElement | null {
 
     return frame(
         <>
-            <div className={dataset.loading ? 'DataTable-scroll is-loading' : 'DataTable-scroll'}>
+            <div
+                ref={sizer.boxRef}
+                className={dataset.loading ? 'DataTable-scroll is-loading' : 'DataTable-scroll'}
+            >
                 {/*
                   The minimum is what makes the wrapper's `overflow-x: auto` do
                   anything at all — see `tableMinWidth`. Inline rather than in
                   the stylesheet because it depends on how many columns the view
                   has, which CSS cannot count.
+
+                  Laid out in pixels, the width is set outright as well: a
+                  table left at `width: 100%` shares any surplus into every
+                  column, a dragged one included, and ends where its columns
+                  do only if it is told to.
                 */}
                 <table
                     className="DataTable-table"
-                    style={{ minWidth: `${minWidth}px` }}
+                    style={pixels
+                        ? { width: `${minWidth}px`, minWidth: `${minWidth}px` }
+                        : { minWidth: `${minWidth}px` }}
                 >
                     <caption className="DataTable-caption">{dataset.getTitle()}</caption>
 
@@ -1869,7 +2213,10 @@ export function DataTableControl(props: IProps): React.ReactElement | null {
                                         key={column.name}
                                         scope="col"
                                         aria-sort={sortable ? sorted : undefined}
-                                        {...pinCell(pins.columns[index])}
+                                        {...pinCell(
+                                            pins.columns[index],
+                                            props.resizable ? 'is-resizable' : undefined,
+                                        )}
                                     >
                                         {sortable ? (
                                             <button
@@ -1926,6 +2273,23 @@ export function DataTableControl(props: IProps): React.ReactElement | null {
                                             </button>
                                         ) : (
                                             column.displayName
+                                        )}
+
+                                        {props.resizable && (
+                                            <ColumnResizer
+                                                label={getString('DataTable_ResizeColumn').replace(
+                                                    '{0}',
+                                                    column.displayName,
+                                                )}
+                                                width={sizing.columns[index].width}
+                                                rtl={props.isRTL}
+                                                onResize={(width): void => {
+                                                    sizer.resize(column.name, width);
+                                                    setWidthNote('');
+                                                }}
+                                                onCommit={sizer.commit}
+                                                onReset={(): void => sizer.reset(column.name)}
+                                            />
                                         )}
                                     </th>
                                 );
@@ -2562,9 +2926,31 @@ export function DataTableControl(props: IProps): React.ReactElement | null {
                 {!props.exporting && props.exportNote !== '' && (
                     <span className="DataTable-message" role="status">{props.exportNote}</span>
                 )}
+
+                {/*
+                  Only while there is something to reset, and never on a
+                  locked control — a button that does nothing is not a
+                  button. A single column goes back with a double-click or
+                  Home on its handle.
+                */}
+                {props.resizable && resized && (
+                    <button
+                        type="button"
+                        className="DataTable-resetWidths"
+                        onClick={(): void => {
+                            sizer.resetAll();
+                            focusAfterReset.current = true;
+                            setWidthNote(getString('DataTable_WidthsReset'));
+                        }}
+                    >
+                        {getString('DataTable_ResetWidths')}
+                    </button>
+                )}
                 </span>
             </div>
             )}
+
+            <span className="DataTable-visuallyHidden" role="status">{widthNote}</span>
         </>,
     );
 }
