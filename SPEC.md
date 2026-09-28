@@ -134,7 +134,8 @@ nothing before it. And `firstPageNumber` reported 2 while the ids held both
 pages, which is how the list printed "4–9 of 6".
 
 This control had all three and they were never noticed here, because nothing
-below a real environment can page: the demo harness serves one page. What is now
+below a real environment could page: the demo harness served one page until
+pcfhub/pcfhub#51. What is now
 in `index.ts` is the local counter as the only page number, `this.page > 1`
 gating Previous, `loadExactPage` preferred where the host has it, and
 `pageIds()` slicing the accumulated array back to one page.
@@ -146,9 +147,10 @@ the page rather than printing "of -1".
 **Slicing `sortedRecordIds` to the page size is normally wrong, and is what
 `pageIds()` now does anyway.** The rule holds wherever the platform honours
 `loadOnlyNewPage` — that array is then already the current page, and slicing
-hides records it paged for. The demo tempts you into it for a different and
-still-wrong reason: the harness serves all 24 fixture rows at once, which is why
-the preset's `pageSize` is 25 rather than 10. The exception is the repair above,
+hides records it paged for. The demo used to tempt you into it for a different
+and still-wrong reason: until pcfhub/pcfhub#51 the harness served all 24 fixture
+rows at once, whatever the page size. It now pages, and *Filtering and export*
+shows 10 rows a page. The exception is the repair above,
 and it is guarded on `ids.length > pageSize`, so on a platform that behaves it
 does nothing at all.
 
@@ -186,22 +188,53 @@ release — and nothing would have caught it.
 
 ## Demo
 
-`fidelity: "limited"`, and the reason is structural rather than a matter of
-effort.
+`fidelity: "limited"`.
 
-Nothing in this control leaves the browser, which is normally what earns `full`.
-But three of its four features call back into the dataset, and the harness's
-`DataSet` mock only simulates it. Read from
-`pcfhub/resources/js/demo-harness/context/DataSet.ts`: `hasNextPage` and
-`hasPreviousPage` are hard-coded `false`, `lastPageNumber` is `1`, and
-`setPageSize` is an empty function with a comment saying a single-page fixture
-has nothing to repaginate. And `main.ts`'s `renderView()` rebuilds the context on
-every render, so `createDataSet` runs again and any mutation to
-`dataset.sorting` or through `setSelectedRecordIds` is discarded.
+**Until 2026-09-27 the reason was the whole table.** The harness rebuilt the
+dataset on every render, so:
 
-So paging is inert, sorting moves the arrow but not the rows, selection does not
-survive a re-render, and `openDatasetItem` opens nothing — the event log names
-the record instead. Each is named in `demo.limitations`.
+- the pager had one page;
+- `setPageSize` did nothing;
+- `sorting` and `setSelectedRecordIds` were discarded before the next pass;
+- a filter narrowed nothing.
+
+pcfhub/pcfhub#51 gave the harness a view that keeps its page, sort, filter and
+selection, and applies them on the next fetch as a form does.
+
+It was checked on 2026-09-27 with 0.7.0's published bundle against that harness:
+
+- a revenue filter of `>3000000` gave 5 of 24;
+- a *Modified on* date of 2026-07-20 gave 1 row On, 15 From and 10 Until;
+- two ticks survived a sort, and `selectedRecordIds` carried both;
+- opening Alice Nakamura's group gave her 4 rows, "1–4 of 4", and closing it
+  brought back all five groups;
+- an export of the whole view at 10 rows a page walked `loadExactPage` 1 to 3
+  and wrote all 24 rows.
+
+Sorting and the three-page pager were checked in pcfhub/pcfhub#51 itself.
+
+**What keeps it `limited` now** is what the harness cannot answer truthfully:
+
+- choice cells, both as editors and as filter boxes, because the metadata has
+  no option sets;
+- a refused write;
+- the server's grouping aggregate, because no FetchXML is answered;
+- `openDatasetItem`.
+
+**That export check found a bug in 0.7.0, not in the harness.** `putBack()`
+restores page one with `refresh()`, not `loadExactPage(1)`, and `refresh()`
+keeps whatever page the walk last loaded. So after a whole-view export started
+from page one:
+
+- the table shows the last page, labelled as page one ("1–4 of 24");
+- `hasNextPage` is false, so Next is disabled;
+- `this.page` is 1, so Previous is disabled too.
+
+The subgrid measured on 2026-09-21 hid this, because it ignored the second
+`loadExactPage` and stayed on page one. A host that honours every jump, as the
+harness and the 2026-09-20 dev rig do, shows it.
+
+The fix is to take `restore.page > 1` off the `loadExactPage` branch.
 
 **Export CSV made no file on the hub until 2026-09-27, while `demo.limitations`
 said it did.** The control prefers `navigation.openFile` wherever it exists, and

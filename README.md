@@ -120,38 +120,41 @@ it, emitting `Reactv16` and `FluentUIReactv940` as webpack externals.
 
 ## On the hub
 
-`demo.fidelity` is **`limited`**, and the gap is not marginal.
+`demo.fidelity` is **`limited`**. That is now because of a few named features,
+not because of the table as a whole.
 
-Nothing in this control leaves the browser, which is normally what earns `full`.
-But three of its four features call back into the dataset, and the hub's demo
-harness only simulates one: its `DataSet` mock is hard-coded to a single page
-(`hasNextPage` and `hasPreviousPage` are `false`, `setPageSize` is an empty
-function), and it rebuilds the whole dataset on every render, so mutations to
-`sorting` and calls to `setSelectedRecordIds` are discarded before the next
-pass.
+Since pcfhub/pcfhub#51, the hub's demo harness keeps a dataset's page, sort,
+filter and selection between renders. It applies them on the next fetch, as a
+form does, so paging, sorting and filtering work against the fixture. So does
+opening a group, which is a filter.
 
-So paging is inert, sorting moves the arrow but not the rows, and
-`openDatasetItem` opens nothing — the event log under the demo names the record
-instead. Each one is named in `demo.limitations`.
+`demo/records.json` also carries a stand-in Dataverse: the account table, a
+contact table and the `primarycontactid` lookup between them. So:
 
-What does not call back into the dataset works. `demo/records.json` carries a
-stand-in Dataverse — the account table, a contact table and the
-`primarycontactid` lookup between them — so an inline edit writes through and
-survives the next render, *Primary contact* edits through the platform's own
-route (`utils.lookupObjects`, the relationship metadata, `webAPI.updateRecord`
-with `@odata.bind`), and New asks `navigation.openForm` for a quick create form,
-which the event log names. Nothing leaves the browser.
+- an inline edit writes through and survives the next render;
+- *Primary contact* edits through the platform's own route: `utils.lookupObjects`,
+  the relationship metadata, and `webAPI.updateRecord` with `@odata.bind`;
+- New asks `navigation.openForm` for a quick create form, and the event log
+  names it.
 
-That is the line between this control and `pcf-tag-list`, which is `mocked`:
-TagList's interactions genuinely work against its fixture, because a chip that is
-in the fixture can be clicked and read back. This one asks the harness to do
-something it only pretends to do.
+Nothing leaves the browser.
 
-Five presets, against a 24-row account fixture. Their `pageSize` is 25 — above
-the row count — deliberately: the harness serves every row regardless of page size
-and the control correctly does not slice client-side, so a smaller page size
-would render 24 rows under a pager reading "1–10 of 24", which reads as a bug in
-the control rather than as a gap in the harness.
+What keeps it `limited` is what the harness cannot answer truthfully:
+
+- **Choice cells stay read-only and get no filter box.** Both need the column's
+  option set from `utils.getEntityMetadata`, which the demo's metadata does not
+  carry.
+- **A refused write cannot happen.** `save()` always succeeds, so the rollback
+  path never runs.
+- **Grouping always takes the browser route.** The stand-in Dataverse refuses
+  FetchXML.
+- **`openDatasetItem` opens nothing.** The event log names the record instead.
+
+Each is named in `demo.limitations`.
+
+There are five presets over the 24-row account fixture. *Filtering and export*
+shows 10 rows a page, so its pager has three pages. The others show 25, which is
+one page.
 
 ## Install
 

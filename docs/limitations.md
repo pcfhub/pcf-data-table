@@ -289,14 +289,23 @@ order: 7
 ## In the hub's demo
 
 The demo runs against a 24-row fixture over a small stand-in Dataverse, all in
-the browser. Editing a cell — the *Primary contact* lookup included — writes to
-it and shows, and New names the quick create form it would open. Paging,
-sorting, filtering, selection and opening a group cannot do what they do on a
-real view, because each asks for the view to be queried again, and nothing
-behind the demo re-runs it.
-Each dead interaction is named on the component's demo page.
+the browser. Most of the table works there as it does on a form:
 
-Filtering is the one worth calling out, because it is the feature that most
-looks like it should work in a browser: it is applied by the server across every
-page, and nothing behind the demo applies it. Typing in a filter box there
-narrows nothing.
+- Paging, sorting and filtering re-run the view. Behind the demo that is the
+  fixture rather than Dataverse, filtered and sorted as a whole, then cut into
+  pages.
+- Selection survives a re-render.
+- Opening a group loads that group's rows.
+- Editing a cell writes to the stand-in Dataverse and shows. That includes the
+  *Primary contact* lookup.
+- New names the quick create form it would open.
+
+What it cannot show:
+
+- A refused write, because nothing behind the demo refuses one.
+- Choice cells as editors, and a filter box on a choice column. Both need the
+  column's options, which the demo's metadata does not carry.
+- Grouping by the server's aggregate. The demo answers no FetchXML, so the
+  control groups the rows it has loaded, as it does in a canvas app.
+
+Each gap is named on the component's demo page.
