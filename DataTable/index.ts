@@ -1856,6 +1856,14 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
      * One more round trip, unavoidable. On a host without `loadExactPage` the
      * page cannot be restored at all and the reader lands on page one; that is
      * named in `docs/limitations.md` rather than hidden.
+     *
+     * **Page one is a jump too, never a `refresh()`.** `refresh()` keeps the
+     * page the walk last loaded, so until 0.7.1 an export started from page
+     * one left the table on the view's last page under a pager saying page
+     * one, with both buttons disabled. Found by the hub's demo, 2026-09-27;
+     * the subgrid measured on 2026-09-21 hid it by ignoring the walk's second
+     * jump. Without `loadExactPage`, `paging.reset()` is the call that means
+     * "page one", and it fetches on its own.
      */
     private putBack(dataset: DataSet, restore: { page: number; pageSize: number }): void {
         const paging = dataset.paging as { loadExactPage?: (page: number) => void };
@@ -1865,7 +1873,7 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
         // re-introduce the very state change that broke paging past page one.
         this.appliedPageSize = restore.pageSize;
 
-        if (restore.page > 1 && typeof paging.loadExactPage === 'function') {
+        if (typeof paging.loadExactPage === 'function') {
             this.page = restore.page;
             paging.loadExactPage(restore.page);
 
@@ -1873,7 +1881,7 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
         }
 
         this.page = 1;
-        dataset.refresh();
+        dataset.paging.reset();
     }
 
     /**

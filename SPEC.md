@@ -221,10 +221,10 @@ Sorting and the three-page pager were checked in pcfhub/pcfhub#51 itself.
 - the server's grouping aggregate, because no FetchXML is answered;
 - `openDatasetItem`.
 
-**That export check found a bug in 0.7.0, not in the harness.** `putBack()`
-restores page one with `refresh()`, not `loadExactPage(1)`, and `refresh()`
-keeps whatever page the walk last loaded. So after a whole-view export started
-from page one:
+**That export check found a bug in 0.7.0, not in the harness, fixed in
+0.7.1.** `putBack()` restored page one with `refresh()`, not `loadExactPage(1)`,
+and `refresh()` keeps whatever page the walk last loaded. So after a whole-view
+export started from page one:
 
 - the table shows the last page, labelled as page one ("1–4 of 24");
 - `hasNextPage` is false, so Next is disabled;
@@ -234,7 +234,20 @@ The subgrid measured on 2026-09-21 hid this, because it ignored the second
 `loadExactPage` and stayed on page one. A host that honours every jump, as the
 harness and the 2026-09-20 dev rig do, shows it.
 
-The fix is to take `restore.page > 1` off the `loadExactPage` branch.
+0.7.1 takes `restore.page > 1` off the `loadExactPage` branch, so page one is
+a jump like any other. A host without `loadExactPage` now gets `paging.reset()`,
+not `refresh()`. `dev/smoke.js` asserts both. The first check failed on 0.7.0
+with "host page 3, control page 1, ids a11 a12", which is the demo's result in
+the rig.
+
+**Still open: the walk's comment and its code disagree, and have since 0.6.19.**
+`askForExportPage` says every page after the first is a `loadNextPage` step,
+because on 2026-09-21 a real subgrid ignored `loadExactPage(2)`. The code
+calls `loadExactPage(page)` for every page wherever the host has it. The smoke
+comment beside the stubborn-host test states the invariant ("never jumps to a
+page other than one"), but nothing asserts it. The demo exported correctly
+because the harness honours every jump. Which is right on a real subgrid needs
+a form, not the rig. It was left alone in 0.7.1.
 
 **Export CSV made no file on the hub until 2026-09-27, while `demo.limitations`
 said it did.** The control prefers `navigation.openFile` wherever it exists, and

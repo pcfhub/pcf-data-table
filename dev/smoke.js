@@ -2954,6 +2954,50 @@ function exportChecks() {
         'pageSize ' + whole.handle.dataset.paging.pageSize);
 
     /*
+     * **And their page, which this suite never asked about.** Found by the
+     * hub's demo, 2026-09-27: started from page one, 0.7.0 put the reader back
+     * with `refresh()`, which keeps whatever page was last loaded. The walk had
+     * just loaded page three, so the table showed page three's rows under a
+     * pager saying page one. Next was disabled because there was no page four,
+     * and Previous because the control believed it was on page one, so
+     * nothing on screen got the reader out.
+     *
+     * The rig's `refresh()` keeps the page, as the platform's does, so this
+     * fails on 0.7.0. The subgrid measured on 2026-09-21 hid it by ignoring
+     * the walk's second jump and staying on page one.
+     */
+    const firstPage = bind({ pageSize: 5 }).props().pageIds || [];
+    const wholeAfter = whole.settle().element.props;
+
+    check('and lands them back on page one, holding page one\'s rows',
+        whole.handle.state.page === 1 && wholeAfter.page === 1 &&
+            (wholeAfter.pageIds || []).join() === firstPage.join(),
+        'host page ' + whole.handle.state.page + ', control page ' + wholeAfter.page +
+            ', ids ' + (wholeAfter.pageIds || []).join(' '));
+
+    // The same on a host that can only step, where the walk accumulates and
+    // the way back to page one is `paging.reset()`.
+    const stepped = bind({
+        pageSize: 5,
+        quirks: { maxPageSize: 5, hasLoadExactPage: false },
+        inputs: { exportScope: 'view' },
+    });
+
+    stepped.props().onExport();
+
+    for (let pass = 0; pass < 20 && step(stepped).exporting; pass += 1) {
+        // Drive the walk to its end.
+    }
+
+    const steppedAfter = stepped.settle().element.props;
+
+    check('and on a host with no loadExactPage too',
+        written(stepped).length === 1 && rowsIn(written(stepped)[0]) === 12 &&
+            steppedAfter.page === 1 && (steppedAfter.pageIds || []).join() === firstPage.join(),
+        (written(stepped).length ? rowsIn(written(stepped)[0]) + ' rows; ' : 'no file; ') +
+            'control page ' + steppedAfter.page + ', ids ' + (steppedAfter.pageIds || []).join(' '));
+
+    /*
       **Stop has to stop now, not on the next page.** Reported from a real
       subgrid, 2026-09-21: an export stalled and clicking Stop did nothing at
       all — because the only thing that acted on `cancelled` was the arrival of
