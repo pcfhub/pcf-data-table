@@ -184,8 +184,10 @@ nobody edited it here.
 
 :::callout{type=warning}
 **A refused write rolls the cell back and says why**, under the cell. That path
-is the reason this control catches at all, and it is the one thing the demo on
-this page cannot show — there is no Dataverse behind it to refuse anything.
+is the reason this control catches at all. To see it in the demo on this page,
+open the *Inline editing* preset and set a Standard account's *Category* to
+Preferred Customer: the demo's stand-in Dataverse refuses that one change, as a
+plugin would.
 :::
 
 Editing and pinning work together, and the pairing is the point on a wide view:

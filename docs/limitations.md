@@ -210,7 +210,8 @@ order: 7
   moment late.
 - **A refused write rolls the cell back and says why.** The value returns to
   what it was and the reason appears under the cell. This is the path worth
-  knowing about, because it is the one the demo on this page cannot show.
+  knowing about, and the demo on this page shows it: making an account a
+  Preferred Customer is refused there.
 - **Pinning switches itself off on a narrow host.** If the columns you pinned
   would leave less than one column's worth of table still moving — a wide
   column pinned in a phone-width subgrid, say — the table renders unpinned
@@ -302,10 +303,12 @@ the browser. Most of the table works there as it does on a form:
 - The filter row gives *Category* a dropdown of its options, and grouping by it
   groups on the choice.
 - New names the quick create form it would open.
+- A refused write rolls back. The stand-in refuses one change, making an
+  account a Preferred Customer, as a plugin would, so the cell returns to its
+  old value and names the reason.
 
 What it cannot show:
 
-- A refused write, because nothing behind the demo refuses one.
 - Grouping by the server's aggregate. The demo answers no FetchXML, so the
   control groups the rows it has loaded, as it does in a canvas app.
 

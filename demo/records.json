@@ -589,6 +589,15 @@
                 "referencingAttribute": "primarycontactid",
                 "referencingNavigationProperty": "primarycontactid"
             }
+        ],
+        "faults": [
+            {
+                "operation": "update",
+                "table": "account",
+                "column": "accountcategorycode",
+                "value": 1,
+                "message": "Only an account manager can make an account a Preferred Customer."
+            }
         ]
     }
 }

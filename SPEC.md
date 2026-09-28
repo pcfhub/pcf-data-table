@@ -215,7 +215,6 @@ Sorting and the three-page pager were checked in pcfhub/pcfhub#51 itself.
 
 **What keeps it `limited` now** is what the harness cannot answer truthfully:
 
-- a refused write;
 - the server's grouping aggregate, because no FetchXML is answered;
 - `openDatasetItem`.
 
@@ -241,7 +240,21 @@ push:
 - grouping by `accountcategorycode` gave Standard, 16 records, $12,330,000, and
   Preferred Customer, 8 records, $30,795,000, by the browser route.
 
-**That export check found a bug in 0.7.0, not in the harness, fixed in
+**A refused write came off it the same day.** pcfhub/pcfhub#53 let a fixture
+declare faults, and this one refuses an update that sets
+`accountcategorycode` to 1: making an account a Preferred Customer, as a plugin
+might. A value fault rather than a column fault, so every other edit still
+saves and the refusal reads as a business rule, not a broken column.
+
+It was checked with 0.7.1's published bundle against that harness, before the
+push:
+
+- Contoso Logistics set from Standard to Preferred Customer returned to
+  Standard, with "Category could not be saved. Only an account manager can make
+  an account a Preferred Customer." under the cell;
+- Fabrikam Manufacturing set from Preferred Customer to Standard saved.
+
+**The export check above found a bug in 0.7.0, not in the harness, fixed in
 0.7.1.** `putBack()` restored page one with `refresh()`, not `loadExactPage(1)`,
 and `refresh()` keeps whatever page the walk last loaded. So after a whole-view
 export started from page one:

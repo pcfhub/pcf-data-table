@@ -140,14 +140,15 @@ contact table and the `primarycontactid` lookup between them. So:
   read through `utils.getEntityMetadata`. So its cells edit through a
   dropdown, the filter row gives it one, and grouping by it groups on the
   choice. It stands where *Status* stood, because a form reports `statecode`
-  read-only and the control keeps it that way.
+  read-only and the control keeps it that way;
+- making an account a Preferred Customer is refused, by a fault in the
+  fixture (pcfhub/pcfhub#53), so `save()` rejects and the rollback runs: the
+  cell returns to Standard and names the reason under it.
 
 Nothing leaves the browser.
 
 What keeps it `limited` is what the harness cannot answer truthfully:
 
-- **A refused write cannot happen.** `save()` always succeeds, so the rollback
-  path never runs.
 - **Grouping always takes the browser route.** The stand-in Dataverse refuses
   FetchXML.
 - **`openDatasetItem` opens nothing.** The event log names the record instead.
