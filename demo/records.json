@@ -53,10 +53,10 @@
             "order": 5
         },
         {
-            "name": "statecode",
-            "displayName": "Status",
+            "name": "accountcategorycode",
+            "displayName": "Category",
             "dataType": "OptionSet",
-            "alias": "statecode",
+            "alias": "accountcategorycode",
             "order": 6,
             "visualSizeFactor": 80
         },
@@ -79,7 +79,7 @@
                 "revenue": 2450000,
                 "address1_city": "Redmond",
                 "owneridname": "Priya Raman",
-                "statecode": "Active",
+                "accountcategorycode": 1,
                 "modifiedon": "2026-08-14"
             }
         },
@@ -92,7 +92,7 @@
                 "revenue": 1875000,
                 "address1_city": "Portland",
                 "owneridname": "Owen Brackett",
-                "statecode": "Active",
+                "accountcategorycode": 2,
                 "modifiedon": "2026-08-12"
             }
         },
@@ -105,7 +105,7 @@
                 "revenue": 960000,
                 "address1_city": "Chicago",
                 "owneridname": "Alice Nakamura",
-                "statecode": "Active",
+                "accountcategorycode": 2,
                 "modifiedon": "2026-08-11"
             }
         },
@@ -118,7 +118,7 @@
                 "revenue": 3120000,
                 "address1_city": "Denver",
                 "owneridname": "Priya Raman",
-                "statecode": "Active",
+                "accountcategorycode": 1,
                 "modifiedon": "2026-08-09"
             }
         },
@@ -131,7 +131,7 @@
                 "revenue": 540000,
                 "address1_city": "Austin",
                 "owneridname": "Tomas Ehrlich",
-                "statecode": "Inactive",
+                "accountcategorycode": 2,
                 "modifiedon": "2026-08-08"
             }
         },
@@ -144,7 +144,7 @@
                 "revenue": 415000,
                 "address1_city": "Redmond",
                 "owneridname": "Tomas Ehrlich",
-                "statecode": "Active",
+                "accountcategorycode": 2,
                 "modifiedon": "2026-08-07"
             }
         },
@@ -157,7 +157,7 @@
                 "revenue": 1290000,
                 "address1_city": "Portland",
                 "owneridname": "Owen Brackett",
-                "statecode": "Active",
+                "accountcategorycode": 2,
                 "modifiedon": "2026-08-05"
             }
         },
@@ -170,7 +170,7 @@
                 "revenue": 780000,
                 "address1_city": "Chicago",
                 "owneridname": "Alice Nakamura",
-                "statecode": "Active",
+                "accountcategorycode": 2,
                 "modifiedon": "2026-08-04"
             }
         },
@@ -183,7 +183,7 @@
                 "revenue": 225000,
                 "address1_city": "Denver",
                 "owneridname": "Sofia Marchetti",
-                "statecode": "Inactive",
+                "accountcategorycode": 2,
                 "modifiedon": "2026-08-02"
             }
         },
@@ -196,7 +196,7 @@
                 "revenue": 1640000,
                 "address1_city": "Austin",
                 "owneridname": "Owen Brackett",
-                "statecode": "Active",
+                "accountcategorycode": 2,
                 "modifiedon": "2026-07-30"
             }
         },
@@ -209,7 +209,7 @@
                 "revenue": 5230000,
                 "address1_city": "Redmond",
                 "owneridname": "Priya Raman",
-                "statecode": "Active",
+                "accountcategorycode": 1,
                 "modifiedon": "2026-07-28"
             }
         },
@@ -222,7 +222,7 @@
                 "revenue": 1105000,
                 "address1_city": "Portland",
                 "owneridname": "Owen Brackett",
-                "statecode": "Active",
+                "accountcategorycode": 2,
                 "modifiedon": "2026-07-26"
             }
         },
@@ -235,7 +235,7 @@
                 "revenue": 4470000,
                 "address1_city": "Chicago",
                 "owneridname": "Priya Raman",
-                "statecode": "Active",
+                "accountcategorycode": 1,
                 "modifiedon": "2026-07-24"
             }
         },
@@ -248,7 +248,7 @@
                 "revenue": 335000,
                 "address1_city": "Denver",
                 "owneridname": "Tomas Ehrlich",
-                "statecode": "Inactive",
+                "accountcategorycode": 2,
                 "modifiedon": "2026-07-22"
             }
         },
@@ -261,7 +261,7 @@
                 "revenue": 690000,
                 "address1_city": "Austin",
                 "owneridname": "Alice Nakamura",
-                "statecode": "Active",
+                "accountcategorycode": 2,
                 "modifiedon": "2026-07-20"
             }
         },
@@ -274,7 +274,7 @@
                 "revenue": 148000,
                 "address1_city": "Seattle",
                 "owneridname": "Sofia Marchetti",
-                "statecode": "Active",
+                "accountcategorycode": 2,
                 "modifiedon": "2026-07-18"
             }
         },
@@ -287,7 +287,7 @@
                 "revenue": 6810000,
                 "address1_city": "Redmond",
                 "owneridname": "Priya Raman",
-                "statecode": "Active",
+                "accountcategorycode": 1,
                 "modifiedon": "2026-07-15"
             }
         },
@@ -300,7 +300,7 @@
                 "revenue": 512000,
                 "address1_city": "Portland",
                 "owneridname": "Tomas Ehrlich",
-                "statecode": "Inactive",
+                "accountcategorycode": 2,
                 "modifiedon": "2026-07-13"
             }
         },
@@ -313,7 +313,7 @@
                 "revenue": 298000,
                 "address1_city": "Chicago",
                 "owneridname": "Alice Nakamura",
-                "statecode": "Active",
+                "accountcategorycode": 2,
                 "modifiedon": "2026-07-11"
             }
         },
@@ -326,7 +326,7 @@
                 "revenue": 2075000,
                 "address1_city": "Denver",
                 "owneridname": "Priya Raman",
-                "statecode": "Active",
+                "accountcategorycode": 1,
                 "modifiedon": "2026-07-09"
             }
         },
@@ -339,7 +339,7 @@
                 "revenue": 87000,
                 "address1_city": "Austin",
                 "owneridname": "Sofia Marchetti",
-                "statecode": "Inactive",
+                "accountcategorycode": 2,
                 "modifiedon": "2026-07-06"
             }
         },
@@ -352,7 +352,7 @@
                 "revenue": 3960000,
                 "address1_city": "Seattle",
                 "owneridname": "Priya Raman",
-                "statecode": "Active",
+                "accountcategorycode": 1,
                 "modifiedon": "2026-07-04"
             }
         },
@@ -365,7 +365,7 @@
                 "revenue": 1430000,
                 "address1_city": "Redmond",
                 "owneridname": "Owen Brackett",
-                "statecode": "Active",
+                "accountcategorycode": 2,
                 "modifiedon": "2026-07-02"
             }
         },
@@ -378,7 +378,7 @@
                 "revenue": 2680000,
                 "address1_city": "Seattle",
                 "owneridname": "Owen Brackett",
-                "statecode": "Active",
+                "accountcategorycode": 1,
                 "modifiedon": "2026-06-29"
             }
         }
@@ -388,7 +388,21 @@
             "account": {
                 "entitySet": "accounts",
                 "primaryId": "accountid",
-                "primaryName": "name"
+                "primaryName": "name",
+                "columns": {
+                    "accountcategorycode": {
+                        "options": [
+                            {
+                                "value": 1,
+                                "label": "Preferred Customer"
+                            },
+                            {
+                                "value": 2,
+                                "label": "Standard"
+                            }
+                        ]
+                    }
+                }
             },
             "contact": {
                 "entitySet": "contacts",

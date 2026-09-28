@@ -135,15 +135,17 @@ contact table and the `primarycontactid` lookup between them. So:
 - *Primary contact* edits through the platform's own route: `utils.lookupObjects`,
   the relationship metadata, and `webAPI.updateRecord` with `@odata.bind`;
 - New asks `navigation.openForm` for a quick create form, and the event log
-  names it.
+  names it;
+- *Category* is a choice whose options the stand-in describes (pcfhub/pcfhub#52),
+  read through `utils.getEntityMetadata`. So its cells edit through a
+  dropdown, the filter row gives it one, and grouping by it groups on the
+  choice. It stands where *Status* stood, because a form reports `statecode`
+  read-only and the control keeps it that way.
 
 Nothing leaves the browser.
 
 What keeps it `limited` is what the harness cannot answer truthfully:
 
-- **Choice cells stay read-only and get no filter box.** Both need the column's
-  option set from `utils.getEntityMetadata`, which the demo's metadata does not
-  carry.
 - **A refused write cannot happen.** `save()` always succeeds, so the rollback
   path never runs.
 - **Grouping always takes the browser route.** The stand-in Dataverse refuses

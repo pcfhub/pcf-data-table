@@ -215,11 +215,31 @@ Sorting and the three-page pager were checked in pcfhub/pcfhub#51 itself.
 
 **What keeps it `limited` now** is what the harness cannot answer truthfully:
 
-- choice cells, both as editors and as filter boxes, because the metadata has
-  no option sets;
 - a refused write;
 - the server's grouping aggregate, because no FetchXML is answered;
 - `openDatasetItem`.
+
+**Choice cells came off that list on 2026-09-28.** pcfhub/pcfhub#52 let a
+fixture describe its columns. The fixture's choice changed from *Status*
+(`statecode`, held as the label) to *Category* (`accountcategorycode`: 1
+Preferred Customer, 2 Standard, as integers), with the options described on the
+stand-in's account table.
+
+Why not keep Status as integers: *Choice write* above measured
+`isEditable('statecode')` answering `false` on a real subgrid, so an editable
+Status in the demo would show an editor no form offers. Category is an ordinary
+editable choice.
+
+It was checked with 0.7.1's published bundle against that harness, before the
+push:
+
+- a Category cell's editor offered (none), Preferred Customer and Standard, and
+  the edit saved;
+- the filter row's Category dropdown gave "1–8 of 8" for Preferred Customer,
+  and Any gave 24;
+- sorting by Category put the eight Preferred Customers first;
+- grouping by `accountcategorycode` gave Standard, 16 records, $12,330,000, and
+  Preferred Customer, 8 records, $30,795,000, by the browser route.
 
 **That export check found a bug in 0.7.0, not in the harness, fixed in
 0.7.1.** `putBack()` restored page one with `refresh()`, not `loadExactPage(1)`,

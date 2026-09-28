@@ -297,14 +297,15 @@ the browser. Most of the table works there as it does on a form:
 - Selection survives a re-render.
 - Opening a group loads that group's rows.
 - Editing a cell writes to the stand-in Dataverse and shows. That includes the
-  *Primary contact* lookup.
+  *Primary contact* lookup, and the *Category* choice, whose options the
+  stand-in describes.
+- The filter row gives *Category* a dropdown of its options, and grouping by it
+  groups on the choice.
 - New names the quick create form it would open.
 
 What it cannot show:
 
 - A refused write, because nothing behind the demo refuses one.
-- Choice cells as editors, and a filter box on a choice column. Both need the
-  column's options, which the demo's metadata does not carry.
 - Grouping by the server's aggregate. The demo answers no FetchXML, so the
   control groups the rows it has loaded, as it does in a canvas app.
 
