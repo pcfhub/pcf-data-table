@@ -389,6 +389,7 @@
                 "entitySet": "accounts",
                 "primaryId": "accountid",
                 "primaryName": "name",
+                "displayName": "Account",
                 "columns": {
                     "accountcategorycode": {
                         "options": [
@@ -408,6 +409,7 @@
                 "entitySet": "contacts",
                 "primaryId": "contactid",
                 "primaryName": "fullname",
+                "displayName": "Contact",
                 "rows": [
                     {
                         "id": "c0a1e5d2-7b3f-4e8a-9c61-000000000001",

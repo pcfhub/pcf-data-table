@@ -134,8 +134,8 @@ contact table and the `primarycontactid` lookup between them. So:
 - an inline edit writes through and survives the next render;
 - *Primary contact* edits through the platform's own route: `utils.lookupObjects`,
   the relationship metadata, and `webAPI.updateRecord` with `@odata.bind`;
-- New asks `navigation.openForm` for a quick create form, and the event log
-  names it;
+- New asks `navigation.openForm` for a quick create form, and the harness
+  answers with a stand-in form (pcfhub/pcfhub#64) whose save creates the row;
 - *Category* is a choice whose options the stand-in describes (pcfhub/pcfhub#52),
   read through `utils.getEntityMetadata`. So its cells edit through a
   dropdown, the filter row gives it one, and grouping by it groups on the
