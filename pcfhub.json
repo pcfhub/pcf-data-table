@@ -3,6 +3,7 @@
     "slug": "pcf-data-table",
     "name": "Data Table",
     "tagline": "A sortable, filterable table over any Dataverse view, with inline editing, pinned columns and a New button.",
+    "summary": "Renders the view a maker already chose, with the same columns, order and widths, as a semantic HTML table with a pager. There are no column properties to fill in.\n\n- Sorting, filtering and paging go back to the server, so they apply to the whole view rather than the page on screen\n- Grouping with counts and totals, and a caption that says whether the numbers cover the whole view\n- Inline editing, pinned columns and a **New** button\n- Row selection drives the form's command bar\n\nModel-driven apps are the primary host. Canvas apps work too, with the columns taken from the fields selected on `Items`.",
     "category": "data",
     "hosts": [
         "canvas",
