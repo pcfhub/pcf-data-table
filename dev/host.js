@@ -515,6 +515,15 @@ var DEFAULTS = {
              */
             openFileAbsent: false,
 
+            /**
+             * `openFile` is there and throws from the call, on a host that
+             * otherwise answers as a model-driven one. Not a host anybody has
+             * measured — canvas is, and `host: 'canvas'` already refuses — but
+             * it is the branch a `try` around the call exists for, and nothing
+             * else here reaches it.
+             */
+            openFileRefuses: false,
+
             /** Whether `context.navigation` exists at all. Typed non-optional. */
             navigationAbsent: false,
 
@@ -2122,6 +2131,18 @@ var DEFAULTS = {
                                  * the dismissal by default, see DEFAULTS.
                                  */
                                 openForm: function (formOptions) {
+                                    /*
+                                     * Published on canvas and refused from the
+                                     * call, like the surfaces the probe did
+                                     * call there. This rig answered it on
+                                     * canvas until 0.7.2, which is a friendlier
+                                     * host than the real one.
+                                     */
+                                    if (canvasRefuses) {
+                                        log('navigation.openForm (canvas: not implemented)');
+                                        throw new Error('openForm: Method not implemented.');
+                                    }
+
                                     log('navigation.openForm', formOptions);
 
                                     return Promise.resolve(o.openFormReturns);
@@ -2132,6 +2153,19 @@ var DEFAULTS = {
                             : {
                                 openFile: function (file, fileOptions) {
                                     var f = file || {};
+
+                                    /*
+                                     * The same on canvas: there, and refusing.
+                                     * The probe found `openFile` present and
+                                     * did not call it; a control that takes
+                                     * "it is a function" for "it works" threw
+                                     * from Export on canvas until 0.7.2, and
+                                     * this rig answered instead of saying so.
+                                     */
+                                    if (canvasRefuses || quirks.openFileRefuses) {
+                                        log('navigation.openFile (' + (canvasRefuses ? 'canvas: ' : '') + 'not implemented)');
+                                        throw new Error('openFile: Method not implemented.');
+                                    }
 
                                     log('navigation.openFile', {
                                         fileName: f.fileName,

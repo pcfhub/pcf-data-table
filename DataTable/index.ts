@@ -2235,36 +2235,56 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
          * not gated — so this control still declares no features and still
          * installs without a permission prompt.
          *
-         * Feature-detect the *method*, not the bag: `context.navigation` is
-         * present on every host, and `openFile` is documented model-driven
-         * only. Checking the bag would pass on canvas and throw.
+         * **Detecting the method is not enough either, and until 0.7.2 it was
+         * the whole test.** This comment used to say "feature-detect the
+         * method, not the bag … checking the bag would pass on canvas and
+         * throw" — and the method test passes on canvas too. A canvas app
+         * publishes `openFile` and refuses it from the call (the host probe of
+         * 2026-09-22 found it present; see `clientUrlOf`), so Export called a
+         * method that can only throw, the throw left the click handler
+         * uncaught, and the browser download below was never reached. PCFHub's
+         * demo showed it the day it could run as a canvas screen.
+         *
+         * So the host has to be one where the method means anything — the
+         * same answer `formOpener` asks for — and a host that says it is and
+         * still throws from the call gets the browser download as well.
          */
-        if (typeof context.navigation?.openFile === 'function') {
-            context.navigation.openFile(
-                {
-                    // Base64 with no `data:` prefix, and `unescape`/`encodeURIComponent`
-                    // rather than a bare `btoa`, which throws on any character
-                    // above U+00FF — the fixture's `école` is one.
-                    fileContent: btoa(unescape(encodeURIComponent(csv))),
-                    fileName: name,
-                    // KB, not bytes. `FileObject.fileSize` is the one field of
-                    // that interface that reads like it means something else.
-                    fileSize: Math.ceil(csv.length / 1024),
-                    mimeType: 'text/csv',
-                },
-                // 2 is Save. 1 is Open, which for a CSV means the host may hand
-                // it to a viewer — so a button saying Export would do something
-                // else. Omitting the options object entirely defaults to Open.
-                { openMode: 2 },
-            );
+        const openFile = clientUrlOf(context) === null ? undefined : context.navigation?.openFile;
 
-            return;
+        if (typeof openFile === 'function') {
+            try {
+                void openFile.call(
+                    context.navigation,
+                    {
+                        // Base64 with no `data:` prefix, and `unescape`/`encodeURIComponent`
+                        // rather than a bare `btoa`, which throws on any character
+                        // above U+00FF — the fixture's `école` is one.
+                        fileContent: btoa(unescape(encodeURIComponent(csv))),
+                        fileName: name,
+                        // KB, not bytes. `FileObject.fileSize` is the one field of
+                        // that interface that reads like it means something else.
+                        fileSize: Math.ceil(csv.length / 1024),
+                        mimeType: 'text/csv',
+                    },
+                    // 2 is Save. 1 is Open, which for a CSV means the host may hand
+                    // it to a viewer — so a button saying Export would do something
+                    // else. Omitting the options object entirely defaults to Open.
+                    { openMode: 2 },
+                );
+
+                return;
+            } catch {
+                // Refused from the call. The browser's own download is next.
+            }
         }
 
         this.downloadInBrowser(csv, name);
     }
 
-    /** The fallback: a Blob and a synthetic link, for hosts without `openFile`. */
+    /**
+     * The fallback: a Blob and a synthetic link, for a host without `openFile`
+     * and for one that publishes it and refuses — canvas.
+     */
     private downloadInBrowser(csv: string, name: string): void {
         const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
         const link = document.createElement('a');

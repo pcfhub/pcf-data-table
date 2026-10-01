@@ -42,7 +42,15 @@ has fetched. Page through the view and the numbers grow. If you need a total
 over everything, compute it in Power Fx from the data source, where you have
 one.
 
-The **CSV export** is the same story in a different shape. *The whole view*
+The **CSV export** makes its file with the browser's own download here. Canvas
+publishes `navigation.openFile`, which a model-driven app saves the file
+through, and refuses it from the call — so the control decides this the way it
+decides the New button, on whether the host answers with an organisation URL.
+**Until 0.7.2 it asked anyway, and Export threw an error and made no file in a
+canvas app.** Whether the browser download is allowed is the app's frame's to
+say, not the control's.
+
+What it covers is the same story as grouping, in a different shape. *The whole view*
 still walks the view page by page, because that is the dataset API rather than
 the Web API — but on a host without `loadExactPage` the reader cannot be put
 back on the page they started from afterwards, and lands on page one instead.

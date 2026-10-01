@@ -403,6 +403,25 @@ they throw or do something worse is unknown, and a probe that damages the thing
 it measures is not a measurement. Presence is enough to condemn any `typeof`
 gate built on them.
 
+### 0.7.2: Export was a `typeof` gate too
+
+`writeCsv` took `navigation.openFile` wherever `typeof` said it was a function
+— its own comment said that was the test that "would not pass on canvas and
+throw". It passes on canvas: `openFile` is one of the surfaces listed above as
+published and not called. So Export CSV called it, the throw left the click
+handler, and the Blob download underneath was never reached. `formOpener` had
+been corrected for exactly this in 0.6.16 and the export beside it was not.
+
+It now asks `clientUrlOf` first, as `formOpener` does, and a host that answers
+and still throws from the call gets the browser download too. `dev/host.js`
+refuses `openForm` and `openFile` under `host: 'canvas'` — it answered both
+until now — and has `quirks.openFileRefuses` for the second branch. Three
+assertions cover it and all three fail against 0.7.1.
+
+Found by PCFHub's demo on 2026-10-01, the day it could be run as a canvas
+screen. Still resting on the row above: nobody has called `openFile` on a real
+canvas app.
+
 ### The estate
 
 `pcf-chart-view`, `pcf-calendar-view`, `pcf-kanban-board`,

@@ -623,6 +623,77 @@ check(
     canvasExportError || 'reached the browser download path',
 );
 
+/*
+ * **Canvas itself, which is not "a host without `openFile`".** A canvas app
+ * publishes the method and refuses it from the call, so the assertion above
+ * — a host this rig invents with `openFileAbsent` — passed for as long as the
+ * control threw on the real one. 0.7.1's Export on canvas called `openFile`,
+ * the throw left the click handler, and no file was made. Found by PCFHub's
+ * demo the day it could run as a canvas screen (2026-10-01).
+ */
+let onCanvasExportError = null;
+let onCanvasExport = null;
+let browserDownloads = 0;
+const createObjectUrl = URL.createObjectURL;
+
+URL.createObjectURL = function (blob) {
+    browserDownloads += 1;
+
+    return createObjectUrl.call(URL, blob);
+};
+
+try {
+    onCanvasExport = bind({ pageSize: 50, host: 'canvas' });
+
+    onCanvasExport.props().onExport();
+} catch (error) {
+    onCanvasExportError = `${error.constructor.name}: ${error.message}`;
+} finally {
+    URL.createObjectURL = createObjectUrl;
+}
+
+check(
+    'on canvas, where openFile is there and refuses, Export does not throw',
+    onCanvasExportError === null,
+    onCanvasExportError || 'no error left the handler',
+);
+
+check(
+    'and the file is made by the browser instead, without asking openFile at all',
+    onCanvasExport !== null &&
+        browserDownloads === 1 &&
+        onCanvasExport.handle.state.files.length === 0 &&
+        !onCanvasExport.calls().some((call) => call.startsWith('navigation.openFile')),
+    `${browserDownloads} browser download(s); calls: ${onCanvasExport ? onCanvasExport.calls().filter((call) => call.startsWith('navigation')).join(' | ') : ''}`,
+);
+
+/*
+ * A host that says it is model-driven and still throws from the call: the
+ * `try` in `writeCsv`, which the canvas gate above never reaches.
+ */
+let refusedExportError = null;
+let refusedDownloads = 0;
+
+URL.createObjectURL = function (blob) {
+    refusedDownloads += 1;
+
+    return createObjectUrl.call(URL, blob);
+};
+
+try {
+    bind({ pageSize: 50, quirks: { openFileRefuses: true } }).props().onExport();
+} catch (error) {
+    refusedExportError = `${error.constructor.name}: ${error.message}`;
+} finally {
+    URL.createObjectURL = createObjectUrl;
+}
+
+check(
+    'a model-driven host whose openFile throws from the call gets the browser download too',
+    refusedExportError === null && refusedDownloads === 1,
+    refusedExportError || `${refusedDownloads} browser download(s)`,
+);
+
 /* ------------------------------------------------- jumping and page sizing */
 
 const jumped = bind({});
