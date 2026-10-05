@@ -8,6 +8,10 @@ order: 1
 
 A sortable, filterable table over any Dataverse view — with grouping and totals, inline editing, pinned columns and a New button.
 
+:::callout{type=warning}
+**Reference example · built with AI.** This control was written with AI (Claude) and tested on a live Dataverse form; its code has not been reviewed line by line. It is published as a worked example and is not maintained — read the source and [SPEC.md](https://github.com/pcfhub/pcf-data-table/blob/main/SPEC.md) (what was measured on the form) before you use it. Fixes are not guaranteed.
+:::
+
 ::image{src=media/screenshot.png alt="Data Table over an Accounts view: a checkbox column, eight columns with a filter row beneath the headings, five rows of formatted currency and dates, and a pager reading 1 to 5 of 24 with a Go to page box" zoom}
 
 ::image{src=media/screenshot-grouped.png alt="The same table grouped by Industry: one header per industry showing its record count and the sum and average of Annual revenue, a blank group for the record with no industry, and a caption reading 5 groups, 12 records, the whole view" zoom}

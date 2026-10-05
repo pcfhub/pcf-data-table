@@ -3,6 +3,8 @@
 A sortable, filterable table over any Dataverse view, with inline editing,
 pinned columns and a New button.
 
+> **Reference example · built with AI.** This control was written with AI (Claude) and tested on a live Dataverse form; its code has not been reviewed line by line. It is published as a worked example and is not maintained — read the source and [`SPEC.md`](SPEC.md) (what was measured on the form) before you use it. Fixes are not guaranteed.
+
 [![Build](https://github.com/pcfhub/pcf-data-table/actions/workflows/build.yml/badge.svg)](https://github.com/pcfhub/pcf-data-table/actions/workflows/build.yml)
 [![Release](https://github.com/pcfhub/pcf-data-table/actions/workflows/release.yml/badge.svg)](https://github.com/pcfhub/pcf-data-table/actions/workflows/release.yml)
 

@@ -21,6 +21,8 @@
         "choice",
         "date-filter"
     ],
+    "supportLevel": "reference",
+    "builtWith": "ai",
     "control": {
         "namespace": "PCFHub",
         "constructor": "DataTable",
