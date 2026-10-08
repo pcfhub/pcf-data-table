@@ -22,7 +22,8 @@
     "preview": "node dev/serve.js",
     "rig": "node dev/rig.js",
     "shots": "node dev/shots.js",
-    "harness": "node dev/serve.js"
+    "harness": "node dev/serve.js",
+    "demo-check": "node dev/demo-check.js"
   },
   "devDependencies": {
     "@fluentui/react-components": "9.46.2",
