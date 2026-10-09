@@ -2125,7 +2125,7 @@ being measured.
    *Measured 2026-09-13, prompt still pending.* `context.webAPI` is an
    object; `updateRecord` and `retrieveRecord` are functions, as are
    `utils.getEntityMetadata` and `lookupObjects`. `page.getClientUrl` is a
-   function and answers `https://cll365.crm.dynamics.com`; the `Xrm` global
+   function and answers `https://<org>.crm.dynamics.com`; the `Xrm` global
    is present too. `mode.contextInfo` names the parent Account as in 0.4.0.
 
 2. **Bind key case.** Does
