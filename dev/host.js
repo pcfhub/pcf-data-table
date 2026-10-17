@@ -116,6 +116,23 @@
     };
 
     /*
+     * Dataset linking — `linking.addLinkedEntity`, conditions on a link's
+     * alias, the hierarchy operators numbered the dataset's way (79 is
+     * eq-or-under, not the SDK's 77) — lives in `dev/linked.js`, the template's
+     * shared file, as SPEC.md 0.8.0's probe measured it. A browser page loads
+     * it before this file; Node requires it.
+     */
+    var linked = (typeof window !== 'undefined' && window.__pcfLinked) || null;
+
+    if (!linked && typeof require === 'function') {
+        try {
+            linked = require('./linked');
+        } catch (missing) {
+            linked = null;
+        }
+    }
+
+    /*
      * Every string the control asks for, with the value the .resx actually
      * carries.
      *
@@ -777,6 +794,20 @@ var DEFAULTS = {
 
         var allRecords = o.records || fixture.records;
         var columns = o.columns || fixture.columns;
+
+        /*
+         * Linking, per host, from `dev/linked.js`: model-driven only. A
+         * refusal at a fetch clears the rows and leaves `totalResultCount`
+         * where it was (P11); `staleTotal` is that number.
+         */
+        var link = linked && o.host !== 'canvas'
+            ? linked.createLinking(function (name, argument) { log(name, argument); })
+            : null;
+        var tables = linked
+            ? linked.makeTables(Object.assign({}, fixture, { columns: columns }), function () { return allRecords; })
+            : null;
+        var linkError = null;
+        var staleTotal = 0;
         // Raw unless asked for; see makeDisplay. Only getFormattedValue uses it.
         var display = makeDisplay(columns, o.format, fixture.metadata);
         var types = {};
@@ -1019,6 +1050,18 @@ var DEFAULTS = {
          * server does not do.
          */
         function holds(row, condition) {
+            // A condition naming a link is judged at its other end (dev/linked.js).
+            if (condition.entityAliasName && linked) {
+                return linked.holdsLinked(row, condition, link ? link.links() : [], tables, holds);
+            }
+
+            // A hierarchy operator on this table: the row's own place in it.
+            if (linked && linked.isHierarchy(condition.conditionOperator)) {
+                var key = condition.attributeName === fixture.targetEntityType + 'id' ? row.id : row.values[condition.attributeName];
+
+                return linked.hierarchyHolds(tables, fixture.targetEntityType, key, condition.conditionOperator, condition.value);
+            }
+
             var actual = row.values[condition.attributeName];
             var left = formatted(actual).toLowerCase();
             var right = formatted(condition.value).toLowerCase();
@@ -1501,6 +1544,11 @@ var DEFAULTS = {
 
 
         function visibleIds() {
+            // A refused link clears the rows (measured, P11), whatever the page.
+            if (linkError !== null) {
+                return [];
+            }
+
             var rows = ordered();
             var end = state.page * state.pageSize;
             // `state.exact` — the page was reached by loadExactPage, which was
@@ -1742,7 +1790,7 @@ var DEFAULTS = {
             },
 
             get sortedRecordIds() {
-                return o.loading || o.error ? [] : visibleIds();
+                return o.loading || o.error || linkError !== null ? [] : visibleIds();
             },
 
             /*
@@ -1808,11 +1856,16 @@ var DEFAULTS = {
                  * did not narrow with it.
                  */
                 get totalResultCount() {
+                    // Under a refused link, the count from before it (P11).
+                    if (linkError !== null) {
+                        return staleTotal;
+                    }
+
                     return quirks.uncounted ? -1 : matching().length;
                 },
 
                 get hasNextPage() {
-                    return state.page * state.pageSize < matching().length;
+                    return linkError === null && state.page * state.pageSize < matching().length;
                 },
 
                 /*
@@ -1918,11 +1971,16 @@ var DEFAULTS = {
             },
 
             get error() {
-                return o.error;
+                return o.error || linkError !== null;
             },
 
             get errorMessage() {
-                return o.errorMessage;
+                return linkError !== null ? linkError : o.errorMessage;
+            },
+
+            /** `linking` (dev/linked.js): model-driven only; a link is for the page's life. */
+            get linking() {
+                return link ? link.linking : undefined;
             },
 
             getTitle: function () {
@@ -2004,6 +2062,19 @@ var DEFAULTS = {
                 state.pageSize = quirks.maxPageSize === null
                     ? state.requestedPageSize
                     : Math.min(state.requestedPageSize, quirks.maxPageSize);
+
+                // Links are judged at the fetch: a refusal clears the rows and keeps the total showing.
+                if (link) {
+                    var shown = linkError !== null ? staleTotal : (quirks.uncounted ? -1 : matching().length);
+                    var why = linked.refusal(link.links(), tables, fixture.targetEntityType);
+
+                    if (why !== null) {
+                        staleTotal = shown;
+                    }
+
+                    linkError = why;
+                }
+
                 // The request becomes the result set here, and nowhere earlier.
                 filter = requestedFilter;
                 state.refreshes += 1;

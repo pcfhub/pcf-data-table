@@ -141,6 +141,8 @@
                 rows: [
                     { id: 'a1e84297-9486-ec11-93b0-000d3a5c8441', name: 'Adventure Works' },
                     { id: 'a2e84297-9486-ec11-93b0-000d3a5c8441', name: 'Fabrikam' },
+                    // Adventure Works' child, for Related through's hierarchy (withRelated).
+                    { id: 'a3e84297-9486-ec11-93b0-000d3a5c8441', name: 'Adventure Works Europe', values: { parentaccountid: { id: { guid: 'a1e84297-9486-ec11-93b0-000d3a5c8441' }, etn: 'account', name: 'Adventure Works' } } },
                 ],
             },
             systemuser: {
@@ -150,6 +152,42 @@
                     { id: 'b3f1a0c2-0000-4000-8000-000000000002', name: 'Jo Park' },
                 ],
             },
+        },
+
+        /**
+         * The lookup each hierarchical table's rows point at their parent
+         * through — what `dev/linked.js` walks for `under`, `eq-or-under` and
+         * the rest. Adventure Works Europe is under Adventure Works.
+         */
+        hierarchy: { account: 'parentaccountid' },
+
+        /**
+         * The view for *Related through* (0.8.0): every record carries a
+         * parent account — six Adventure Works, two its child Adventure Works
+         * Europe, four Fabrikam — so a link from the row to its parent can be
+         * asked "this account" (6), "this account and below" (8) and "below
+         * it" (2). The parent column is a hidden one, the way a link's `to`
+         * usually is: on the table, not in the view's layout.
+         */
+        withRelated: function () {
+            var self = this;
+            var parents = [
+                { guid: 'a1e84297-9486-ec11-93b0-000d3a5c8441', name: 'Adventure Works' },
+                { guid: 'a3e84297-9486-ec11-93b0-000d3a5c8441', name: 'Adventure Works Europe' },
+                { guid: 'a2e84297-9486-ec11-93b0-000d3a5c8441', name: 'Fabrikam' },
+            ];
+
+            return {
+                columns: self.columns,
+                records: self.records.map(function (row, index) {
+                    var values = Object.assign({}, row.values);
+                    var parent = index < 6 ? parents[0] : index < 8 ? parents[1] : parents[2];
+
+                    values.parentaccountid = { id: { guid: parent.guid }, etn: 'account', name: parent.name };
+
+                    return { id: row.id, values: values };
+                }),
+            };
         },
 
         /**
