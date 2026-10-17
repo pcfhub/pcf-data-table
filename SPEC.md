@@ -3777,3 +3777,49 @@ ceiling would refuse.
 - **Sibling links on the dataset route beyond P6's impossible condition**, and
   `in`, `null` and the date operators on a link's alias: measured only for
   `eq` and 75–79.
+
+## After 0.8.0: the lookup editor scrolled the table sideways
+
+Reported 2026-10-17 with a screenshot from the Site Visits subgrid: opening the
+lookup editor in the view's **last** column left a blank stretch after the
+table, with the first column cut off at the left. Measured on the test form
+before anything changed:
+
+| | Closed | Open, 0.8.0 | Open, placed |
+|---|---|---|---|
+| Site cell | 983–1,095 (112px) | — | — |
+| editor | — | 775–1,095 after the scroll; drawn from 987 at 320px | 771–1,091 |
+| scroll box `scrollWidth` / `clientWidth` | 1,076 / 1,076 | 1,288 / 1,076, an 18px scrollbar | 1,076 / 1,076 |
+| `scrollLeft` | 0 | 212 | 0 |
+| table | 19–1,095 | −193–883 | 19–1,095 |
+
+**Two things together.** The editor floats from the cell's start at its own
+width (0.5.0, for a name and two buttons in a narrow cell), so from the last
+column it overhung the table by 212px — and an absolutely positioned box
+inside `overflow-x: auto` is scrollable overflow, so the box grew a scrollbar.
+Then the editor's `focus()` on *Choose…* scrolled the box to reveal it, and all
+the way: **Chrome centres an element `focus()` has to scroll to**, which the
+212px maximum clamped. The "empty space" was the overhang, scrolled into view.
+It is not only the last column: in the preview the second-to-last lookup
+column overhung by 30px.
+
+**The fix** (`layout/fit.ts`, `LookupEditor`): measured in a layout effect
+before the first paint, the editor moves the least distance that puts it
+inside the scroll box's *visible* area, 4px from each edge, by an inline
+`translate(…, -50%)` that keeps the stylesheet's vertical centring; where the
+box is narrower than the editor it also takes the box's width, and the name
+gives way with its ellipsis. Physical pixels, so the clamp is the same in a
+right-to-left table. The focus is `{ preventScroll: true }`, so a box too
+narrow even for the buttons keeps its place too.
+
+**Checked.** On the form, the same placement done by a page script the moment
+the editor appeared: 771–1,091, `scrollWidth` 1,076, `scrollLeft` 0, focus on
+*Choose…*. In `dev/preview.html?lookups=1&edit=1` with the built bundle: the
+last column moved −158 and the one before it −30, nothing scrolled; a table
+already wider than its box, last cell half hidden, placed in the visible part
+at 696–960; a 240px box scrolled to its end, the editor at the room's 232px
+with all three buttons visible and `scrollLeft` unchanged. `dev/widths.js`
+asserts the arithmetic (six checks; a mutation that never moves fails three).
+
+**Not verified**: the built control on the form (the placement there was a
+stand-in script), a right-to-left table, and the phone client.

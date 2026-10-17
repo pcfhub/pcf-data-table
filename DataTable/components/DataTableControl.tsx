@@ -38,6 +38,7 @@ import {
     StorageLike,
     writeOverrides,
 } from '../layout/widths';
+import { fitInside } from '../layout/fit';
 
 /** A pencil, on the same 20×20 grid as the chevrons. */
 const PENCIL_GLYPH = 'M4 16v-3l8-8 3 3-8 8H4zM12.5 4.5l3 3';
@@ -251,9 +252,38 @@ function LookupEditor(props: {
     onCancel: () => void;
 }): React.ReactElement {
     const ref = React.useRef<HTMLButtonElement>(null);
+    const boxRef = React.useRef<HTMLSpanElement>(null);
+    const [fit, setFit] = React.useState<{ shift: number; maxWidth?: number } | null>(null);
 
+    // Inside the scroll box before the first paint — see `layout/fit.ts`.
+    // Floating from the cell's start at its own width, the editor overhung
+    // the last column, and the box scrolled sideways to show it.
+    React.useLayoutEffect(() => {
+        const editor = boxRef.current;
+        const scroller = editor?.closest('.DataTable-scroll');
+
+        if (!editor || !scroller) {
+            return;
+        }
+
+        const drawn = editor.getBoundingClientRect();
+        const left = scroller.getBoundingClientRect().left + scroller.clientLeft;
+        const placed = fitInside(drawn, { left, right: left + scroller.clientWidth });
+
+        // The width only where the room is narrower than the editor: set
+        // always, it would lift the stylesheet's 360px cap.
+        const narrower = drawn.width > placed.maxWidth;
+
+        if (placed.shift !== 0 || narrower) {
+            setFit({ shift: placed.shift, maxWidth: narrower ? placed.maxWidth : undefined });
+        }
+    }, []);
+
+    // `preventScroll`, because a focus that has to scroll goes to the end:
+    // Chrome centres the element. Placed by the effect above there is nothing
+    // to scroll to, and a box too narrow for the buttons keeps its place too.
     React.useEffect(() => {
-        ref.current?.focus();
+        ref.current?.focus({ preventScroll: true });
     }, []);
 
     const onKeyDown = (event: React.KeyboardEvent): void => {
@@ -265,7 +295,11 @@ function LookupEditor(props: {
 
     return (
         <span
+            ref={boxRef}
             className="DataTable-lookupEditor"
+            // The vertical half is the stylesheet's centring, kept here
+            // because an inline transform replaces the whole property.
+            style={fit ? { transform: `translate(${fit.shift}px, -50%)`, maxWidth: fit.maxWidth } : undefined}
             role="group"
             aria-label={props.label}
             onKeyDown={onKeyDown}

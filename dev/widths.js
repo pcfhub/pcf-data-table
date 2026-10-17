@@ -7,7 +7,8 @@
  * What it covers is the arithmetic: that an unresized table is laid out in
  * pixels exactly as the browser lays out its percentages, that a resized column
  * draws at its width and moves nothing else, where a pinned column sits, and
- * that storage failing in any of its ways reads as "no widths".
+ * that storage failing in any of its ways reads as "no widths". And, from
+ * `layout/fit.ts`, where the lookup editor draws so the box never scrolls to it.
  *
  * **The fixture widths in the first section were measured, not derived.**
  * 0.6.20 in `dev/preview.html?fixture=demo`, 2026-09-27: a 1,368px scroll box
@@ -251,6 +252,31 @@ section('where the widths live');
     });
 
     check('a full quota is false, not a throw — the drag still worked', widths.writeOverrides(full, 'k', { c1: 260 }), false);
+}
+
+/* ------------------------------------------------- the lookup editor's place */
+
+section('A floating editor stays inside the scroll box (layout/fit.ts)');
+{
+    const fit = load('layout/fit');
+
+    // Measured on the test form 2026-10-17: the box at 19–1,095 (1,076 wide),
+    // the Site cell at 983, the editor drawn from 987 at 320px. Unfitted it
+    // overhung by 212 and the box scrolled; fitted it drew at 771–1,091.
+    const box = { left: 19, right: 1095 };
+
+    check('the last column: moved back by its overhang and the gap',
+        fit.fitInside({ left: 987, right: 1307 }, box), { shift: -216, maxWidth: 1068 });
+    check('a cell with room after it: left where it is',
+        fit.fitInside({ left: 400, right: 720 }, box), { shift: 0, maxWidth: 1068 });
+    check('exactly at the gap: left where it is',
+        fit.fitInside({ left: 771, right: 1091 }, box), { shift: 0, maxWidth: 1068 });
+    check('right to left, overhanging the start: moved right',
+        fit.fitInside({ left: -100, right: 220 }, box), { shift: 123, maxWidth: 1068 });
+    check('a box narrower than the editor: against the left edge, at the room\'s width',
+        fit.fitInside({ left: 150, right: 470 }, { left: 0, right: 200 }), { shift: -146, maxWidth: 192 });
+    check('a box with no room at all is width 0, not negative',
+        fit.fitInside({ left: 10, right: 330 }, { left: 0, right: 6 }).maxWidth, 0);
 }
 
 /* ------------------------------------------------------------------ report */

@@ -955,6 +955,12 @@
  * in the row, which would otherwise paint on top; 3 clears the pinned cells'
  * 2. It is a transient surface — it closes on commit, Escape or the cross —
  * so nothing underneath it is unreachable for longer than a pick takes.
+ *
+ * **But not past the scroll box.** From the start of the view's last column
+ * the editor ran beyond the table's end, the box counted the overhang as width
+ * to scroll, and opening it slid the whole table sideways. The editor moves
+ * itself back inside the box before its first paint — `layout/fit.ts` — with
+ * an inline `transform` that keeps the `translateY(-50%)` below.
  */
 .DataTable-table td.is-lookupEditing {
     position: relative;
