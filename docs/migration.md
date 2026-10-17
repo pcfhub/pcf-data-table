@@ -7,6 +7,18 @@ appliesTo: ">=0.2.0"
 
 # Migration
 
+## 0.7.x → 0.8.0
+
+0.8.0 adds **Related through**. **Nothing was renamed, nothing was removed, no
+property changed its default, and no new permission is asked for at import**:
+the related rows go through the dataset's own linking, and a web resource is a
+same-origin read. Unset, the table is exactly 0.7.x.
+
+To use it, turn off *Show related records* on the subgrid first. With it on,
+the subgrid's own relationship still applies, and you get the rows that are
+both related and the record's own. See
+[Model-driven apps](model-driven.md#rows-related-through-another-table).
+
 ## 0.6.x → 0.7.0
 
 0.7.0 lets users resize columns. **Nothing was renamed, nothing was removed, no
