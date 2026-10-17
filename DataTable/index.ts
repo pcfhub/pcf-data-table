@@ -43,6 +43,9 @@ import {
 import { describesPlan, toGroupReading } from './query/rows';
 import { ParentReading, ParentResolution, resolveParentLookup, rowsConfirm, withholdsRoute } from './data/parent';
 import { loadAggregate, readViewFetchXml, Refusal, WebApiReader } from './data/GroupData';
+import { findMissingName, NamesFetch } from './data/relatedNames';
+import { classifySource, loadSource, SourceFetch } from './lib/config-source/load';
+import { isInlineFragment, parseRelated, RelatedPlan } from './lib/related-rows/fragment';
 import { storageKey } from './layout/widths';
 
 /**
@@ -383,6 +386,33 @@ function bareGuid(raw: unknown): string | null {
 type DataSet = ComponentFramework.PropertyTypes.DataSet;
 type SortDirection = ComponentFramework.PropertyHelper.DataSetApi.Types.SortDirection;
 
+/**
+ * Where *Related through* (0.8.0) stands, from nothing configured to rows on
+ * screen. Everything it rests on was measured first (SPEC.md 0.8.0, P1–P11).
+ *
+ *   - `reading`: the property names a web resource, and it has not landed.
+ *   - `waiting`: it has, and the dataset is mid-fetch — a refresh issued then
+ *     is dropped rather than queued (measured 2026-09-11), so linking waits
+ *     for an idle pass.
+ *   - `fetching`: linked and filtered; the first load after it has not
+ *     arrived. The view's own rows are already in the dataset at `init` (P7),
+ *     so until then they are not drawn.
+ *   - `ready`: the rows are the related ones.
+ *   - `blocked`: nothing can be shown — a fragment that cannot be read, a
+ *     missing web resource, no record, no `linking`. No rows rather than the
+ *     whole view, which would be a wrong answer that looks right.
+ *   - `refused`: the platform refused the links. It names nothing (P11), so
+ *     the message is ours.
+ */
+type RelatedState =
+    | { phase: 'off' }
+    | { phase: 'reading' }
+    | { phase: 'waiting'; text: string }
+    | { phase: 'fetching' }
+    | { phase: 'ready' }
+    | { phase: 'blocked'; message: string }
+    | { phase: 'refused'; message: string };
+
 /** The platform's ceiling on a page. Not in the type definitions; see SPEC.md. */
 const MAX_PAGE_SIZE = 250;
 
@@ -643,6 +673,42 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
      */
     private chosenPageSize: number | null = null;
 
+    /** *Related through*, as it stands. See `RelatedState`. */
+    private related: RelatedState = { phase: 'off' };
+
+    /** The property's text as this page started from it — a change after that is noticed, not applied. */
+    private relatedText = '';
+
+    /** The parsed fragment once it is in force, for the aggregate and the name check. */
+    private relatedPlan: RelatedPlan | null = null;
+
+    /**
+     * The conditions that name the links, with the record's id in — ANDed into
+     * every expression `applyFilter` hands the platform, and the reason that
+     * method never calls `clearFilter` while they stand.
+     */
+    private relatedConditions: Condition[] = [];
+    private relatedRecordId = '';
+
+    /**
+     * The aliases already given to `linking.addLinkedEntity`. **A link is for
+     * the life of the page** (P5): an identical one added again is kept once,
+     * a different one under the same alias is appended and breaks the query,
+     * and there is no remove. So each alias is added once, ever.
+     */
+    private linkedAliases = new Set<string>();
+
+    /** Whether *Related through* changed after links were added — shown, never applied before a reload. */
+    private relatedChanged = false;
+
+    private relatedExplaining = false;
+    private relatedGeneration = 0;
+
+    /** The latest `updateView` context, for work that lands between passes. */
+    private latest: ComponentFramework.Context<IInputs> | null = null;
+
+    private destroyed = false;
+
     public init(
         context: ComponentFramework.Context<IInputs>,
         notifyOutputChanged: () => void,
@@ -679,10 +745,15 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
             // whole control.
             ask(() => context.mode.trackContainerResize(true));
         }
+
+        this.startRelated(context);
     }
 
     public updateView(context: ComponentFramework.Context<IInputs>): React.ReactElement {
         const dataset = context.parameters.records;
+
+        this.latest = context;
+        this.trackRelated(context, dataset);
         const mode = (context.parameters.selectionMode.raw ?? 'single') as SelectionMode;
 
         /*
@@ -930,6 +1001,13 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
                 }
                 : null,
             exportNote: this.exportState.phase === 'failed' ? this.exportState.message : this.exportNote,
+            /*
+             * *Related through*: anything but `null` replaces the table, because
+             * until the related rows have landed the dataset holds the whole
+             * view (P7), and blocked or refused there is nothing true to draw.
+             */
+            related: this.relatedView(context),
+            relatedNote: this.relatedChanged ? context.resources.getString('DataTable_RelatedChanged') : '',
             onNextPage: (): void => this.nextPage(dataset),
             onPreviousPage: (): void => this.previousPage(dataset),
             onToggleRow: (id: string): void => this.toggleRow(dataset, id, mode),
@@ -1035,6 +1113,246 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
         };
 
         return React.createElement(DataTableControl, props);
+    }
+
+    /* ---------------------------------------------------------------------- */
+    /* Related through (0.8.0)                                                 */
+    /* ---------------------------------------------------------------------- */
+
+    /**
+     * From `init`, before the first `updateView` — because the view's rows are
+     * already in the dataset by then, and a filter applied any later is drawn
+     * over them first (measured, P7). An inline fragment is linked, filtered
+     * and refreshed here, which the platform folds into the fetch it makes
+     * after `init` anyway: one fetch, `loading` from the first pass. A web
+     * resource cannot be read before `init` returns, so it is read now and
+     * applied when it lands.
+     */
+    private startRelated(context: ComponentFramework.Context<IInputs>): void {
+        const raw = rawInput(context, 'relatedThrough');
+        const source = classifySource(raw, isInlineFragment);
+
+        this.relatedText = (raw ?? '').trim();
+
+        if (source.kind === 'none') {
+            this.related = { phase: 'off' };
+            return;
+        }
+
+        if (source.kind === 'inline') {
+            this.planRelated(context, source.text);
+            return;
+        }
+
+        this.related = { phase: 'reading' };
+
+        const fetchFn: SourceFetch | undefined = typeof fetch === 'function'
+            ? (url, init) => fetch(url, init)
+            : undefined;
+        // A read still in flight when the property changes must not land on the new value.
+        const generation = (this.relatedGeneration += 1);
+
+        void loadSource(raw, isInlineFragment, clientUrlOf(context), fetchFn).then((load) => {
+            if (this.destroyed || this.related.phase !== 'reading' || generation !== this.relatedGeneration) {
+                return;
+            }
+
+            const now = this.latest ?? context;
+            const getString = (id: string): string => now.resources.getString(id);
+
+            if (load.state === 'ready') {
+                // Linked on an idle pass: a refresh issued mid-fetch is dropped (see `RelatedState`).
+                if (now.parameters.records.loading) {
+                    this.related = { phase: 'waiting', text: load.text };
+                } else {
+                    this.planRelated(now, load.text);
+                }
+
+                return;
+            }
+
+            this.related = {
+                phase: 'blocked',
+                message: load.state === 'notFound'
+                    ? getString('DataTable_RelatedNotFound').replace('{0}', load.name)
+                    : load.state === 'noHost'
+                        ? getString('DataTable_RelatedNoHost')
+                        : getString('DataTable_RelatedUnreadable').replace('{0}', load.state === 'none' ? '' : load.name),
+            };
+            this.repaint(now);
+        });
+    }
+
+    /**
+     * Read the fragment, link it, and hand the platform its conditions.
+     *
+     * The order matters and was measured: links first, then a `setFilter`
+     * whose conditions name them, then `paging.reset()` and `refresh()` — the
+     * sequence that took an unrelated subgrid from 52 rows to 31 (P1).
+     */
+    private planRelated(context: ComponentFramework.Context<IInputs>, text: string): void {
+        const dataset = context.parameters.records;
+        const getString = (id: string): string => context.resources.getString(id);
+        const parsed = parseRelated(text, dataset.getTargetEntityType?.() ?? '');
+
+        if (!parsed.ok) {
+            // eslint-disable-next-line no-console
+            console.warn('DataTable: Related through cannot be used: ' + parsed.detail);
+            this.related = { phase: 'blocked', message: getString('DataTable_RelatedInvalid').replace('{0}', parsed.detail) };
+            return;
+        }
+
+        /*
+         * **Model-driven only.** Learn's DataSet reference says `linking` is
+         * not on canvas, and a canvas host is the one `clientUrlOf` answers
+         * `null` for; the hub's demo has neither. Either way the rows cannot
+         * be narrowed, so none are shown.
+         */
+        const linking = (dataset as { linking?: { addLinkedEntity?: unknown } }).linking;
+
+        if (clientUrlOf(context) === null || !linking || typeof linking.addLinkedEntity !== 'function') {
+            this.related = { phase: 'blocked', message: getString('DataTable_RelatedNoHost') };
+            return;
+        }
+
+        const record = parentReference(context);
+
+        if (parsed.plan.usesRecord && !record) {
+            this.related = { phase: 'blocked', message: getString('DataTable_RelatedNoRecord') };
+            return;
+        }
+
+        for (const link of parsed.plan.links) {
+            if (!this.linkedAliases.has(link.alias)) {
+                ask(() => (linking.addLinkedEntity as (expression: unknown) => void).call(linking, link));
+                this.linkedAliases.add(link.alias);
+            }
+        }
+
+        this.relatedPlan = parsed.plan;
+        this.relatedRecordId = record ? record.id : '';
+        this.relatedConditions = parsed.plan.conditionsFor(this.relatedRecordId);
+        this.related = { phase: 'fetching' };
+        this.applyFilter(context);
+    }
+
+    /**
+     * Once per `updateView`: move the state on from what the dataset says.
+     *
+     * `fetching` becomes `ready` on the first idle pass. The refresh behind it
+     * marks the dataset `loading` from the pass it was issued in (P7), so an
+     * idle pass is one that carries the related rows.
+     */
+    private trackRelated(context: ComponentFramework.Context<IInputs>, dataset: DataSet): void {
+        const text = (rawInput(context, 'relatedThrough') ?? '').trim();
+
+        /*
+         * Nothing linked yet — off, blocked, still reading — and a new value
+         * simply starts over. Once a link is in, it cannot be taken back (P5),
+         * so a change waits for a reload and says so, until it is changed back.
+         */
+        if (this.linkedAliases.size > 0) {
+            this.relatedChanged = text !== this.relatedText;
+        } else if (text !== this.relatedText) {
+            this.relatedPlan = null;
+            this.relatedConditions = [];
+            this.startRelated(context);
+        }
+
+        switch (this.related.phase) {
+            case 'waiting':
+                if (!dataset.loading) {
+                    this.planRelated(context, this.related.text);
+                }
+                break;
+            case 'fetching':
+            case 'ready':
+                if (dataset.error) {
+                    this.refuseRelated(context);
+                } else if (this.related.phase === 'fetching' && !dataset.loading) {
+                    this.related = { phase: 'ready' };
+                }
+                break;
+            default:
+                break;
+        }
+    }
+
+    /**
+     * The platform refused the links. It says *0x80041103 Query Builder
+     * Error* whatever the cause and names nothing, clears the rows, and leaves
+     * `totalResultCount` where it was (P11) — so the control says what it can
+     * at once, then asks the table definitions which name is not there.
+     */
+    private refuseRelated(context: ComponentFramework.Context<IInputs>): void {
+        const getString = (id: string): string => context.resources.getString(id);
+
+        this.related = { phase: 'refused', message: getString('DataTable_RelatedRefused') };
+
+        // eslint-disable-next-line no-console
+        console.warn(
+            'DataTable: the platform refused Related through ('
+            + (context.parameters.records.errorMessage || 'no message') + '). The links were: '
+            + (this.relatedPlan ? JSON.stringify(this.relatedPlan.links) : 'none'),
+        );
+
+        const clientUrl = clientUrlOf(context);
+
+        if (!clientUrl || !this.relatedPlan || this.relatedExplaining || typeof fetch !== 'function') {
+            return;
+        }
+
+        this.relatedExplaining = true;
+
+        void findMissingName(clientUrl, this.relatedPlan.names, ((url, init) => fetch(url, init)) as NamesFetch).then((missing) => {
+            if (!missing || this.destroyed || this.related.phase !== 'refused') {
+                return;
+            }
+
+            const now = this.latest ?? context;
+            const words = (id: string): string => now.resources.getString(id);
+
+            this.related = {
+                phase: 'refused',
+                message: missing.column === null
+                    ? words('DataTable_RelatedMissingTable').replace('{0}', missing.table)
+                    : words('DataTable_RelatedMissingColumn').replace('{0}', missing.table).replace('{1}', missing.column),
+            };
+            this.repaint(now);
+        });
+    }
+
+    /**
+     * A render from outside `updateView`, for an answer that landed between
+     * passes. `factory.requestRender` is the platform's own and is typed;
+     * where a host does not have it, a refresh is the measured way to earn an
+     * `updateView`. **Whether `requestRender` repaints a dataset control is
+     * unmeasured** — it is on the 0.8.0 walkthrough.
+     */
+    private repaint(context: ComponentFramework.Context<IInputs>): void {
+        const factory = (context as { factory?: { requestRender?: unknown } }).factory;
+
+        if (factory && typeof factory.requestRender === 'function') {
+            ask(() => (factory.requestRender as () => void).call(factory));
+            return;
+        }
+
+        ask(() => context.parameters.records.refresh());
+    }
+
+    /** What the component draws in place of the table, or `null` for the table. */
+    private relatedView(context: ComponentFramework.Context<IInputs>): IProps['related'] {
+        switch (this.related.phase) {
+            case 'reading':
+            case 'waiting':
+            case 'fetching':
+                return { kind: 'loading', message: context.resources.getString('DataTable_RelatedLoading') };
+            case 'blocked':
+            case 'refused':
+                return { kind: 'blocked', message: this.related.message };
+            default:
+                return null;
+        }
     }
 
     /**
@@ -1485,6 +1803,25 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
         }
 
         /*
+         * *Related through*: the aggregate carries the same links, and only
+         * once the rows do — until then the dataset holds the whole view and
+         * the loaded rows are not the related ones either.
+         */
+        if (this.related.phase !== 'off' && this.related.phase !== 'ready') {
+            return null;
+        }
+
+        const relatedXml = this.related.phase === 'ready' && this.relatedPlan
+            ? this.relatedPlan.fetchXml(this.relatedRecordId)
+            : '';
+        /*
+         * What the aggregate has to add up to, checked when it lands (P9). Not
+         * while a group is open: the rows are then that group's, and the group
+         * list deliberately is not.
+         */
+        const expected = relatedXml !== '' && this.expansion.length === 0 ? dataset.paging.totalResultCount : -1;
+
+        /*
          * **The filter row only — never the expansion.**
          *
          * `dataset.filtering` holds both: `applyFilter` composes the maker's
@@ -1514,7 +1851,15 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
         const plan = aliasPlan(spec);
         const host = lookupHost(context);
         const viewId = viewIdOf(dataset);
-        const parent = this.parentReading(context, dataset, spec.entity);
+        /*
+         * **Under *Related through* the parent resolver stands aside** (P9):
+         * on a subgrid with *Show related records* on or off, every loaded row
+         * pointed at the form's record, so the rows cannot say which it is —
+         * and on the unrelated one a parent condition would have counted 31
+         * under a grid of 32. The links are the relationship; the total check
+         * in `loadGroups` catches a subgrid that adds its own.
+         */
+        const parent = relatedXml === '' ? this.parentReading(context, dataset, spec.entity) : null;
 
         return {
             key: [
@@ -1524,8 +1869,9 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
                 viewId,
                 filter.xml,
                 parent ? parent.record.entityType + '/' + parent.record.id + '/' + (parent.explicit ?? '') : '',
+                relatedXml,
             ].join('~'),
-            load: () => this.loadGroups(api, host, spec, plan, viewId, filter.xml, parent),
+            load: () => this.loadGroups(api, host, spec, plan, viewId, filter.xml, parent, relatedXml, expected),
         };
     }
 
@@ -1538,6 +1884,8 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
         viewId: string,
         filterXml: string,
         parent: ParentReading | null,
+        relatedXml = '',
+        expectedTotal = -1,
     ): Promise<GroupAnswer> {
         const blank = this.blankLabel;
         const refused = (message: string | null): GroupAnswer =>
@@ -1590,7 +1938,8 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
                 spec: { ...spec, primaryId },
                 plan,
                 viewXml,
-                filterXml: parentXml + filterXml,
+                // *Related through*'s links ride inside <entity>, beside the filters (P9).
+                filterXml: parentXml + filterXml + relatedXml,
             }).then(
                 (rows) => {
                     /*
@@ -1605,6 +1954,29 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
                         console.warn('DataTable: the aggregate response does not describe the query sent.');
 
                         return refused(null);
+                    }
+
+                    /*
+                     * **Under *Related through*, the groups must add up to the
+                     * grid.** Measured (P9): with *Show related records* left
+                     * on, the subgrid keeps its relationship and the aggregate
+                     * cannot see it — 32 counted under 31 rows. A number larger
+                     * than the grid is the wrong answer that looks right, so a
+                     * mismatch withholds the route and the caption says so.
+                     */
+                    if (relatedXml !== '' && expectedTotal >= 0) {
+                        const counted = rows.reduce((sum, row) => sum + (Number((row as Record<string, unknown>)[plan.count]) || 0), 0);
+
+                        if (counted !== expectedTotal) {
+                            // eslint-disable-next-line no-console
+                            console.warn(
+                                `DataTable: the whole-view groups count ${counted} records, and the grid holds ${expectedTotal}. `
+                                + 'Under Related through that usually means the subgrid still has Show related records on, '
+                                + 'which narrows the rows by a relationship the aggregate cannot see. Grouping the loaded rows instead.',
+                            );
+
+                            return refused(null);
+                        }
                     }
 
                     return {
@@ -2090,6 +2462,9 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
         this.relationships = null;
         this.targets.clear();
         this.entitySets.clear();
+
+        // A web resource or a name check landing after this must find nothing to change.
+        this.destroyed = true;
     }
 
     /**
@@ -2569,7 +2944,17 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
          * never asked, because the control never asks for *the rows of group X
          * within page N*.
          */
-        const expression = this.expansion.length === 0
+        /*
+         * **And *Related through*'s conditions are in every expression, always.**
+         * They name the links by `entityAliasName`, and a filter the platform
+         * is handed replaces the last one whole — so a filter row that left
+         * them out would quietly bring back the whole view. Measured (P3): a
+         * sort keeps the expression, so nothing here re-applies after one.
+         * With the property off the list is empty and the expression is
+         * exactly what 0.7.x sent.
+         */
+        const standing = this.expansion.concat(this.relatedConditions);
+        const expression = standing.length === 0
             ? filterRow
             : {
                 /*
@@ -2582,7 +2967,7 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
                  * is an enum on one side and a number on the other.
                  */
                 conditions: (filterRow ? filterRow.conditions : [])
-                    .concat(this.expansion as unknown as NonNullable<typeof filterRow>['conditions']),
+                    .concat(standing as unknown as NonNullable<typeof filterRow>['conditions']),
                 filterOperator: 0,
                 ...(filterRow && filterRow.filters ? { filters: filterRow.filters } : {}),
             } as typeof filterRow;

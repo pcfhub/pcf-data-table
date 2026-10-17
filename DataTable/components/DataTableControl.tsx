@@ -853,6 +853,14 @@ export interface IProps {
     exporting: { page: number; rows: number; stopping: boolean } | null;
     /** A sentence about the last export — capped, or failed — or `''`. */
     exportNote: string;
+    /**
+     * *Related through* (0.8.0), when it stands in for the table: still
+     * loading the related rows, or unable to show any. `null` draws the table.
+     * Decided in `index.ts`; the component only says it.
+     */
+    related: { kind: 'loading' | 'blocked'; message: string } | null;
+    /** The property changed after its links were added — applies on reload — or `''`. */
+    relatedNote: string;
     onNextPage: () => void;
     onPreviousPage: () => void;
     onToggleRow: (id: string) => void;
@@ -1972,6 +1980,24 @@ export function DataTableControl(props: IProps): React.ReactElement | null {
         </FluentProvider>
     );
 
+    /*
+     * **Before the error branch, on purpose.** A refused *Related through*
+     * sets `dataset.error` with *0x80041103 Query Builder Error*, which names
+     * nothing (measured, P11); the message here says what was refused. And
+     * while the related rows are loading, the dataset still holds the whole
+     * view (P7), so the rows are not drawn at all.
+     */
+    if (props.related) {
+        return frame(
+            <p
+                className={props.related.kind === 'blocked' ? 'DataTable-message DataTable-error' : 'DataTable-message'}
+                role="status"
+            >
+                {props.related.message}
+            </p>,
+        );
+    }
+
     if (dataset.error) {
         return frame(
             <p className="DataTable-message DataTable-error">
@@ -2925,6 +2951,11 @@ export function DataTableControl(props: IProps): React.ReactElement | null {
                 */}
                 {!props.exporting && props.exportNote !== '' && (
                     <span className="DataTable-message" role="status">{props.exportNote}</span>
+                )}
+
+                {/* Related through changed after its links went in: it applies on reload (P5). */}
+                {props.relatedNote !== '' && (
+                    <span className="DataTable-message" role="status">{props.relatedNote}</span>
                 )}
 
                 {/*

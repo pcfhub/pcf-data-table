@@ -427,6 +427,29 @@
               required="false" />
 
     <!--
+      Since 0.8.0: the rows related to the form's record by a path the
+      subgrid's one relationship cannot express. A FetchXML <link-entity>
+      fragment with {id} for the record, applied through dataset.linking and a
+      condition on the link's alias, so the rows stay the platform's: paging,
+      sorting, the filter row, editing, export and grouping keep working.
+
+      Inline when it starts with "<", otherwise the name of a web resource
+      holding it - the modern form designer refuses a static value over 100
+      characters (measured, pcf-code-editor 2026-09-23), which no real
+      fragment fits. Off, the control is exactly 0.7.x. Everything it rests
+      on was measured on a subgrid first: SPEC.md 0.8.0, P1-P11.
+
+      No feature is declared for it: linking and filtering are the dataset's
+      own, and a web resource is a same-origin read.
+    -->
+    <property name="relatedThrough"
+              display-name-key="RelatedThrough_Name"
+              description-key="RelatedThrough_Desc"
+              of-type="SingleLine.Text"
+              usage="input"
+              required="false" />
+
+    <!--
       Since 0.7.0 the user can drag a column's edge, or focus it and press the
       arrow keys, and the width is remembered for them in this browser, per
       view. On by default, and named for the unusual choice as pcf-row-commands

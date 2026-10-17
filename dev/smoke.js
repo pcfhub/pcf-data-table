@@ -3328,6 +3328,176 @@ function exportChecks() {
         written(stepping).length ? rowsIn(written(stepping)[0]) + ' rows' : 'none');
 }
 
+/* ------------------------------------------------------- related through */
+
+/**
+ * *Related through* (0.8.0): a `<link-entity>` fragment with `{id}`, applied
+ * through `dataset.linking` — the shape SPEC.md 0.8.0's probe measured on a
+ * subgrid. The rig's linking is the template's `dev/linked.js`, which
+ * reproduces those answers: a condition on a link's alias judged at its other
+ * end, the dataset's numbering for the hierarchy operators, refusals that
+ * clear the rows and name nothing.
+ *
+ * The fixture's `withRelated()` gives every record a parent: six Adventure
+ * Works, two its child, four Fabrikam.
+ */
+async function relatedChecks() {
+    const AW = 'a1e84297-9486-ec11-93b0-000d3a5c8441';
+    const shape = fixture.withRelated();
+    const fragment = (operator, to = 'parentaccountid') =>
+        `<link-entity name='account' from='accountid' to='${to}'><filter><condition attribute='accountid' operator='${operator}' value='{id}'/></filter></link-entity>`;
+    const onForm = (inputs, extra = {}) => bind({
+        pageSize: 50,
+        records: shape.records,
+        columns: shape.columns,
+        contextInfo: { entityTypeName: 'account', entityId: AW, entityRecordName: 'Adventure Works' },
+        ...extra,
+        inputs: { relatedThrough: null, ...inputs },
+    });
+    const linkCalls = (handle) => handle.calls().filter((call) => call.startsWith('linking.addLinkedEntity'));
+    // Never undefined, so a control that sent nothing fails the check below rather than crashing every check after it.
+    const sent = (handle) => handle.handle.context.parameters.records.filtering.getFilter() || { conditions: [] };
+
+    // Off is 0.7.x, exactly: nothing linked, nothing hidden.
+    const plain = onForm({});
+    check('Related through unset links nothing and draws every row',
+        linkCalls(plain).length === 0 && plain.props().related === null && plain.props().pageIds.length === 12,
+        `${linkCalls(plain).length} links, ${plain.props().pageIds.length} rows`);
+
+    const under = onForm({ relatedThrough: fragment('eq-or-under') });
+    const order = under.calls().filter((call) => /^(linking\.addLinkedEntity|filtering\.setFilter|paging\.reset|refresh)/.test(call));
+    check('an inline fragment is linked, then filtered, then fetched — in init, the order P1 measured',
+        String(order[0]).startsWith('linking.addLinkedEntity') && String(order[1]).startsWith('filtering.setFilter') && order.indexOf('refresh') > 1,
+        order.join(' | '));
+    check('…the condition names its link, with the dataset\'s number for eq-or-under (79) and the record bare',
+        JSON.stringify(sent(under).conditions) === JSON.stringify([{ attributeName: 'accountid', conditionOperator: 79, value: AW, entityAliasName: 'rel0' }]),
+        JSON.stringify(sent(under)));
+    check('…and the rows are the account\'s and its child\'s: 8 of 12',
+        under.props().related === null && under.props().pageIds.length === 8,
+        `${under.props().pageIds.length} rows, related ${JSON.stringify(under.props().related)}`);
+
+    /*
+     * The view's rows are in the dataset before the related ones land (P7):
+     * while it is still loading after the link, nothing is drawn.
+     */
+    const slow = onForm({ relatedThrough: fragment('eq-or-under') }, { loading: true });
+    const slowWhile = slow.props().related;
+    slow.handle.options.loading = false;
+    slow.settle();
+    check('while the dataset is still loading after the link, the rows stay hidden',
+        slowWhile && slowWhile.kind === 'loading' && slow.props().related === null && slow.props().pageIds.length === 8,
+        `${JSON.stringify(slowWhile)} then ${slow.props().pageIds.length} rows`);
+
+    check('eq is the account\'s own (6), under its child\'s alone (2)',
+        onForm({ relatedThrough: fragment('eq') }).props().pageIds.length === 6
+            && onForm({ relatedThrough: fragment('under') }).props().pageIds.length === 2);
+
+    // The filter row narrows inside the related rows, never past them.
+    typeFilter(under, 'name', 'tra');
+    check('the filter row narrows within the related rows, and the related condition rides along',
+        under.props().pageIds.join(',') === 'a03' && sent(under).conditions.some((c) => c.entityAliasName === 'rel0'),
+        `${under.props().pageIds.join(',')} — ${JSON.stringify(sent(under))}`);
+
+    under.props().onClearFilters();
+    under.settle();
+    check('clearing the filter row keeps the related condition — the control never clears the filter under it',
+        under.props().pageIds.length === 8 && !under.calls().some((call) => call.startsWith('filtering.clearFilter')),
+        `${under.props().pageIds.length} rows`);
+
+    under.props().onSort('name', false);
+    under.settle();
+    check('a sort keeps the related rows (P3)', under.props().pageIds.length === 8 && linkCalls(under).length === 1);
+
+    // Nothing true to draw: no rows rather than the whole view.
+    const noRecord = onForm({ relatedThrough: fragment('eq-or-under') }, { contextInfo: null });
+    const noRecordMarkup = renderDeep(noRecord.driven.element);
+    check('with {id} and no record: no link, no table, and it says why',
+        linkCalls(noRecord).length === 0 && noRecord.props().related && noRecord.props().related.message === 'resx:DataTable_RelatedNoRecord'
+            && noRecordMarkup.indexOf('<table') === -1 && noRecordMarkup.indexOf('resx:DataTable_RelatedNoRecord') > -1,
+        JSON.stringify(noRecord.props().related));
+
+    const canvas = onForm({ relatedThrough: fragment('eq-or-under') }, { host: 'canvas' });
+    check('in a canvas app, which has no linking, the same: no rows and a reason',
+        linkCalls(canvas).length === 0 && canvas.props().related && canvas.props().related.message === 'resx:DataTable_RelatedNoHost',
+        JSON.stringify(canvas.props().related));
+
+    const nested = onForm({ relatedThrough: `<link-entity name='account' from='accountid' to='parentaccountid'>${fragment('eq')}</link-entity>` });
+    check('a fragment the parser refuses (a nested link, P6) shows the refusal, not the view',
+        linkCalls(nested).length === 0 && nested.props().related && nested.props().related.kind === 'blocked'
+            && nested.props().related.message === 'resx:DataTable_RelatedInvalid',
+        JSON.stringify(nested.props().related));
+
+    // A link is for the page's life (P5): a change after it is noticed, not applied.
+    const changing = onForm({ relatedThrough: fragment('eq-or-under') });
+    changing.handle.options.inputs.relatedThrough = fragment('eq');
+    changing.settle();
+    check('a fragment changed after its links went in is noticed, not applied',
+        changing.props().relatedNote === 'resx:DataTable_RelatedChanged' && changing.props().pageIds.length === 8 && linkCalls(changing).length === 1,
+        `${changing.props().relatedNote}, ${changing.props().pageIds.length} rows, ${linkCalls(changing).length} links`);
+    changing.handle.options.inputs.relatedThrough = fragment('eq-or-under');
+    changing.settle();
+    check('…and the note goes when it is changed back', changing.props().relatedNote === '');
+
+    const fixing = onForm({ relatedThrough: '<link-entity/>' });
+    const wasBlocked = Boolean(fixing.props().related && fixing.props().related.kind === 'blocked');
+    fixing.handle.options.inputs.relatedThrough = fragment('eq');
+    fixing.settle();
+    check('a blocked fragment corrected before anything was linked is simply applied',
+        wasBlocked && fixing.props().related === null && fixing.props().pageIds.length === 6,
+        `${wasBlocked}, ${fixing.props().pageIds.length} rows`);
+
+    // The platform refuses and names nothing (P11): the control names the column.
+    const refusing = onForm({ relatedThrough: fragment('eq-or-under', 'nosuchcolumn') });
+    const firstWords = refusing.props().related && refusing.props().related.message;
+    await flush(6);
+    refusing.settle();
+    check('a refused link clears the table and says so at once…',
+        firstWords === 'resx:DataTable_RelatedRefused' && renderDeep(refusing.driven.element).indexOf('<table') === -1,
+        String(firstWords));
+    check('…then names the column the table does not have',
+        refusing.props().related && refusing.props().related.message === 'resx:DataTable_RelatedMissingColumn'
+            && refusing.calls().some((call) => /Attributes\(LogicalName='nosuchcolumn'\)/.test(call)),
+        JSON.stringify(refusing.props().related));
+
+    // From a web resource: hidden until read, then applied (P7, P10).
+    const fromResource = onForm({ relatedThrough: 'pcfhub_/datatable/related.xml' }, { webResources: { 'pcfhub_/datatable/related.xml': fragment('eq-or-under') } });
+    const whileReading = fromResource.props().related;
+    await flush(6);
+    fromResource.settle();
+    check('a web resource: rows hidden while it is read, then the related ones',
+        whileReading && whileReading.kind === 'loading' && fromResource.props().related === null && fromResource.props().pageIds.length === 8,
+        `${JSON.stringify(whileReading)} then ${fromResource.props().pageIds.length} rows`);
+
+    const missing = onForm({ relatedThrough: 'pcfhub_/datatable/missing.xml' });
+    await flush(6);
+    missing.settle();
+    check('a web resource that is not there says so, and draws nothing',
+        missing.props().related && missing.props().related.message === 'resx:DataTable_RelatedNotFound' && linkCalls(missing).length === 0,
+        JSON.stringify(missing.props().related));
+
+    // Grouping: the aggregate carries the same link, and must add up to the grid (P9).
+    const grouped = onForm({ relatedThrough: fragment('eq-or-under'), groupBy: 'industrycode' });
+    const route = grouped.props().groupRoute;
+    const groups = route ? await route.load() : null;
+    const query = grouped.handle.state.fetchXml || '';
+    check('grouped under Related through, the aggregate carries the same link',
+        groups && groups.source === 'server'
+            && query.indexOf(`<link-entity name='account' from='accountid' to='parentaccountid' alias='rel0' link-type='inner'><filter type='and'><condition attribute='accountid' operator='eq-or-under' value='${AW}'/></filter></link-entity>`) > -1,
+        `${groups && groups.source} — ${query}`);
+    check('…and no parent condition beside it: the links are the relationship',
+        query.indexOf("attribute='parentcustomerid'") === -1, query);
+
+    const mismatched = onForm({ relatedThrough: fragment('eq-or-under'), groupBy: 'industrycode' }, { quirks: { aggregateCountsOtherRows: true } });
+    const mismatchedRoute = mismatched.props().groupRoute;
+    const mismatchedGroups = mismatchedRoute ? await mismatchedRoute.load() : null;
+    check('groups that do not add up to the grid withhold the whole-view route',
+        mismatchedGroups && mismatchedGroups.source === 'client-refused',
+        JSON.stringify(mismatchedGroups && mismatchedGroups.source));
+
+    const loading = onForm({ relatedThrough: 'pcfhub_/datatable/related.xml', groupBy: 'industrycode' }, { webResources: { 'pcfhub_/datatable/related.xml': fragment('eq') } });
+    check('no whole-view route until the related rows are in', loading.props().groupRoute === null);
+}
+
 sortChecks();
 exportChecks();
 
@@ -3337,6 +3507,7 @@ editingChecks()
     .then(choiceChecks)
     .then(lookupChecks)
     .then(createChecks)
+    .then(relatedChecks)
     .then(report, (error) => {
         check('the asynchronous assertions ran at all', false, String((error && error.stack) || error));
         report();

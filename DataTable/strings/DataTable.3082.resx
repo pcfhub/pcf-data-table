@@ -454,4 +454,40 @@
   <data name="DataTable_WidthsReset" xml:space="preserve">
     <value>Se restableció el ancho de las columnas.</value>
   </data>
+  <data name="RelatedThrough_Name" xml:space="preserve">
+    <value>Relacionado mediante</value>
+  </data>
+  <data name="RelatedThrough_Desc" xml:space="preserve">
+    <value>Muestra las filas relacionadas con este registro mediante un &lt;link-entity&gt; de FetchXML con {id} donde va el registro, o el nombre de un recurso web que lo contenga. Desactive Mostrar registros relacionados en la subcuadrícula.</value>
+  </data>
+  <data name="DataTable_RelatedLoading" xml:space="preserve">
+    <value>Cargando las filas relacionadas…</value>
+  </data>
+  <data name="DataTable_RelatedInvalid" xml:space="preserve">
+    <value>No se puede usar Relacionado mediante: {0}</value>
+  </data>
+  <data name="DataTable_RelatedNotFound" xml:space="preserve">
+    <value>Relacionado mediante indica el recurso web {0}, que no existe o no está publicado.</value>
+  </data>
+  <data name="DataTable_RelatedUnreadable" xml:space="preserve">
+    <value>Relacionado mediante no pudo leer el recurso web {0}.</value>
+  </data>
+  <data name="DataTable_RelatedNoRecord" xml:space="preserve">
+    <value>Las filas relacionadas aparecerán cuando haya un registro guardado con el que relacionarlas.</value>
+  </data>
+  <data name="DataTable_RelatedNoHost" xml:space="preserve">
+    <value>Relacionado mediante requiere una aplicación basada en modelo.</value>
+  </data>
+  <data name="DataTable_RelatedChanged" xml:space="preserve">
+    <value>Relacionado mediante ha cambiado. Vuelva a cargar el formulario para aplicarlo.</value>
+  </data>
+  <data name="DataTable_RelatedRefused" xml:space="preserve">
+    <value>No se pudieron leer las filas relacionadas. Compruebe los nombres de tabla y columna en Relacionado mediante.</value>
+  </data>
+  <data name="DataTable_RelatedMissingColumn" xml:space="preserve">
+    <value>No se pudieron leer las filas relacionadas: {0} no tiene la columna {1}.</value>
+  </data>
+  <data name="DataTable_RelatedMissingTable" xml:space="preserve">
+    <value>No se pudieron leer las filas relacionadas: no existe la tabla {0}.</value>
+  </data>
 </root>

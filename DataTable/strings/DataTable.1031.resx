@@ -454,4 +454,40 @@
   <data name="DataTable_WidthsReset" xml:space="preserve">
     <value>Spaltenbreiten wurden zurückgesetzt.</value>
   </data>
+  <data name="RelatedThrough_Name" xml:space="preserve">
+    <value>Verknüpft über</value>
+  </data>
+  <data name="RelatedThrough_Desc" xml:space="preserve">
+    <value>Zeigt die Zeilen, die über ein FetchXML-&lt;link-entity&gt; mit {id} an der Stelle des Datensatzes mit diesem Datensatz verknüpft sind, oder den Namen einer Webressource, die eines enthält. Deaktivieren Sie im Unterraster „Verwandte Datensätze anzeigen“.</value>
+  </data>
+  <data name="DataTable_RelatedLoading" xml:space="preserve">
+    <value>Verknüpfte Zeilen werden geladen…</value>
+  </data>
+  <data name="DataTable_RelatedInvalid" xml:space="preserve">
+    <value>„Verknüpft über“ kann nicht verwendet werden: {0}</value>
+  </data>
+  <data name="DataTable_RelatedNotFound" xml:space="preserve">
+    <value>„Verknüpft über“ nennt die Webressource {0}, die nicht existiert oder nicht veröffentlicht ist.</value>
+  </data>
+  <data name="DataTable_RelatedUnreadable" xml:space="preserve">
+    <value>„Verknüpft über“ konnte die Webressource {0} nicht lesen.</value>
+  </data>
+  <data name="DataTable_RelatedNoRecord" xml:space="preserve">
+    <value>Verknüpfte Zeilen erscheinen, sobald ein gespeicherter Datensatz vorhanden ist.</value>
+  </data>
+  <data name="DataTable_RelatedNoHost" xml:space="preserve">
+    <value>„Verknüpft über“ erfordert eine modellgesteuerte App.</value>
+  </data>
+  <data name="DataTable_RelatedChanged" xml:space="preserve">
+    <value>„Verknüpft über“ wurde geändert. Laden Sie das Formular neu, um die Änderung anzuwenden.</value>
+  </data>
+  <data name="DataTable_RelatedRefused" xml:space="preserve">
+    <value>Die verknüpften Zeilen konnten nicht gelesen werden. Prüfen Sie die Tabellen- und Spaltennamen in „Verknüpft über“.</value>
+  </data>
+  <data name="DataTable_RelatedMissingColumn" xml:space="preserve">
+    <value>Die verknüpften Zeilen konnten nicht gelesen werden: {0} hat keine Spalte {1}.</value>
+  </data>
+  <data name="DataTable_RelatedMissingTable" xml:space="preserve">
+    <value>Die verknüpften Zeilen konnten nicht gelesen werden: Es gibt keine Tabelle {0}.</value>
+  </data>
 </root>

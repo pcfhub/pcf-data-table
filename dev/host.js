@@ -199,6 +199,16 @@
         DataTable_PageStatus: "Page {0}",
         DataTable_Previous: "Previous page",
         DataTable_RangeStatus: "{0}–{1} of {2}",
+        DataTable_RelatedChanged: "Related through has changed. Reload the form to apply it.",
+        DataTable_RelatedInvalid: "Related through cannot be used: {0}",
+        DataTable_RelatedLoading: "Loading related rows…",
+        DataTable_RelatedMissingColumn: "The related rows could not be read: {0} has no column {1}.",
+        DataTable_RelatedMissingTable: "The related rows could not be read: there is no table {0}.",
+        DataTable_RelatedNoHost: "Related through needs a model-driven app.",
+        DataTable_RelatedNoRecord: "Related rows appear once there is a saved record to relate them to.",
+        DataTable_RelatedNotFound: "Related through names the web resource {0}, which does not exist or is not published.",
+        DataTable_RelatedRefused: "The related rows could not be read. Check the table and column names in Related through.",
+        DataTable_RelatedUnreadable: "Related through could not read the web resource {0}.",
         DataTable_ResetWidths: "Reset column widths",
         DataTable_ResizeColumn: "Resize {0}",
         DataTable_RowsPerPage: "Rows per page",
@@ -361,6 +371,13 @@ var DEFAULTS = {
 
             /** Every aggregate is refused, whatever the row count. */
             aggregateRefused: false,
+
+            /**
+             * The aggregate counts the whole table rather than the rows the
+             * grid holds — what a subgrid with *Show related records* left on
+             * did under *Related through* (SPEC.md 0.8.0, P9).
+             */
+            aggregateCountsOtherRows: false,
 
             /**
              * Rows above which an aggregate is refused with
@@ -885,14 +902,66 @@ var DEFAULTS = {
             var previous = scope.fetch;
             var prefix = CLIENT_URL + "/api/data/v9.2/EntityDefinitions(LogicalName='";
 
+            var resources = CLIENT_URL + '/WebResources/';
+
+            function answer(status, body) {
+                return Promise.resolve({
+                    ok: status >= 200 && status < 300,
+                    status: status,
+                    json: function () {
+                        return typeof body === 'string' ? Promise.reject(new SyntaxError('Unexpected token')) : Promise.resolve(body);
+                    },
+                    text: function () {
+                        return Promise.resolve(typeof body === 'string' ? body : JSON.stringify(body));
+                    },
+                });
+            }
+
             scope.fetch = function (url, init) {
                 var address = String(url);
+
+                /*
+                 * A web resource by name, from `o.webResources` — **200 with the
+                 * body as uploaded, or 404 with an empty one**, measured for a
+                 * Data (XML) resource from a dataset control (SPEC.md 0.8.0, P10).
+                 */
+                if (address.indexOf(resources) === 0) {
+                    var resource = address.slice(resources.length).split('/').map(decodeURIComponent).join('/');
+                    var held = (o.webResources || {})[resource];
+
+                    log('fetch', 'WebResources/' + resource);
+
+                    return answer(typeof held === 'string' ? 200 : 404, typeof held === 'string' ? held : '');
+                }
 
                 if (address.indexOf(prefix) !== 0) {
                     return previous ? previous.call(scope, url, init) : Promise.reject(new Error('No fetch for ' + address));
                 }
 
                 log('fetch', address.slice(CLIENT_URL.length));
+
+                /*
+                 * One column of a table — what *Related through* asks after the
+                 * platform refuses its links, to name the column it would not.
+                 * Measured 2026-10-17: 200 for a column that is there; 404
+                 * 0x80060888 naming the navigation property for one that is
+                 * not; 404 0x80060888 "Entity With Id = …" for a missing table.
+                 */
+                var attribute = /EntityDefinitions\(LogicalName='([^']+)'\)\/Attributes\(LogicalName='([^']+)'\)/.exec(decodeURIComponent(address));
+
+                if (attribute) {
+                    var table = attribute[1];
+                    var column = attribute[2];
+                    var tableKnown = table === fixture.targetEntityType || Boolean((fixture.related || {})[table]);
+
+                    if (!tableKnown) {
+                        return answer(404, { error: { code: '0x80060888', message: "Entity With Id = LogicalName='" + table + "' does not exist." } });
+                    }
+
+                    return tables && !tables.knows(table, column)
+                        ? answer(404, { error: { code: '0x80060888', message: "Navigation property Attributes With Id = LogicalName='" + column + "' does not exist on Metadata Entity with ID = LogicalName='" + table + "'" } })
+                        : answer(200, { LogicalName: column });
+                }
 
                 var status = quirks.relationshipsStatus;
                 var body = status === 200
@@ -947,6 +1016,7 @@ var DEFAULTS = {
         groupSort: 'Enum',
         parentLookup: 'SingleLine.Text',
         lockColumnWidths: 'TwoOptions',
+        relatedThrough: 'SingleLine.Text',
     };
 
     var state = {
@@ -1353,11 +1423,17 @@ var DEFAULTS = {
          * Answer a `?fetchXml=` query from the fixture's rows.
          *
          * See the header on `retrieveMultipleRecords` for what was corrected
-         * against a real response and why. Link-entities and their conditions
-         * are dropped — the rig has no joined rows to judge them against, so a
-         * suite asserting a linked filter's effect would be asserting nothing.
+         * against a real response and why. The rows are the dataset's own —
+         * its filter, *Related through*'s links included — so a link-entity in
+         * the query is not judged here; `state.fetchXml` keeps the query sent,
+         * for a suite to assert the links rode along. Under
+         * `aggregateCountsOtherRows` the answer is the whole table instead,
+         * which is what a subgrid with *Show related records* left on produced
+         * (SPEC.md 0.8.0, P9: 32 counted under 31 rows).
          */
         function answerFetchXml(entityType, xml) {
+            state.fetchXml = xml;
+
             var entityTag = xml.match(/<entity\b[^>]*>/);
             var entity = entityTag ? xmlAttr(entityTag[0], 'name') : entityType;
             var fetchTag = xml.match(/<fetch\b[^>]*>/);
@@ -1375,7 +1451,7 @@ var DEFAULTS = {
                 };
             });
 
-            var rows = ordered();
+            var rows = quirks.aggregateCountsOtherRows ? allRecords.slice() : ordered();
 
             log('webAPI.fetchXml', {
                 entity: entity,

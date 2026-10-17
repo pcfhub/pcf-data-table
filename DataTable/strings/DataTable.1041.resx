@@ -454,4 +454,40 @@
   <data name="DataTable_WidthsReset" xml:space="preserve">
     <value>列幅をリセットしました。</value>
   </data>
+  <data name="RelatedThrough_Name" xml:space="preserve">
+    <value>関連付けの経路</value>
+  </data>
+  <data name="RelatedThrough_Desc" xml:space="preserve">
+    <value>FetchXML の &lt;link-entity&gt;（レコードの位置に {id}）でこのレコードに関連付けられた行を表示します。または、それを含む Web リソースの名前を指定します。サブグリッドの [関連レコードを表示] をオフにしてください。</value>
+  </data>
+  <data name="DataTable_RelatedLoading" xml:space="preserve">
+    <value>関連する行を読み込んでいます…</value>
+  </data>
+  <data name="DataTable_RelatedInvalid" xml:space="preserve">
+    <value>関連付けの経路を使用できません: {0}</value>
+  </data>
+  <data name="DataTable_RelatedNotFound" xml:space="preserve">
+    <value>関連付けの経路で指定された Web リソース {0} は存在しないか、公開されていません。</value>
+  </data>
+  <data name="DataTable_RelatedUnreadable" xml:space="preserve">
+    <value>関連付けの経路の Web リソース {0} を読み取れませんでした。</value>
+  </data>
+  <data name="DataTable_RelatedNoRecord" xml:space="preserve">
+    <value>保存済みのレコードがあると、関連する行が表示されます。</value>
+  </data>
+  <data name="DataTable_RelatedNoHost" xml:space="preserve">
+    <value>関連付けの経路にはモデル駆動型アプリが必要です。</value>
+  </data>
+  <data name="DataTable_RelatedChanged" xml:space="preserve">
+    <value>関連付けの経路が変更されました。適用するにはフォームを再読み込みしてください。</value>
+  </data>
+  <data name="DataTable_RelatedRefused" xml:space="preserve">
+    <value>関連する行を読み取れませんでした。関連付けの経路のテーブル名と列名を確認してください。</value>
+  </data>
+  <data name="DataTable_RelatedMissingColumn" xml:space="preserve">
+    <value>関連する行を読み取れませんでした: {0} に列 {1} がありません。</value>
+  </data>
+  <data name="DataTable_RelatedMissingTable" xml:space="preserve">
+    <value>関連する行を読み取れませんでした: テーブル {0} がありません。</value>
+  </data>
 </root>
