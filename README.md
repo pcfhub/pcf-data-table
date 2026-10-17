@@ -80,6 +80,17 @@ record, which is what lets the control render a cell the user cannot write as
 plain text instead of offering an editor and discovering the truth when the save
 is refused.
 
+**Related through** (0.8.0) is the PCF Gallery request board's top open ask, a
+subgrid whose rows are related to the form's record by a path its one
+relationship cannot express. It is built on `dataset.linking.addLinkedEntity`,
+which nothing in the catalogue had called before. A FetchXML `<link-entity>`
+with `{id}` is parsed into links and conditions that name them by
+`entityAliasName`, ANDed into every filter the control sets, so the platform
+still pages, sorts and counts the rows. A probe build measured all of it on a
+subgrid first, and one answer contradicted the documentation. A dataset
+numbers the hierarchy operators the PCF reference's way (79 is `eq-or-under`),
+not the SDK's. SPEC.md 0.8.0 has the eleven answers.
+
 ## Properties
 
 | Property | Type | Usage | Default | What it controls |
@@ -102,6 +113,7 @@ is refused.
 | `aggregates` | SingleLine.Text | input | *(unset)* | Per-group measures as `aggregate:column`, e.g. `sum:revenue, avg:revenue`. A record count is always shown |
 | `groupSort` | Enum | input | `label` | Order group headers by their `label` or by their record `count` |
 | `parentLookup` | SingleLine.Text | input | *(unset)* | The lookup pointing at the record a subgrid sits under. Normally unset; set it where the table has several lookups to the same table, or `none` where the subgrid is unrelated |
+| `relatedThrough` | SingleLine.Text | input | *(unset)* | Rows related to the form's record by any path: a FetchXML `<link-entity>` with `{id}` for the record, inline or as the name of a *Data (XML)* web resource. Turn off *Show related records* on the subgrid. Model-driven only; unset renders exactly as 0.7.x |
 | `enableMultiSort` | TwoOptions | input | `false` | Shift-click a heading to add that column to the sort order. Off by default, so a plain click behaves exactly as it did |
 | `exportScope` | Enum | input | `loaded` | Whether **Export CSV** writes the rows already loaded or reads `view` — the whole view — first, at one request per page |
 | `lockColumnWidths` | TwoOptions | input | `false` | Stop users resizing columns. Unlocked, a user drags a header's edge (or uses the arrow keys on it) and the width is remembered in their browser, per table and view |
@@ -111,7 +123,7 @@ is refused.
 | `openedRecordId` | SingleLine.Text | output | — | The row most recently opened |
 
 Strings ship in five languages — English (1033), German (1031), French (1036),
-Japanese (1041) and Spanish (3082) — all carrying the same 117 keys. The four
+Japanese (1041) and Spanish (3082) — all carrying the same 134 keys. The four
 translations are machine-generated and have not been read by a native speaker;
 `npm run check` proves every key and every `{0}` placeholder is present in each,
 and proves nothing about the wording. Corrections are welcome as a patch.

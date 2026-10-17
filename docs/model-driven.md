@@ -127,6 +127,48 @@ the child's lookups — and **withholds the whole-view route entirely** when the
 answer is ambiguous. Set **Parent lookup** when the table has several lookups
 to the same table, or to `none` when the subgrid is genuinely unrelated.
 
+## Rows related through another table
+
+A subgrid follows one relationship: the opportunities whose account *is* this
+account. **Related through** (from 0.8.0) follows any path you can write as a
+FetchXML link, such as the opportunities of this account *and of every account
+under it*:
+
+```xml
+<link-entity name="account" from="accountid" to="parentaccountid">
+  <filter>
+    <condition attribute="accountid" operator="eq-or-under" value="{id}" />
+  </filter>
+</link-entity>
+```
+
+`{id}` is the record the form is on. The link goes from the subgrid's table
+(`to`, here the opportunity's `parentaccountid`) to another table (`name`,
+`from`), and the condition says which rows of that table count.
+
+1. Add a subgrid for the table whose rows you want, and **turn off *Show
+   related records***. With it on, the subgrid's own relationship narrows the
+   rows as well, and you get the intersection.
+2. Put Data Table on it, and set **Related through**:
+   - **Inline** if it fits — anything starting with `<`. The form designer
+     refuses a value over 100 characters, which most links are not under.
+   - Otherwise as **the name of a web resource** holding it. Create a web
+     resource of type *Data (XML)*, paste the link in, publish it, and put its
+     name (`new_/opportunities-below.xml`) in the property.
+3. Save, publish, and open a record.
+
+The rows stay the platform's, so everything else keeps working. Paging, sorting
+and the filter row narrow inside the related rows and never past them. Export,
+inline editing and selection work as they do anywhere else. Grouping counts
+the related rows across the whole view: its aggregate carries the same link,
+and if its count ever differs from the grid's it says *the records loaded so
+far* instead.
+
+Several links side by side are fine, for example a second one that keeps only
+rows whose owner is still enabled. A link inside a link is not: the platform
+refuses that shape, so the control refuses it first. What is refused, and
+why, is in [Limitations](limitations.md#rows-related-through-another-table).
+
 ## Exporting the whole view
 
 **Export covers** set to *the whole view* walks the view a page at a time and

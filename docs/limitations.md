@@ -126,6 +126,46 @@ order: 7
   loaded rows and say so in the caption, but no table here has been large
   enough to watch it happen.
 
+## Rows related through another table
+
+From 0.8.0, **Related through** shows the rows related to the form's record
+by a path the subgrid's own relationship cannot express. What it does not do:
+
+- **Model-driven apps only.** It works through the dataset's `linking`, which
+  a canvas app does not have. There, and in the hub's demo, the table shows
+  no rows and says why, because the whole view would be a wrong answer that
+  looks right.
+- **Turn off *Show related records* on the subgrid.** With it on, the
+  subgrid keeps its own relationship as well, and the two narrow together:
+  the account's own rows that are *also* related through your link
+  (measured). Grouping notices, because its whole-view count no longer adds
+  up to the grid, and groups the loaded rows instead.
+- **`{id}` needs a saved record.** On a new record, or on a main grid with no
+  record behind it, the table stays empty and says so.
+- **Each link is inner, and has a condition.** An outer link says nothing
+  about which rows are related, and a link with no condition is refused
+  rather than guessed at.
+- **No link inside another.** The platform refuses a link chained from
+  another link's alias (measured), so the control refuses it first, by name.
+  Several links side by side work.
+- **Every condition is ANDed.** An `or` filter, or a filter inside a filter,
+  is refused. The operators are the ones a dataset filter takes: the usual
+  comparisons, `in`, `null`, the date operators, and the hierarchy operators
+  `under`, `eq-or-under`, `above`, `eq-or-above` and `not-under`.
+- **A link lasts as long as the page.** The platform has no way to take a
+  link back, so a change to Related through after the table has loaded
+  applies when the form is reloaded. Until then the table says so and keeps
+  the rows it has.
+- **The platform's own refusal names nothing.** A column or table that does
+  not exist comes back as *Query Builder Error* with no rows. The control then
+  asks the table definitions which name is missing and says it. That second
+  message has not yet been watched replacing the first on a form.
+- **A web resource is read once per form load**, published copy only. An edit
+  reaches nobody until it is published, and a resource that is not there says
+  so instead of showing rows.
+- **Not in a canvas app, not on a phone, not as anyone but a System
+  Administrator:** none of those has been tried yet.
+
 ## Not in this release
 
 - **No column reordering by the user.** The order is the view's, and changing
@@ -311,5 +351,7 @@ What it cannot show:
 
 - Grouping by the server's aggregate. The demo answers no FetchXML, so the
   control groups the rows it has loaded, as it does in a canvas app.
+- Related through. The demo has no record behind it and no dataset linking,
+  so no preset sets it.
 
 Each gap is named on the component's demo page.

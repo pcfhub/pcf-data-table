@@ -193,3 +193,57 @@ plugin would.
 Editing and pinning work together, and the pairing is the point on a wide view:
 pin the column that names the row, scroll to the column that needs fixing, and
 the row you are editing is still identified.
+
+## An account's opportunities, including its subsidiaries'
+
+A parent company's account form, where "our opportunities" means the
+subsidiaries' too. A plain subgrid shows only the ones whose account *is* this
+one.
+
+| Property | Value |
+| --- | --- |
+| *Show related records* (subgrid) | off |
+| `relatedThrough` | `new_/opportunities-below.xml` |
+| `groupBy` | `parentaccountid` |
+| `aggregates` | `sum:estimatedvalue` |
+
+The web resource, *Data (XML)*, published:
+
+```xml
+<link-entity name="account" from="accountid" to="parentaccountid">
+  <filter>
+    <condition attribute="accountid" operator="eq-or-under" value="{id}" />
+  </filter>
+</link-entity>
+```
+
+`eq-or-under` is this account and every account below it, however deep.
+Grouping by the opportunity's account then reads as one line per subsidiary,
+and the caption still says *the whole view*, because the aggregate carries the
+same link.
+
+**The link is longer than the form designer allows** (100 characters), so it
+lives in a web resource. A short one can go straight into the property.
+
+## Only the subsidiaries' rows, and only live owners'
+
+The same subgrid, for a manager who wants what the subsidiaries are working
+on, not the parent company's own, and only for people still with the
+organisation.
+
+```xml
+<link-entity name="account" from="accountid" to="parentaccountid">
+  <filter>
+    <condition attribute="accountid" operator="under" value="{id}" />
+  </filter>
+</link-entity>
+<link-entity name="systemuser" from="systemuserid" to="ownerid">
+  <filter>
+    <condition attribute="isdisabled" operator="eq" value="0" />
+  </filter>
+</link-entity>
+```
+
+`under` leaves the account itself out. Two links side by side both have to
+hold. What does **not** work is putting the second link *inside* the first:
+the platform refuses a link reached through another, and the table says so.

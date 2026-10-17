@@ -77,3 +77,9 @@ choice and lookup cells, one cell at a time. Every column but a lookup writes
 through the dataset record; a lookup is picked in the platform's own dialog and
 saved through the Web API. A **New** button opens the table's quick create form
 and reports the row it made. Both are off until a maker turns them on.
+
+**Related through** shows the rows related to the form's record by a path the
+subgrid's one relationship cannot follow, such as an account's opportunities
+*and its subsidiaries'*, written as a FetchXML link with `{id}` for the record.
+The rows stay the platform's, so paging, sorting, filtering, editing, export
+and grouping all keep working. Model-driven only.

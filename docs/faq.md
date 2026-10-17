@@ -140,3 +140,12 @@ own filter pane does. A record stamped 04:30 UTC on 2 March is 11:30 PM on
 
 Expected. `openDatasetItem()` needs a model-driven form. Wire your navigation to
 the `openedRecordId` output instead — it updates on every row click.
+
+## How do I show the child accounts' rows in an account's subgrid too?
+
+Turn off *Show related records* on the subgrid and set **Related through** to a
+FetchXML link with `{id}` where the record goes, such as `eq-or-under` on the
+account the rows point at. Most links are longer than the form designer's 100
+characters, so put the link in a *Data (XML)* web resource and name that
+instead. [Model-driven apps](model-driven.md#rows-related-through-another-table)
+has the steps, and [Examples](examples.md) has two you can copy.

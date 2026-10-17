@@ -3697,3 +3697,80 @@ Nothing was cut. Six things changed the design:
 Unchanged by the answers: a sort keeps the related filter (P3), paging and so
 the export work under it (P4), and a Data (XML) web resource reads like the
 Script ones `pcf-row-commands` measured (P10).
+
+### What 0.8.0 built
+
+One input, `relatedThrough`, and nothing else changes when it is unset. The
+fragment is read by the template's `lib/related-rows`, a strict parser. It
+refuses by name nested and outer links, a link with no condition, an `or`
+filter, and columns or orders, and it numbers the hierarchy operators the
+dataset's way.
+
+- **Inline value:** linked, filtered and refreshed in `init`.
+- **Web resource:** read through `lib/config-source` and applied on the first
+  idle pass after it lands.
+- **Before the first load after the link:** the table is replaced by *Loading
+  related rows…*.
+- **Blocked** (no record, no linking, a fragment refused, a resource missing):
+  it shows a reason and no rows.
+- **Refused by the platform:** it says so, then asks
+  `EntityDefinitions(…)/Attributes(…)` which name is missing
+  (`data/relatedNames.ts`) and repaints with it.
+- **Filters:** the related conditions are ANDed into every expression
+  `applyFilter` sends, and `clearFilter` is never called while they stand.
+- **Grouping:** appends `plan.fetchXml(id)` inside `<entity>`, skips the parent
+  resolver, and withholds the whole-view route when the groups do not add up to
+  `totalResultCount`.
+- **A value changed after the links went in:** shows *Related through has
+  changed. Reload the form to apply it.*
+
+The rig answers `linking` from the template's shared `dev/linked.js`, which
+holds the measured behaviour (P1–P11), and it answers the attribute and
+web-resource reads the control makes. `dev/smoke.js` has 23 new assertions.
+Four mutations are each caught: conditions left out of the expression, ready
+without waiting for the load, no total check, and the resolver not stood
+aside. `CONDITION_OPERATORS` is corrected for 75–79 and asserted in
+`dev/grouping.js`.
+
+### Measured while building, 2026-10-17
+
+What the table definitions answer for the name check, from the test
+environment's console:
+
+| Request | Answer |
+|---|---|
+| `EntityDefinitions(LogicalName='cll_account')/Attributes(LogicalName='cll_customer')` | 200 |
+| …`/Attributes(LogicalName='nosuchcolumn')` | 404 `0x80060888` *Navigation property Attributes With Id = LogicalName='nosuchcolumn' does not exist on Metadata Entity with ID = LogicalName='cll_account'* |
+| `EntityDefinitions(LogicalName='nosuchtable')` | 404 `0x80060888` *EntityMetadata With Id = LogicalName='nosuchtable' does not exist.* |
+| `EntityDefinitions(LogicalName='nosuchtable')/Attributes(LogicalName='name')` | 404 `0x80060888` *Entity With Id = LogicalName='nosuchtable' does not exist.* |
+
+### Walkthrough (0.8.0, on the form)
+
+On the probe section's two `cll_account` subgrids. Each `relatedThrough` is
+set in the form's XML, which takes values the designer's 100-character
+ceiling would refuse.
+
+| # | What | Expected | Answer |
+|---|---|---|---|
+| W1 | Unrelated subgrid, inline `eq-or-under` fragment | 32 rows (31 + the child's); *Loading related rows…* and never the 52 | not yet asked |
+| W2 | The same from the web resource `pcfhub_datatableprobe.xml` | the same 32, no flash of 52 | not yet asked |
+| W3 | Under W1: the filter row, a sort, page 2, Export (whole view) | everything inside the 32 | not yet asked |
+| W4 | Under W1, grouped by `cll_customer` | the server route, *the whole view*, two groups (31 and 1) | not yet asked |
+| W5 | The related subgrid with the same fragment, grouped | 31 rows; the groups withheld, *the records loaded so far*, and the console naming *Show related records* | not yet asked |
+| W6 | `to='nosuchcolumn'` | *The related rows could not be read…*, then *cll_account has no column nosuchcolumn* — whether `factory.requestRender` repaints | not yet asked |
+| W7 | A web resource that does not exist | *…names the web resource …, which does not exist or is not published.* — the same repaint, after an async read | not yet asked |
+| W8 | A nested link | *Related through cannot be used: …* and no rows | not yet asked |
+| W9 | Under W1, an inline edit on a related row | saved, row still listed | not yet asked |
+
+### Not verified in 0.8.0
+
+- **A canvas app**: blocked by design (no `linking`, per Learn); not looked at.
+- **A phone**, and **a non-administrator** (a user without read on the linked
+  table, or on `EntityDefinitions`).
+- **A main grid** with `{id}`: reasoned to show *no saved record*.
+- **The rig does not set `loading` while a fetch is pending** (`asyncFetch`).
+  So the guard that waits for the load is asserted only with a host created
+  loading; it rests on the platform's own marking (P7).
+- **Sibling links on the dataset route beyond P6's impossible condition**, and
+  `in`, `null` and the date operators on a link's alias: measured only for
+  `eq` and 75–79.
