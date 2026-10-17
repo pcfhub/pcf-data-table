@@ -176,8 +176,15 @@ export const queryString = (xml: string): string =>
 /* ------------------------------------------------------------------------- */
 
 /**
- * `dataset.filtering.getFilter()` speaks in the SDK's `ConditionOperator`
- * numbers. These are that enum's values spelled as FetchXML's operator names.
+ * `dataset.filtering.getFilter()` speaks in `ConditionOperator` numbers. These
+ * are those numbers spelled as FetchXML's operator names.
+ *
+ * **Except 75–79, they are the SDK's.** Those five are the hierarchy operators,
+ * and a dataset numbers them the PCF DataSet reference's way — 75 Above, 76
+ * Under, 77 NotUnder, 78 AboveOrEqual, 79 UnderOrEqual — where the SDK has 75
+ * Under … 79 AboveOrEqual. Measured 2026-10-17 (SPEC.md 0.8.0, P2): 79 took the
+ * subgrid to the account's rows plus its child's, 76 to the child's alone. This
+ * table had all five the SDK's way until then; nothing had sent them.
  *
  * **An operator not in this table makes the whole filter untranslatable**, and
  * an untranslatable filter withholds the server route rather than sending a
@@ -197,7 +204,7 @@ export const CONDITION_OPERATORS: Record<number, string> = {
     42: 'ne-userid', 43: 'eq-businessid', 44: 'ne-businessid', 49: 'like', 52: 'not-on',
     54: 'begins-with', 55: 'not-begin-with', 56: 'ends-with', 57: 'not-end-with',
     70: 'in-fiscal-period-and-year', 73: 'eq-userteams', 74: 'eq-useroruserteams',
-    75: 'under', 76: 'not-under', 77: 'eq-or-under', 78: 'above', 79: 'eq-or-above',
+    75: 'above', 76: 'under', 77: 'not-under', 78: 'eq-or-above', 79: 'eq-or-under',
     87: 'contain-values', 88: 'not-contain-values',
 };
 

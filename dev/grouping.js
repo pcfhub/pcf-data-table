@@ -199,6 +199,12 @@ section('the runtime filter, and the rule that withholds the route');
 
     check('Or is honoured', t({ filterOperator: 1, conditions: [{ attributeName: 'cll_industry', conditionOperator: 0, value: '1' }] }).xml.indexOf("type='or'"), 8);
 
+    // Measured 2026-10-17 (SPEC.md 0.8.0, P2): a dataset numbers the hierarchy
+    // operators the PCF reference's way, not the SDK's — 79 is eq-or-under.
+    check('75–79 are spelled the dataset\'s way, not the SDK\'s',
+        [75, 76, 77, 78, 79].map((op) => t({ filterOperator: 0, conditions: [{ attributeName: 'accountid', conditionOperator: op, value: 'x' }] }).xml.match(/operator='([^']+)'/)[1]),
+        ['above', 'under', 'not-under', 'eq-or-above', 'eq-or-under']);
+
     check('a nested filter rides along', (t({
         filterOperator: 0,
         conditions: [{ attributeName: 'cll_industry', conditionOperator: 0, value: '1' }],
