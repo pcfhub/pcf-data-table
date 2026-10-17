@@ -3752,15 +3752,15 @@ ceiling would refuse.
 
 | # | What | Expected | Answer |
 |---|---|---|---|
-| W1 | Unrelated subgrid, inline `eq-or-under` fragment | 32 rows (31 + the child's); *Loading related rows…* and never the 52 | not yet asked |
-| W2 | The same from the web resource `pcfhub_datatableprobe.xml` | the same 32, no flash of 52 | not yet asked |
-| W3 | Under W1: the filter row, a sort, page 2, Export (whole view) | everything inside the 32 | not yet asked |
-| W4 | Under W1, grouped by `cll_customer` | the server route, *the whole view*, two groups (31 and 1) | not yet asked |
-| W5 | The related subgrid with the same fragment, grouped | 31 rows; the groups withheld, *the records loaded so far*, and the console naming *Show related records* | not yet asked |
-| W6 | `to='nosuchcolumn'` | *The related rows could not be read…*, then *cll_account has no column nosuchcolumn* — whether `factory.requestRender` repaints | not yet asked |
-| W7 | A web resource that does not exist | *…names the web resource …, which does not exist or is not published.* — the same repaint, after an async read | not yet asked |
-| W8 | A nested link | *Related through cannot be used: …* and no rows | not yet asked |
-| W9 | Under W1, an inline edit on a related row | saved, row still listed | not yet asked |
+| W1 | Unrelated subgrid, inline `eq-or-under` fragment | 32 rows (31 + the child's); *Loading related rows…* and never the 52 | **Yes.** *Loading related rows…*, then *1–5 of 32* (7 pages); a MutationObserver attached before the subgrid mounted recorded no other state — never *of 52* |
+| W2 | The same from the web resource `pcfhub_datatableprobe.xml` | the same 32, no flash of 52 | **Yes.** *Loading related rows…* while the web resource was read, then the grouped table (W4); no unfiltered state recorded |
+| W3 | Under W1: the filter row, a sort, page 2, Export (whole view) | everything inside the 32 | **Yes, for the filter row, the sort and paging.** *probe* (30 related, 12 not) took 32 to *of 30*, never 42; a descending sort on Account Name kept *of 30*; page 2 read *6–10 of 30*. **Export not run**: it would have saved a file through the browser pane |
+| W4 | Under W1, grouped by `cll_customer` | the server route, *the whole view*, two groups (31 and 1) | **Yes.** *2 groups · 32 records · the whole view*: Adventure Works (sample) 31, PCF probe – child of Adventure Works 1 |
+| W5 | The related subgrid with the same fragment, grouped | 31 rows; the groups withheld, *the records loaded so far*, and the console naming *Show related records* | **Yes.** *1 groups · the records loaded so far — the whole view could not be counted*, and the console: *the whole-view groups count 32 records, and the grid holds 31… Show related records on…* |
+| W6 | `to='nosuchcolumn'` | *The related rows could not be read…*, then *cll_account has no column nosuchcolumn* — whether `factory.requestRender` repaints | **Yes, and `requestRender` repaints.** *The related rows could not be read. Check the table and column names…* at 1.2 s, then *…cll_account has no column nosuchcolumn.* at 1.7 s. The network log shows no dataset fetch after the 404 for the name check, so the repaint was `factory.requestRender`, not the refresh fallback. The platform's own query, read off the same log: `<link-entity name="account" from="accountid" to="nosuchcolumn" link-type="inner" alias="rel0"/>` and `<condition entityname="rel0" attribute="accountid" operator="eq-or-under" …/>` in the root filter — 79 is eq-or-under on the wire too — answered 400 |
+| W7 | A web resource that does not exist | *…names the web resource …, which does not exist or is not published.* — the same repaint, after an async read | **Yes.** *Related through names the web resource pcfhub_datatableprobe_missing.xml, which does not exist or is not published.*, 0.3 s after *Loading related rows…* — the same repaint, after an async read |
+| W8 | A nested link | *Related through cannot be used: …* and no rows | **Yes.** *Related through cannot be used: a <link-entity> inside another; the platform refuses a link chained from one — write it as its own link*, no rows, nothing linked. The other subgrid, its property cleared, read *1–5 of 31*: unset is 0.7.x |
+| W9 | Under W1, an inline edit on a related row | saved, row still listed | **Yes.** *Saving…*, then the new name in the row, still *1–1 of 1* under the filter; read back through the Web API as *PCF probe – child row (edited)* |
 
 ### Not verified in 0.8.0
 
@@ -3768,6 +3768,9 @@ ceiling would refuse.
 - **A phone**, and **a non-administrator** (a user without read on the linked
   table, or on `EntityDefinitions`).
 - **A main grid** with `{id}`: reasoned to show *no saved record*.
+- **Export under Related through** on a form (W3 did not run it, since it
+  would have saved a file through the pane). It pages the dataset, as the
+  pager does, and the pager was watched (P4, W3).
 - **The rig does not set `loading` while a fetch is pending** (`asyncFetch`).
   So the guard that waits for the load is asserted only with a host created
   loading; it rests on the platform's own marking (P7).

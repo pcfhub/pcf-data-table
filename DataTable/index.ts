@@ -1324,10 +1324,11 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
 
     /**
      * A render from outside `updateView`, for an answer that landed between
-     * passes. `factory.requestRender` is the platform's own and is typed;
-     * where a host does not have it, a refresh is the measured way to earn an
-     * `updateView`. **Whether `requestRender` repaints a dataset control is
-     * unmeasured** — it is on the 0.8.0 walkthrough.
+     * passes. `factory.requestRender` is the platform's own and is typed, and
+     * **it repaints a dataset control** — measured on the 0.8.0 walkthrough
+     * (SPEC.md W6, W7): the refined message replaced the first half a second
+     * later with no dataset fetch in the network log. Where a host does not
+     * have it, a refresh is the other measured way to earn an `updateView`.
      */
     private repaint(context: ComponentFramework.Context<IInputs>): void {
         const factory = (context as { factory?: { requestRender?: unknown } }).factory;

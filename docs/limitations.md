@@ -157,9 +157,10 @@ by a path the subgrid's own relationship cannot express. What it does not do:
   applies when the form is reloaded. Until then the table says so and keeps
   the rows it has.
 - **The platform's own refusal names nothing.** A column or table that does
-  not exist comes back as *Query Builder Error* with no rows. The control then
-  asks the table definitions which name is missing and says it. That second
-  message has not yet been watched replacing the first on a form.
+  not exist comes back as *Query Builder Error* with no rows. The control
+  says the rows could not be read, then asks the table definitions which name
+  is missing and replaces that with *cll_account has no column …* — about
+  half a second later on the test form.
 - **A web resource is read once per form load**, published copy only. An edit
   reaches nobody until it is published, and a resource that is not there says
   so instead of showing rows.
