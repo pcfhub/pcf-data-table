@@ -3642,14 +3642,58 @@ different control.
 
 | # | Question | Decides | Answer |
 |---|---|---|---|
-| P1 | Unrelated subgrid: `addLinkedEntity({ name: 'account', from: 'accountid', to: 'cll_customer', linkType: 'inner', alias: 'rel0' })`, `Equal` on `rel0.accountid` = the form's id, `paging.reset()`, `refresh()`. Do the rows drop to the account's own? `error` / `errorMessage`? | the whole feature | not yet asked |
-| P2 | The same condition with 0, 75, 76, 77, 78 and 79, the account having a child | the operator table: SDK or the PCF reference | not yet asked |
-| P3 | After P1, a sort (`sorting` replaced, `refresh()`): are the filter and the link still in force? | re-applying after every sort | not yet asked |
-| P4 | `loadExactPage(2)` and `totalResultCount` with the link in force | the pager and the export | not yet asked |
-| P5 | The same alias added twice: `getLinkedEntities()`, and does the query still run? | the add-once guard; an input changed after mount | not yet asked |
-| P6 | A link chained from the first (`to: 'rel0.parentaccountid'`), and a second top-level link whose condition matches nobody | nested links in scope, or refused | not yet asked |
-| P7 | The first paint: what the first passes show before the control's own refresh; a link and filter set in `init`, with and without a refresh there | a hide-until-applied guard | not yet asked |
-| P8 | P1 on the related subgrid: does the link AND with the relationship? | the docs: switch *Show related records* off | not yet asked |
-| P9 | The grouping aggregate with the fragment appended inside `<entity>`: does `n` equal `totalResultCount`, on both subgrids? Do the loaded rows all point at the form's record on each? | the aggregate route; the parent resolver unchanged | not yet asked |
-| P10 | A **Data (XML)** web resource read by name from a dataset control: status, `content-type`, a missing name's 404 and body | the loader's states | not yet asked |
-| P11 | A link naming a column the table does not have: the error's shape; are the old rows kept or cleared? | the refusal on screen | not yet asked |
+| P1 | Unrelated subgrid: `addLinkedEntity({ name: 'account', from: 'accountid', to: 'cll_customer', linkType: 'inner', alias: 'rel0' })`, `Equal` on `rel0.accountid` = the form's id, `paging.reset()`, `refresh()`. Do the rows drop to the account's own? `error` / `errorMessage`? | the whole feature | **Yes.** 52 → 31, the account's own rows exactly, at +5 s and still at +25 s; `error: false`, `errorMessage: null`; `getFilter()` hands the condition back with `entityAliasName: "rel0"`. `getLinkedEntities()` answers `[{ alias, name, from, to, linkType: "inner", filtering: { aliasMap: {} }, linking: {}, sorting: [] }]` — each link carries its own `filtering`, `linking` and `sorting` |
+| P2 | The same condition with 0, 75, 76, 77, 78 and 79, the account having a child | the operator table: SDK or the PCF reference | **The PCF reference, not the SDK.** 0 → 31; **75 → 0** (Above: the account has no parent); **76 → 1** (Under: the child's row only); **77 → 48** (NotUnder, inside the inner link); **78 → 31** (AboveOrEqual); **79 → 32** (UnderOrEqual: 31 + the child's). No errors. So a dataset condition's 75–79 are not the SDK's, and `CONDITION_OPERATORS` (here and in `_template/variants/lib/view-aggregate/fetchXml.ts`) translated all five to the wrong FetchXML |
+| P3 | After P1, a sort (`sorting` replaced, `refresh()`): are the filter and the link still in force? | re-applying after every sort | **Both kept.** With 79 on `rel0` in force (32), `cll_accountname` descending: total 32 at every reading, `getFilter()` still `79@rel0`, the link still listed, the first rows changed to the sort. Learn's "if sorting is re-configured it will reset the filter" did not happen on a model-driven subgrid — so nothing is re-applied after a sort, and the filter row was never at risk either |
+| P4 | `loadExactPage(2)` and `totalResultCount` with the link in force | the pager and the export | **Pages as usual.** `firstPageNumber` 1 → 2, five new rows, `hasNextPage` true, total 32, filter kept |
+| P5 | The same alias added twice: `getLinkedEntities()`, and does the query still run? | the add-once guard; an input changed after mount | **An identical link is kept once; a different one under the same alias is appended, and breaks the query.** Twice the same: one `rel0` listed, 31, no error. Then `rel0` again with `to: 'nosuchcolumn'`: two `rel0` entries listed, `error: true`, *0x80041103 Query Builder Error*, no rows. There is no way to change or remove a link in a page's life, so a fragment changed after mount cannot take effect before a reload |
+| P6 | A link chained from the first (`to: 'rel0.parentaccountid'`), and a second top-level link whose condition matches nobody | nested links in scope, or refused | **Chained: refused by the platform** — `error: true`, *0x80041103 Query Builder Error*, no rows, and `totalResultCount` left at the stale 52. **A second top-level link: honoured** — `systemuser` through `ownerid` with an impossible condition took 31 to 0, no error. So several sibling links, never a nested one |
+| P7 | The first paint: what the first passes show before the control's own refresh; a link and filter set in `init`, with and without a refresh there | a hide-until-applied guard | **The view's rows are there before `updateView` runs** — in `init` the dataset already holds 5 rows, `loading: false`. Untouched: pass 1 (19 ms) shows the whole view, then the platform fetches again by itself (pass 2 `loading: true` at 241 ms) — so a filter set later than `init` is drawn over unfiltered rows first. **Link + filter in `init`, no refresh:** pass 1 (3 ms) still the unfiltered 52 with `loading: false`; the platform's own fetch (68 ms) carries the link, 31 from pass 3 (156 ms). **With a refresh in `init`:** `loading: true` from pass 1 (3 ms), 31 at pass 3 (180 ms), and still one fetch — the refresh merges with the platform's |
+| P8 | P1 on the related subgrid: does the link AND with the relationship? | the docs: switch *Show related records* off | **It ANDs.** Link + Under (76, the child's row only) on the related subgrid: 0 rows, no error — the relationship still holds the grid to the account's own rows |
+| P9 | The grouping aggregate with the fragment appended inside `<entity>`: does `n` equal `totalResultCount`, on both subgrids? Do the loaded rows all point at the form's record on each? | the aggregate route; the parent resolver unchanged | **Unrelated: equal** — `n` 32, the grid 32 (the view's own `statecode` filter rode along; 250 ms). **Related: not equal** — `n` 32, the grid 31: the relationship hides the child's row and the aggregate cannot see it. **And the rows cannot tell the two apart**: on both, 5 of 5 loaded rows point at the form's record. So the parent resolver must stand aside under *Related through* (on the unrelated subgrid it would add `cll_customer = the account` and count 31 under 32 rows), and the aggregate's total has to be checked against `totalResultCount` instead |
+| P10 | A **Data (XML)** web resource read by name from a dataset control: status, `content-type`, a missing name's 404 and body | the loader's states | **200 `text/xml`**, `cache-control: private`, the body exactly as uploaded (164 characters). A missing name: **404, empty body**, `text/html; charset=utf-8` |
+| P11 | A link naming a column the table does not have: the error's shape; are the old rows kept or cleared? | the refusal on screen | **Cleared, and the message names nothing.** `error: true`, `errorMessage` *0x80041103 Query Builder Error*, `sortedRecordIds` empty, `loading: false` — and `totalResultCount` still the 52 from before. The column is never named, so the control checks names itself and says which one |
+
+Asked 2026-10-17 on the test environment's Information form (Adventure Works
+(sample)), from the browser console, on the probe's two `cll_account` subgrids
+(5 rows a page): the unrelated one held 52 rows, the related one 31. The
+account had one child account created for the probe, with one `cll_account`
+row. Every count was read off the latest context at +5, +15 and +25 s, and
+every question but P10 ran on a fresh load.
+
+### What the answers decided
+
+Nothing was cut. Six things changed the design:
+
+- **The operators are the PCF reference's (P2).** A dataset condition's 75 is
+  Above, 76 Under, 77 NotUnder, 78 AboveOrEqual, 79 UnderOrEqual. The fragment
+  parser maps FetchXML's names onto those numbers. `CONDITION_OPERATORS`, which
+  turns a dataset filter back into FetchXML for the grouping aggregate, had all
+  five the SDK's way round. That was harmless until now, because nothing sent
+  them, but it was wrong. It is fixed here and in the template's
+  `lib/view-aggregate`, which three other controls carry.
+- **A link is for the life of the page (P5).** The control adds each link once,
+  never adds a second one under an alias already used, and when *Related
+  through* changes after mount (the hub's demo, the designer) it says the
+  change applies on reload instead of breaking the query.
+- **Sibling links, never nested ones (P6).** The parser refuses a
+  `<link-entity>` inside another by name, before the platform's unexplained
+  *Query Builder Error* can.
+- **Applied in `init` when it can be (P7).** An inline fragment is linked,
+  filtered and refreshed in `init`, which costs no extra fetch and draws no
+  unfiltered rows. A web resource cannot be read before `init` returns, so
+  until it has been read and the first load after it has landed, the table
+  shows *Loading related rows…* rather than the view.
+- **The parent resolver stands aside (P9).** Under *Related through* the rows
+  cannot say whether the subgrid is related, so no parent condition is added.
+  Instead the aggregate's summed count is checked against `totalResultCount`.
+  A mismatch, which is what *Show related records* left on produces (P8),
+  withholds the server route, and the caption groups the loaded rows.
+- **A refusal is explained, never counted (P11, P6).** With `dataset.error`
+  true the total is stale, so the pager does not show it. The message says
+  *Related through* was refused, and a name check against the tables'
+  definitions names the column that does not exist.
+
+Unchanged by the answers: a sort keeps the related filter (P3), paging and so
+the export work under it (P4), and a Data (XML) web resource reads like the
+Script ones `pcf-row-commands` measured (P10).
