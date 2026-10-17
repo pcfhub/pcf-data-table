@@ -3589,3 +3589,67 @@ not a console reading; no widths or storage keys were pasted.
 - **A touch drag on a phone**, which is the same open item Row Commands has.
 - **The hub's demo**, whose storage is the hub's origin. Resizing needs no
   platform call, so it should work there; it has not been looked at.
+
+## 0.8.0 — rows related through another table
+
+Picked by the 27th demand run (2026-10-17): the PCF Gallery request board's top
+open topic, *Dynamic sub-grid with contextual awareness using FetchXML* (15
+votes), beside this control's own week on the hub (5 → 13 downloads, the
+fastest relative mover). The ask is a subgrid whose rows are related to the
+form's record by a path the subgrid's one relationship cannot express —
+"opportunities of this account *and its child accounts*", "activities of this
+account's contacts". No platform setting does it: a view cannot name the form's
+record, and a subgrid follows one relationship.
+
+**The design, provisional until the answers below are in.** One new input,
+*Related through*: a FetchXML `<link-entity>` fragment with `{id}` for the
+form's record — inline when it starts with `<`, otherwise the name of a web
+resource holding it, because the modern designer refuses a static value over
+100 characters (pcf-code-editor, 2026-09-23). The control applies it through
+the dataset's own `linking.addLinkedEntity` and conditions carrying
+`entityAliasName`, ANDed into every expression it hands `setFilter`. The rows
+stay the platform's, so paging, sorting, the filter row, editing, export and
+grouping keep working; the grouping aggregate gets the fragment itself,
+appended inside `<entity>`.
+
+**Nothing in the catalogue has called `addLinkedEntity` before**, and Learn
+disagrees with itself twice on what the design rests on:
+
+- the SDK's `ConditionOperator` has 75 = Under, 76 = NotUnder, 77 =
+  UnderOrEqual, 78 = Above, 79 = AboveOrEqual; the PCF DataSet reference's
+  operator table lists 75 = Above, 76 = Under, 77 = NotUnder, 78 =
+  AboveOrEqual, 79 = UnderOrEqual. `query/fetchXml.ts` has the SDK's.
+- the DataSet page says "if sorting is re-configured it will reset the
+  filter". Nothing in this file has measured a sort with a filter in force —
+  so the question is the filter row's as much as this release's.
+
+The rig needed no sync first: `sync-rig --report` (2026-10-17) found nothing
+stale; `dev/modules.js` and `dev/serve.js` are this repository's own edits and
+are kept.
+
+### What must be measured first
+
+Probe build **0.7.3** (`DataTable/probe.ts`, `window.__pcfDataTableProbe`; a
+registry, since the form carries two Data Tables for it). Asked on the test
+environment's Information form, Adventure Works (sample), on two subgrids of
+`cll_account`: the existing one (*Show related records* on, through
+`cll_customer`) and a second one with it off. The account has a child account
+created for the probe, with one `cll_account` row of its own. Each question on
+a fresh load, because a link cannot be removed. **An answer that goes the wrong
+way removes the feature that depends on it**; P1 the wrong way ends the
+dataset route, and the fallback — a Web API query of the control's own — is a
+different control.
+
+| # | Question | Decides | Answer |
+|---|---|---|---|
+| P1 | Unrelated subgrid: `addLinkedEntity({ name: 'account', from: 'accountid', to: 'cll_customer', linkType: 'inner', alias: 'rel0' })`, `Equal` on `rel0.accountid` = the form's id, `paging.reset()`, `refresh()`. Do the rows drop to the account's own? `error` / `errorMessage`? | the whole feature | not yet asked |
+| P2 | The same condition with 0, 75, 76, 77, 78 and 79, the account having a child | the operator table: SDK or the PCF reference | not yet asked |
+| P3 | After P1, a sort (`sorting` replaced, `refresh()`): are the filter and the link still in force? | re-applying after every sort | not yet asked |
+| P4 | `loadExactPage(2)` and `totalResultCount` with the link in force | the pager and the export | not yet asked |
+| P5 | The same alias added twice: `getLinkedEntities()`, and does the query still run? | the add-once guard; an input changed after mount | not yet asked |
+| P6 | A link chained from the first (`to: 'rel0.parentaccountid'`), and a second top-level link whose condition matches nobody | nested links in scope, or refused | not yet asked |
+| P7 | The first paint: what the first passes show before the control's own refresh; a link and filter set in `init`, with and without a refresh there | a hide-until-applied guard | not yet asked |
+| P8 | P1 on the related subgrid: does the link AND with the relationship? | the docs: switch *Show related records* off | not yet asked |
+| P9 | The grouping aggregate with the fragment appended inside `<entity>`: does `n` equal `totalResultCount`, on both subgrids? Do the loaded rows all point at the form's record on each? | the aggregate route; the parent resolver unchanged | not yet asked |
+| P10 | A **Data (XML)** web resource read by name from a dataset control: status, `content-type`, a missing name's 404 and body | the loader's states | not yet asked |
+| P11 | A link naming a column the table does not have: the error's shape; are the old rows kept or cleared? | the refusal on screen | not yet asked |
