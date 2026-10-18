@@ -7,7 +7,7 @@
   -->
   <control namespace="PCFHub"
            constructor="DataTable"
-           version="0.8.0"
+           version="0.8.1"
            display-name-key="DataTable_Name"
            description-key="DataTable_Desc"
            control-type="virtual">

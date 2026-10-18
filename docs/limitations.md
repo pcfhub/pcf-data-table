@@ -327,6 +327,11 @@ by a path the subgrid's own relationship cannot express. What it does not do:
   per table and set of columns, since a canvas app has no view.
 - Columns come from the Fields flyout on `Items`. Pick none and the control says
   so rather than rendering an empty grid.
+- **A lookup column shows no value.** Measured on 17 October 2026: an Account
+  lookup chosen in the Fields flyout drew an empty cell on every row, including
+  rows that have an account. The platform hands the control no text for a
+  lookup in a canvas app. Until that is fixed, add a text column carrying the
+  name, or show the lookup outside the table. A model-driven app is unaffected.
 
 ## In the hub's demo
 

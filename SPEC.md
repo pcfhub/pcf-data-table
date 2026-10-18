@@ -3821,5 +3821,24 @@ at 696–960; a 240px box scrolled to its end, the editor at the room's 232px
 with all three buttons visible and `scrollLeft` unchanged. `dev/widths.js`
 asserts the arithmetic (six checks; a mutation that never moves fails three).
 
-**Not verified**: the built control on the form (the placement there was a
-stand-in script), a right-to-left table, and the phone client.
+**0.8.1 on the form** (imported with `pac`, the page reloaded with its caches
+cleared, `customcontrols` at 0.8.1): a real click on the Site cell drew the
+editor at 771–1,091 with `transform: translate(-216px, -50%)` on it,
+`scrollWidth` 1,076, `scrollLeft` 0, no scrollbar, the table at 19–1,095.
+*Choose…* pressed in its moved place opened the platform's lookup dialog;
+Cancel closed it with the value and the record unchanged.
+
+**0.8.1 in a canvas app** (Kanban Probe, a Data Table on Tasks with the
+Account lookup last and Inline editing on, published; read with Playwright on
+the player, cookies only): the served bundle was 0.8.1's (89,164 bytes, both
+strings of the fix), 25 rows drawn, **no edit trigger anywhere** — canvas has
+no lookup editor, as designed — and a real click on the last cell opened
+nothing and scrolled nothing (`scrollLeft` 0, `scrollWidth` 1,366 = the box).
+
+**Found by the canvas run, and older than 0.8.1: the Account column was blank
+on every row**, while 18 of the 25 tasks hold *Adventure Works (sample)* in
+Dataverse. The cell's text is `record.getFormattedValue(column.name)`, which
+this canvas dataset answers empty for a lookup — not the JSON string the skill's
+host table records. What `getValue` hands over there is the next question.
+
+**Not verified**: a right-to-left table, and the phone client.
