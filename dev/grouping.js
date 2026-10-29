@@ -3,7 +3,7 @@
  *
  *     npm run grouping
  *
- * These drive the pure modules through `dev/modules.js` — no bundle, no
+ * These drive the pure modules through `dev/load.js` — no bundle, no
  * control, no DOM. What they cover is the half of grouping that is strings and
  * arithmetic: the query text a server would receive, the rule that withholds
  * the server route, and the reading of a response.
@@ -23,7 +23,7 @@
 
 'use strict';
 
-const { load } = require('./modules.js');
+const { load } = require('./load.js');
 
 const fx = load('query/fetchXml');
 const types = load('group/types');

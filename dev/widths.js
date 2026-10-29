@@ -3,7 +3,7 @@
  *
  *     npm run widths
  *
- * `layout/widths.ts` through `dev/modules.js` — no bundle, no React, no DOM.
+ * `layout/widths.ts` through `dev/load.js` — no bundle, no React, no DOM.
  * What it covers is the arithmetic: that an unresized table is laid out in
  * pixels exactly as the browser lays out its percentages, that a resized column
  * draws at its width and moves nothing else, where a pinned column sits, and
@@ -25,7 +25,7 @@
 
 'use strict';
 
-const { load } = require('./modules.js');
+const { load } = require('./load.js');
 
 const widths = load('layout/widths');
 
