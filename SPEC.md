@@ -3842,3 +3842,34 @@ this canvas dataset answers empty for a lookup — not the JSON string the skill
 host table records. What `getValue` hands over there is the next question.
 
 **Not verified**: a right-to-left table, and the phone client.
+
+## 0.8.2 — the lookup editor's buttons keep focus
+
+The lookup editor's *Choose…*, *Clear* and the cross all set `disabled` while
+the platform's lookup dialog was open. *Choose…* is the button that opens the
+dialog, so it was focused when it was disabled, and Chrome blurs a focused
+element that becomes disabled at the next rendering update. Measured in Chrome
+152 on 2026-10-29: still focused straight after `disabled = true`, gone two
+frames later, and re-enabling it gives nothing back. The dialog then had
+nothing to hand focus back to. The workspace's `check-template` warning on
+`disabled={busy}` found this, not a report.
+
+All three are now `aria-disabled` while busy, and each press is refused in its
+handler. The stylesheet draws `[aria-disabled="true"]` the way it drew
+`:disabled`.
+
+Export's *Stop* had the same `disabled={stopping}`. It is unreachable since
+0.6.6 (the comment beside it says why), and is `aria-disabled` now so the
+branch does not bring the fault back if it returns.
+
+### Not verified in 0.8.2
+
+- **Not asserted.** `picking` is component state that only a click on
+  *Choose…* sets, and the suite renders through `react-dom/server`, which runs
+  no click.
+- **The dialog handing focus back on the form.** The walkthrough after
+  import is to press *Choose…* from the keyboard, cancel the dialog, and read
+  `document.activeElement`.
+- **Where focus goes once the editor closes.** After a pick, a clear or a
+  cancel the editor leaves the document and focus goes with it. That was so
+  before 0.8.2 too, for every editor here, and is not changed by this.

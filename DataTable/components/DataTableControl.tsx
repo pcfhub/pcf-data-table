@@ -310,12 +310,22 @@ function LookupEditor(props: {
             <span className="DataTable-lookupCurrent">
                 {props.current || props.strings.none}
             </span>
+            {/*
+              aria-disabled while the lookup dialog is open, never `disabled`:
+              Choose is the button the user just pressed, and a focused button
+              that becomes disabled is blurred — the dialog then has nothing to
+              hand focus back to. Each press is refused here while busy.
+            */}
             <button
                 ref={ref}
                 type="button"
                 className="DataTable-lookupChoose"
-                disabled={props.busy}
-                onClick={props.onChoose}
+                aria-disabled={props.busy || undefined}
+                onClick={(): void => {
+                    if (!props.busy) {
+                        props.onChoose();
+                    }
+                }}
             >
                 {props.strings.choose}
             </button>
@@ -323,8 +333,12 @@ function LookupEditor(props: {
                 <button
                     type="button"
                     className="DataTable-lookupClear"
-                    disabled={props.busy}
-                    onClick={props.onClear}
+                    aria-disabled={props.busy || undefined}
+                    onClick={(): void => {
+                        if (!props.busy) {
+                            props.onClear();
+                        }
+                    }}
                 >
                     {props.strings.clear}
                 </button>
@@ -332,10 +346,14 @@ function LookupEditor(props: {
             <button
                 type="button"
                 className="DataTable-lookupCancel"
-                disabled={props.busy}
+                aria-disabled={props.busy || undefined}
                 aria-label={props.strings.cancel}
                 title={props.strings.cancel}
-                onClick={props.onCancel}
+                onClick={(): void => {
+                    if (!props.busy) {
+                        props.onCancel();
+                    }
+                }}
             >
                 <ClearGlyph />
             </button>
@@ -2181,7 +2199,10 @@ export function DataTableControl(props: IProps): React.ReactElement | null {
                 <button
                     type="button"
                     className="DataTable-exportCancel"
-                    disabled={props.exporting.stopping}
+                    // aria-disabled, not `disabled`, if `stopping` ever returns:
+                    // Stop is the button just pressed, and disabling it would
+                    // blur it. The handler is single-shot by itself.
+                    aria-disabled={props.exporting.stopping || undefined}
                     onClick={props.onCancelExport}
                 >
                     {/*
