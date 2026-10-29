@@ -3862,6 +3862,15 @@ Export's *Stop* had the same `disabled={stopping}`. It is unreachable since
 0.6.6 (the comment beside it says why), and is `aria-disabled` now so the
 branch does not bring the fault back if it returns.
 
+### On the form (0.8.2, 2026-10-29)
+
+A real click on the Site cell opened the editor with focus on *Choose…*, and
+a real Enter opened the platform's lookup dialog. While it was open,
+*Choose…* carried `aria-disabled="true"` and was not `disabled`, and focus
+was in the dialog's search box. On the dialog's Cancel, the editor took its
+cancel path and left the document. **The platform handed focus to the form's
+*Grid* tab**, not to `BODY`. The Site value was unchanged.
+
 ### Not verified in 0.8.2
 
 - **Not asserted.** `picking` is component state that only a click on
