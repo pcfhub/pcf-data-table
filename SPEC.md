@@ -4033,6 +4033,15 @@ A003=0 A035=1 …`, `A023=8`, `A024=99`, `A022=14`.
 - **A title on *Back to your order* became its accessible name** in the
   preview's tree; the sentence is visible beside the button instead.
 
+### On the form (0.9.0, 2026-10-30)
+
+0.9.0 itself imported over the candidate, the environment serving its
+bundle before the reload: the handles 24 × 24 px, the order the walkthrough
+saved still there after the reload (−5, −4, −3 …), and 99,999,999,999 typed
+into *A 032*'s Order cell refused with *Order could not be saved. Cannot
+convert a value of type 'Edm.Decimal' to the expected target type
+'Edm.Int32'.* under the cell, which read 4 again.
+
 ### Found while measuring, now settled
 
 Both answers that reached past this release were seen on the form (W4, W6)
