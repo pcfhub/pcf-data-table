@@ -3882,3 +3882,81 @@ cancel path and left the document. **The platform handed focus to the form's
 - **Where focus goes once the editor closes.** After a pick, a clear or a
   cancel the editor leaves the document and focus goes with it. That was so
   before 0.8.2 too, for every editor here, and is not changed by this.
+
+## 0.9.0 — rows in your own order
+
+Picked by the 31st demand run (2026-10-30), after the user parked
+`pcf-duration-input`: the PCF Gallery board's *a subgrid that re-orders child
+records* (page 3, 5 votes), which page 1's *Project Plan* (8) names as the
+thing it builds on; this control the hub's top mover three runs running; and
+Kanban's and Compact List's limitation pages both saying no. The Power Apps
+grid reorders *columns*, never rows.
+
+**Decided with the user, not to reopen:** the order lives in a **whole-number
+column** the maker names, and moving a row renumbers the rows it passes, so
+the values stay readable and other views can sort by them. A keyboard user
+focuses the row's handle, **Space lifts, Up and Down move, Space drops,
+Escape cancels**, each step announced; the same handle drags. **Other sorts
+keep working**: while the table is not in the order column's order (another
+sort, a filter, grouping) the handles hide, and *Back to your order* restores
+it. Out of scope: children in a tree (*Project Plan*'s own ask) and moving a
+row to another page.
+
+### What must be measured first
+
+Probe build **0.8.3** (`DataTable/probe.ts`, `window.__pcfDataTableProbe`).
+Asked on the test environment's Information form, Adventure Works (sample), on
+a subgrid of its 31 `cll_account` child rows (through `cll_customer`) made for
+it: a view sorted by a new whole-number column `cll_order` with no state
+filter, 10 rows a page. The rows were seeded so the order differs from the
+names: 24 numbered 1–24 in reverse name order, a 25th sharing 5, six with no
+value, one of those inactive.
+
+| # | Question | Decides | Answer |
+|---|---|---|---|
+| R1 | `sorting` replaced with the order column, `paging.reset()`, `refresh()` — honoured? Where does a row with no value go? Does a reload keep the control's sort? | how the control imposes the order; where unnumbered rows sit | **Honoured, ascending and descending.** **Rows with no value come first ascending** (all six above 1) and last descending. Two rows sharing 5 came back A 011 before A 031 (read once — whether a tie's order is stable is not measured). **A reload does not keep it:** sorted by name descending, then reloaded, the first pass arrived with the view's own sort — so the control applies the order column's sort on every load |
+| R2 | The order column not in the view: does `getValue` answer? Does `addColumn` exist on model-driven, and what does it do? | whether the maker must put the column in the view | **A column outside the view reads `null`, whatever the row holds** (`cll_score` 3.5 on the server, `null` in the dataset). **`addColumn` exists and works**: after it and a `refresh()`, the value arrived (42). It also **adds the column to `dataset.columns`** — `order: -1`, `visualSizeFactor: -1`, `isHidden: false` — so a control that draws `dataset.columns` would draw it |
+| R3 | `setValue` + `save` on four rows, one after another and then in parallel: timing, the passes between, the order before a `refresh()` | the write loop and the optimistic order | **`setValue` returns `undefined`, and the row reads its old value until `save` resolves.** Each save 295–458 ms; four one after another 1,397 ms, in parallel **551 ms**, all accepted. **Every save repaints with the new value, and the rows are not re-sorted** — 2 s later still in the old order, and halfway through two rows shared a value. One `refresh()` put them in the new order |
+| R4 | `isEditable(order column)` per row, an inactive row among them | when the handles show | **`true` on every row, the inactive one included — and a save on the inactive row was accepted.** It says nothing about state |
+| R5 | A write the server refuses (2,147,483,648 into a whole number) | the failure message and the rollback | **Rejected in 130 ms** with a `UciError` (`errorCode` 2147781913, `httpStatusCode` 400) whose `message` is an OData stack trace; `displayTitle` and `displayMessage` are `null`. **The refused value stays on the row** — it read 2,147,483,648 after the rejection **and after a `refresh()`**, while the server still held 2, and `isDirty()` answered `false`. Writing the old value back with `setValue` + `save`, then `refresh()`, put the row right. A fraction (1.5) into the whole number was accepted and stored as 2 |
+| R6 | Writes on page 2, then a re-read: which page comes back? | how a move re-reads | **`refresh()` from page 2 lands on page 1** (`firstPageNumber` 2 → 1, `hasPreviousPage` false) — with or without writes. **`loadExactPage(2)` re-reads page 2 in the new order** and stays there |
+| R7 | Canvas: does `sorting` reorder, does `save` write a whole number? | canvas support or a stated limit | Not asked by the probe: the canvas test app has to take a new control version in Studio. Asked of 0.9.0 itself in the walkthrough |
+
+Asked 2026-10-30 from the browser console. The seeded values were put back
+afterwards and checked against the seed (no drift).
+
+### What the answers decided
+
+- **The control applies the order on every load (R1)**, when the order column
+  is set and the view sorts by something else; one extra fetch, on the first
+  pass only.
+- **The column can be left out of the view (R2).** If it is not in
+  `dataset.columns`, the control adds it with `addColumn` and does not draw
+  it; if it is, it is drawn where the maker put it.
+- **The control holds the moved order itself until the re-read lands (R3).**
+  The per-save repaints carry new values in the old row order, sometimes two
+  rows sharing one — so nothing reads the order off the values while a move
+  is saving. Saves go out in parallel.
+- **A refusal is rolled back by writing (R5).** For every row whose save went
+  through, and for the refused one, the old value is written back, then the
+  page is re-read — a `refresh()` alone leaves the refused value on screen.
+  The message is the control's own sentence; the platform's is a stack trace.
+- **A move re-reads with `loadExactPage(page)` (R6)**, never `refresh()`, so
+  a move on page 2 stays on page 2.
+- **Rows with no value sit at the top (R1)**, so moving a row above one of
+  them, or moving one of them, numbers the rows it has to — the rule is
+  `lib/rank-order`'s and is asserted there.
+
+### Found while measuring, outside this release's feature
+
+Two of the answers apply to **inline editing**, which has written through
+`setValue` + `save` + `refresh()` since 0.3.0:
+
+- **R5: a refused cell edit may stay on screen**, the refused value held by
+  the record through the `refresh()` the write ends with. The component's
+  rollback restores what it draws; whether the next render reads the record
+  and shows the refused value again has not been watched.
+- **R6: a cell edited on page 2 is followed by a `refresh()`**, which lands
+  on page 1 while the pager's own count stays at 2.
+
+Both go in the walkthrough, and are fixed in 0.9.0 if the form shows them.
