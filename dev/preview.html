@@ -173,7 +173,8 @@
             var spaced = [30, 10, 20, 50, 40, 70, 60, 90, 80, 110, 100, 120];
 
             fixture = Object.assign({}, fixture, {
-                columns: (fixture.columns || []).concat([{
+                // The hub demo's fixture carries the column hidden; here it is drawn.
+                columns: (fixture.columns || []).filter(function (c) { return c.name !== 'sortorder'; }).concat([{
                     name: 'sortorder', displayName: 'Order', dataType: 'Whole.None', alias: 'sortorder', order: 99, visualSizeFactor: 70,
                 }]),
                 records: (fixture.records || []).map(function (record, index) {

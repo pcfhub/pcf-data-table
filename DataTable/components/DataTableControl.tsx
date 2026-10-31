@@ -12,6 +12,7 @@ import {
     EditKind,
     editKindFor,
     editorValue,
+    faultMessage,
     filterKindFor,
     headerCheckState,
     LookupValue,
@@ -1271,11 +1272,19 @@ function useEditing(props: IProps): {
             (error: unknown) => {
                 drop(saving, key);
                 drop(pending, key);
+                /*
+                  A refusal from the server is an OData stack trace — seen on
+                  the 0.9.0 walkthrough, a whole number out of range filled
+                  the cell with it. Its innermost sentence is the part a person
+                  can read, as a lookup write already shows it. The control's
+                  own messages (the timeout's advice) pass through whole.
+                */
+                const text = (error as Error)?.message ?? '';
                 setFailure({
                     key,
-                    message:
-                        (error as Error)?.message
-                        || getString('DataTable_SaveFailedGeneric'),
+                    message: /InnerException|--->/.test(text)
+                        ? faultMessage(error, getString('DataTable_SaveFailedGeneric'))
+                        : text || getString('DataTable_SaveFailedGeneric'),
                 });
             },
         );

@@ -167,6 +167,45 @@ by a path the subgrid's own relationship cannot express. What it does not do:
 - **Not in a canvas app, not on a phone, not as anyone but a System
   Administrator:** none of those has been tried yet.
 
+## Rows in your own order
+
+From 0.9.0, **Order column** keeps the rows in an order people choose. What it
+does not do:
+
+- **A row moves within its page.** A move renumbers the rows it passes and
+  never a row on another page, so a row cannot be dragged onto the next page.
+  To move rows further, show more rows per page — offer a picker with **Rows
+  per page options**, or set **Rows per page** — or set the numbers in the view
+  or a bulk edit.
+- **Some moves on a crowded middle page are refused.** Two rows sharing a
+  number get numbered apart when a move needs it, but only with numbers the
+  page already spans. On a middle page whose numbers are all taken (5, 5, 6 …
+  13 for ten rows) there is no room, and the move says so and writes nothing.
+  More rows per page gives it room.
+- **Numbering needs every unnumbered row on the first page.** They all sort
+  above every numbered row, so numbering some of them would drop those below
+  the rest. A brand-new column on a list longer than one page therefore asks
+  for more rows per page first. The control does not page through the list to
+  find them: changing the page size mid-session broke paging on a real
+  subgrid, and a row on another page cannot be written from this one.
+- **Numbers can go below 1.** On a list longer than its page, rows numbered
+  above a first row that is already 1 take 0, −1 and so on.
+- **No order while sorted, filtered or grouped.** The handles hide; **Back to
+  your order** restores the sort and empties the filter row. The subgrid's own
+  quick find has not been tried with it.
+- **Two people moving rows at once overwrite each other's numbers.** The last
+  save wins, row by row, and each sees the other's change on their next load.
+- **A refused save puts everything back.** If any row's save is refused — a
+  plugin, a missing privilege — every row the move touched is written back to
+  its old number, and the toolbar says the order could not be saved. The
+  platform keeps a refused value on the row until it is written again, which
+  is why this writes rather than just re-reading.
+- **Children in a tree are not ordered.** It orders a flat list. A plan whose
+  steps have sub-steps is not something it draws.
+- **Not tried in a canvas app, on a phone or as a non-administrator.** The
+  writes are the ones inline editing makes, which a canvas app accepts, but no
+  move has been made in a canvas app yet.
+
 ## Not in this release
 
 - **No column reordering by the user.** The order is the view's, and changing

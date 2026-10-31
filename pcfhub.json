@@ -2,8 +2,8 @@
     "schemaVersion": 1,
     "slug": "pcf-data-table",
     "name": "Data Table",
-    "tagline": "A sortable, filterable table over any Dataverse view, with inline editing, pinned columns and a New button.",
-    "summary": "Renders the view a maker already chose, with the same columns, order and widths, as a semantic HTML table with a pager. There are no column properties to fill in.\n\n- Sorting, filtering and paging go back to the server, so they apply to the whole view rather than the page on screen\n- Grouping with counts and totals, and a caption that says whether the numbers cover the whole view\n- Inline editing, pinned columns and a **New** button\n- Row selection drives the form's command bar\n- **Related through** shows rows related to the form's record by any path, such as an account's opportunities and its subsidiaries', written as a FetchXML link with `{id}`\n\nModel-driven apps are the primary host. Canvas apps work too, with the columns taken from the fields selected on `Items`.",
+    "tagline": "A sortable, filterable table over any Dataverse view, with inline editing, pinned columns, a New button and rows in your own order.",
+    "summary": "Renders the view a maker already chose, with the same columns, order and widths, as a semantic HTML table with a pager. There are no column properties to fill in.\n\n- Sorting, filtering and paging go back to the server, so they apply to the whole view rather than the page on screen\n- Grouping with counts and totals, and a caption that says whether the numbers cover the whole view\n- Inline editing, pinned columns and a **New** button\n- **Rows in your own order**, kept in a whole-number column: drag a row, or move it from the keyboard\n- Row selection drives the form's command bar\n- **Related through** shows rows related to the form's record by any path, such as an account's opportunities and its subsidiaries', written as a FetchXML link with `{id}`\n\nModel-driven apps are the primary host. Canvas apps work too, with the columns taken from the fields selected on `Items`.",
     "category": "data",
     "hosts": [
         "canvas",
@@ -18,8 +18,8 @@
         "resizable-columns",
         "paging",
         "quick-create",
-        "choice",
-        "date-filter"
+        "date-filter",
+        "reorder"
     ],
     "supportLevel": "reference",
     "builtWith": "ai",
@@ -42,6 +42,7 @@
         "logo": "media/logo.png",
         "screenshots": [
             "media/screenshot.png",
+            "media/screenshot-order.png",
             "media/screenshot-grouped.png",
             "media/screenshot-sorted.png",
             "media/screenshot-pinned.png",
@@ -71,6 +72,7 @@
             "Pinned columns are layout, so they need no server and no dataset call, and what the Pinned columns preset shows is exactly what a form shows. A pinned column is only visible once there is something to scroll, so the fixture carries eight columns: pinned, the table asks for 940px, which is wider than this page gives it at any size. Switch to the Pinned columns preset and drag the scrollbar under the rows \u2014 Account name stays at the left edge, Modified on at the right, and everything between them passes behind. The one thing to try deliberately is the phone preview: below about 440px the pinned pair would leave nothing to scroll between them, so the control unpins itself rather than trap you, and that clamp is real behaviour rather than a demo shortcut.",
             "Grouping runs here and its numbers are right, but by the browser route \u2014 the one a canvas app gets. The demo\u2019s stand-in Dataverse does not answer FetchXML, so the server aggregate over the whole view is refused and the control groups the rows it has loaded instead. The caption under the table says which route answered. Here that costs nothing: the 24 rows fit on one page, so \u201cthe records loaded so far\u201d is every record there is, and the counts and summed revenue are the numbers a server would return. On a view of four thousand rows that caption is the whole difference between a total and a page total. Opening a group works: it is a filter plus refresh(), which the demo applies, so the rows beneath it are that owner\u2019s and the pager is scoped to them. While one is open the other groups leave the list, because the browser route can only group the rows the filter loaded; closing it brings them back. Group by Owner, City or Category. Category groups on its integer, as a real view groups a Choice, and each group takes its label from the options.",
             "Primary contact is a lookup to contact, and editing it works against the demo's stand-in Dataverse by the same route as on a form. In the Inline editing preset, click a contact: Choose\u2026 opens a lookup dialog over the demo's contacts (utils.lookupObjects), the navigation property is read from the relationship metadata, and the write is a webAPI.updateRecord with @odata.bind followed by a refresh. Clear empties the cell the same way. The dialog is the demo's own searchable list rather than the platform's, with its views; media/screenshot-lookup.png is the real one, captured from the dev rig in this repository.",
+            "Rows in your own order move here, and the writes are real \u2014 against the demo\u2019s stand-in Dataverse. The Your own order preset keeps the order in a whole-number column the fixture carries but the view does not draw, numbered 10, 20, 30 down the list. A move writes the rows it passes through setValue and save, reusing their values, and the table holds the new order until the re-read agrees; Reset or a reload puts the fixture back. All 24 rows are on one page here, so any row can reach any place; on a form a row moves within its page. Sort by another column or type in the filter row and the handles hide until Back to your order.",
             "Related through is not demoed. It narrows the rows through dataset.linking, which only a model-driven form has, to the record the form is on, and the demo has neither a record nor linking. With no record the control shows no rows rather than the whole view, so no preset sets it."
         ],
         "presets": [
@@ -121,6 +123,24 @@
                     "pinnedStart": 1,
                     "pinnedEnd": 1,
                     "selectionMode": "multiple",
+                    "enableSorting": true,
+                    "enableFiltering": true,
+                    "openOnRowClick": true,
+                    "enableExport": false,
+                    "enableEditing": false,
+                    "enableCreate": false,
+                    "enableMultiSort": false,
+                    "lockColumnWidths": false
+                }
+            },
+            {
+                "slug": "your-order",
+                "name": "Your own order",
+                "description": "Rows in an order you set, kept in a whole-number column. Drag a row by its handle, or focus the handle and press Space, the arrow keys and Space again. Sort by another column and the handles hide until Back to your order.",
+                "props": {
+                    "pageSize": 25,
+                    "orderColumn": "sortorder",
+                    "selectionMode": "none",
                     "enableSorting": true,
                     "enableFiltering": true,
                     "openOnRowClick": true,

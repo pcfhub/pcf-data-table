@@ -3960,3 +3960,94 @@ Two of the answers apply to **inline editing**, which has written through
   on page 1 while the pager's own count stays at 2.
 
 Both go in the walkthrough, and are fixed in 0.9.0 if the form shows them.
+
+### What 0.9.0 built
+
+- **`orderColumn`** (SingleLine.Text), unset by default. `startOrder` in
+  `init` makes it the whole sort when the view sorts otherwise, riding the
+  platform's first fetch (or *Related through*'s refresh); a change to the
+  input on a mounted control starts it over in `updateView`, which the hub's
+  demo needs.
+- **A column the view leaves out** is looked up in the table definitions
+  first (`AttributeType: Integer`), then added with `addColumn` on an idle
+  pass, sorted by, and kept out of the drawn columns (`drawnColumns`). A name
+  the table does not have never reaches `addColumn`.
+- **`lib/rank-order`**, from the template: `planMove` (reuse the values in
+  the span; else number a window with consecutive values inside the page's
+  limits; else `noRoom`), `planNumbering` (just under the first numbered
+  row; 1 … n when there is no room and the list is whole; under 1 when it is
+  not), and `liftKey` (Space lifts, arrows move, Space drops, Escape and Tab
+  cancel).
+- **The handle** is first in the first cell, not a column of its own, so the
+  width, pinning and minimum-width arithmetic are 0.8.x's to the pixel; the
+  cell's other content gives it 26px. 24px square.
+- **`useRowOrder`** holds what React must repaint: the lifted row (rows
+  reordered live, focus put back on the handle), the drag (pointer capture,
+  read from a ref, a drop line rather than a live reorder), the order held
+  on screen until the re-read agrees or 15 s pass, the busy note, the message
+  and the live region.
+- **`writeOrder`** saves eight at a time, re-reads with `loadExactPage(page)`
+  (`refresh()` on page 1), and on any refusal writes every touched row back
+  before re-reading. **`writeCell`** takes the same two answers.
+- The rig learned R2, R5, R6 and to sort a number column as numbers; 33 new
+  smoke checks, 47 in `dev/order.js`, 20 mutations each caught (the runner
+  refuses a result whose bundle did not change).
+
+### Walkthrough (0.8.4 candidate, on the form, 2026-10-30)
+
+On the *Order probe* tab of the test environment's Information form,
+Adventure Works (sample): the probe's subgrid (*PCF probe – in order*, 10 a
+page, editing on, `orderColumn` set) and a second over the table's shared
+*Active Accounts* view, which leaves `cll_order` out and sorts by name.
+Driven with real input in the browser pane; every value checked through the
+Web API afterwards.
+
+| # | What was done | What happened |
+|---|---|---|
+| W1 | Load | The probe subgrid sorted by Order with the six unnumbered rows first, no handles, and *Rows with no place in your order yet: 6 · Number them*. The second subgrid: sorted by `cll_order` (unnumbered first, then 1 … 5), the column not drawn, five unnumbered (the inactive row is outside that view) — the R2 path on a real form |
+| W2 | *Number them* | −5 … 0 for the six (the list runs past page 1, so it counts down under 1), ten handles appeared, focus on the first |
+| W3 | Keyboard: Space, Down ×3, Space on *A 003* | Lifted, announced *position 6 of 10*, rows reordered live with focus kept; dropped, the four values passed reused (−3 … 0), re-read in the new order |
+| W4 | Drag on page 2 | *A 030* above the tied 5, 5: refused — *This row can't move there without changing rows on other pages…*, nothing written, still page 2. *A 023* from the bottom to fifth: 8, the values passed reused, **still page 2 after the re-read** (11–20 of 31) |
+| W5 | Sort by *Account Name*, then *Back to your order* | Handles hid; the note and the button appeared; the button put back the Order sort on page 1, handles back, focus on the first |
+| W6 | Inline edits on page 2 | 13 → 99 on *A 024*: re-read **on page 2**, the row left the page. 99,999,999,999 on *A 022*: refused, **the cell read 14 again** after the re-read, still page 2 |
+| W7 | 420px wide | Handles drawn in the first column, the table scrolling sideways; 20px then, raised to 24px for a touch target |
+
+The server held exactly what was done: `7=-5 8=-4 A006=-3 A009=-2 A010=-1
+A003=0 A035=1 …`, `A023=8`, `A024=99`, `A022=14`.
+
+**Changed by the walkthrough:**
+
+- **A refused cell edit showed the platform's whole OData stack trace.**
+  Inline editing had always shown `error.message` as it came. A refusal
+  carrying `InnerException` now shows its innermost sentence, as a lookup
+  write already did (`faultMessage`); the control's own messages pass whole.
+- **Moving a mouse onto cell text before a drag started a native text
+  drag**, which cancelled the pointer (`dragstart` then `pointercancel`, in
+  the preview). The handle's press now prevents the default and focuses
+  itself; `user-select: none` on the handle.
+- **A drag never started if the first move outran the re-render** — the
+  handlers read the drag from the render that drew them. They read a ref now.
+- **The handle pushed the name button out of its cell**, and an inline box
+  that does not fit is replaced whole by the cell's ellipsis: a long name
+  became "…". What follows the handle gives it room.
+- **A title on *Back to your order* became its accessible name** in the
+  preview's tree; the sentence is visible beside the button instead.
+
+### Found while measuring, now settled
+
+Both answers that reached past this release were seen on the form (W4, W6)
+and are fixed in 0.9.0: an edit or a move on page 2 re-reads page 2, and a
+refused edit is written back.
+
+### Not verified in 0.9.0
+
+- **Canvas (R7).** No row has been moved in a canvas app: the canvas test app
+  has to take a new control version in Studio, and its table has no whole-number
+  column. The writes are inline editing's, which a canvas app accepts.
+- **A refused move on the form.** The rollback is asserted against the rig
+  (R5 as measured) and a refused *edit* was rolled back on the form (W6); no
+  move was refused there, because a move only writes values the page holds.
+- **A non-administrator, a phone, German, dark mode, the subgrid's quick
+  find**, and two people moving rows at once.
+- **A touch drag on a real device.** `touch-action: none` is set; the pointer
+  path was driven with a mouse.

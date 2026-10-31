@@ -1301,7 +1301,8 @@
   Rows in your own order (0.9.0).
 
   The handle sits first in the first cell, so it takes no column of its own
-  and the width arithmetic is 0.8.x's. `touch-action: none` hands a finger's
+  and the width arithmetic is 0.8.x's. 24px square, the WCAG 2.2 minimum
+  target — on a phone subgrid it is a finger's. `touch-action: none` hands a finger's
   drag to the pointer events instead of the page's scroll; `cursor: grab`
   says what a press does. aria-disabled while a move saves, styled here
   because a focused button must stay focusable.
@@ -1311,9 +1312,9 @@
     align-items: center;
     justify-content: center;
     vertical-align: middle;
-    width: 20px;
-    height: 20px;
-    margin-inline-end: var(--spacingHorizontalXS, 4px);
+    width: 24px;
+    height: 24px;
+    margin-inline-end: var(--spacingHorizontalXXS, 2px);
     padding: 0;
     color: var(--colorNeutralForeground3, #616161);
     background: none;
@@ -1395,19 +1396,19 @@
 
 /*
   What follows the handle gives it room. The open-record button is
-  `max-width: 100%` and the edit trigger a full-width block, so beside a 24px
-  handle each overflowed the cell — and an inline box that does not fit is
+  `max-width: 100%` and the edit trigger a full-width block, so beside the
+  handle (24px and a 2px gap) each overflowed the cell — and an inline box that does not fit is
   replaced whole by the cell's ellipsis: the first preview capture showed
   "Fabrikam Manufacturing" as "…". Less the handle, each truncates its own
   text instead.
 */
 .DataTable-grip ~ .DataTable-open {
-    max-width: calc(100% - 24px);
+    max-width: calc(100% - 26px);
     vertical-align: middle;
 }
 
 .DataTable-grip ~ .DataTable-editTrigger {
     display: inline-block;
-    width: calc(100% - 24px);
+    width: calc(100% - 26px);
     vertical-align: middle;
 }

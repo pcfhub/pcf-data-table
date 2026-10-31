@@ -7,6 +7,28 @@ appliesTo: ">=0.2.0"
 
 # Migration
 
+## 0.8.x → 0.9.0
+
+0.9.0 adds **Order column**, rows in an order people choose. **Nothing was
+renamed, nothing was removed, no property changed its default, and no new
+permission is asked for at import**: a move saves through the same record save
+inline editing uses. Unset, the table sorts and draws exactly as 0.8.x.
+
+To use it, add a whole-number column to the table and name it in Order column.
+See [Model-driven apps](model-driven.md#rows-in-your-own-order).
+
+### What changes on upgrade without touching anything
+
+Two fixes to inline editing, from what the 0.9.0 probe measured on a subgrid:
+
+- **An edit on page 2 stays on page 2.** Until 0.9.0 the re-read after a save
+  went back to page 1 while the pager still said 2. It now re-reads the page
+  you are on.
+- **A refused edit is put back on the row.** The platform kept the refused
+  value on the record, so a cell could show it again after its error. The
+  control now writes the old value back. The message under the cell is the
+  platform's own sentence rather than its whole stack trace.
+
 ## 0.7.x → 0.8.0
 
 0.8.0 adds **Related through**. **Nothing was renamed, nothing was removed, no

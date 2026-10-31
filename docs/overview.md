@@ -44,6 +44,11 @@ form's command bar what the ribbon should act on.
   caption reads *the records loaded so far* instead. A page-sized total
   presented as a whole-view total is a wrong answer that looks right, and the
   caption exists so that it cannot happen quietly.
+- **Rows can be put in your own order, and it is kept for everyone.** Name a
+  whole-number column and each row gets a handle — drag it, or lift it with
+  Space and move it with the arrow keys. The order is saved in that column, so
+  every view and report can sort by it too. See
+  [Model-driven apps](model-driven.md#rows-in-your-own-order).
 - **It is a real table.** `<table>`, `<th scope="col">`, `aria-sort`, a focusable
   control in every cell that does something. Screen readers and keyboards get
   the structure for free, rather than an emulation of it.

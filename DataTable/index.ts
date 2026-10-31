@@ -768,6 +768,13 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
     /** What was said in the console about an order column that cannot work, so it is said once. */
     private orderReported = '';
 
+    /**
+     * *Order column* as `startOrder` last read it. The hub's demo changes an
+     * input on a mounted control (a preset), so a change is picked up in
+     * `updateView` as *Related through*'s is.
+     */
+    private orderInput: string | null = null;
+
     public init(
         context: ComponentFramework.Context<IInputs>,
         notifyOutputChanged: () => void,
@@ -814,7 +821,7 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
 
         this.latest = context;
         this.trackRelated(context, dataset);
-        this.trackOrder(dataset);
+        this.trackOrder(context, dataset);
         const mode = (context.parameters.selectionMode.raw ?? 'single') as SelectionMode;
 
         /*
@@ -1211,6 +1218,8 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
         const name = (rawInput(context, 'orderColumn') ?? '').trim().toLowerCase();
         const dataset = context.parameters.records;
 
+        this.orderInput = name;
+
         if (name === '') {
             this.order = { phase: 'off' };
             return;
@@ -1292,8 +1301,17 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
             );
     }
 
-    /** Once per `updateView`: a looked-up column is added on the first idle pass. */
-    private trackOrder(dataset: DataSet): void {
+    /**
+     * Once per `updateView`: a changed *Order column* starts over, and a
+     * looked-up column is added on the first idle pass. Both can refresh, and
+     * neither does twice — the input is compared with what was read, and the
+     * phase moves on.
+     */
+    private trackOrder(context: ComponentFramework.Context<IInputs>, dataset: DataSet): void {
+        if ((rawInput(context, 'orderColumn') ?? '').trim().toLowerCase() !== this.orderInput) {
+            this.startOrder(context);
+        }
+
         if (this.order.phase === 'adding' && !dataset.loading) {
             this.addOrder(dataset);
         }

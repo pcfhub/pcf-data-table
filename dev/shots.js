@@ -2,7 +2,8 @@
  * Retake every screenshot in `media/`.
  *
  *     npm run preview          # in one shell, or via the launch config
- *     node dev/shots.js
+ *     node dev/shots.js                       # every one
+ *     node dev/shots.js screenshot-order.png   # just that one
  *
  * **The recipes live here, not in a person's shell history.** `media/README.md`
  * used to be the only record of how each picture was taken, which made a
@@ -100,7 +101,11 @@ function chrome(args) {
 
 let failed = 0;
 
-for (const [name, width, query, why] of SHOTS) {
+// `node dev/shots.js screenshot-order.png` retakes one; no name, all of them.
+const only = process.argv.slice(2);
+const taking = SHOTS.filter(([name]) => only.length === 0 || only.includes(name));
+
+for (const [name, width, query, why] of taking) {
     const url = BASE + '?' + query;
 
     try {
@@ -134,8 +139,8 @@ for (const [name, width, query, why] of SHOTS) {
 console.log('');
 
 if (failed > 0) {
-    console.log('  ' + failed + ' of ' + SHOTS.length + ' failed');
+    console.log('  ' + failed + ' of ' + taking.length + ' failed');
     process.exit(1);
 }
 
-console.log('  ' + SHOTS.length + ' screenshots retaken into media/');
+console.log('  ' + taking.length + ' screenshot(s) retaken into media/');

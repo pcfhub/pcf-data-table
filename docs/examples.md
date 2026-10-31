@@ -194,6 +194,29 @@ Editing and pinning work together, and the pairing is the point on a wide view:
 pin the column that names the row, scroll to the column that needs fixing, and
 the row you are editing is still identified.
 
+## The steps of a plan, in the order someone set
+
+An account's onboarding tasks, a project's milestones, an order's lines: rows
+people want in a sequence of their own rather than by date or by name.
+
+| Property | Value |
+| --- | --- |
+| `orderColumn` | `new_sortorder` |
+| `pageSize` | `50` |
+| `selectionMode` | `none` |
+
+`new_sortorder` is a whole-number column you add to the child table. Leave it
+out of the view if nobody needs to see the numbers; the control fetches it
+anyway. A page size that fits the whole list lets a row move anywhere in it —
+a move stays on its page — and lets **Number them** start a brand-new column
+in one go.
+
+:::callout{type=info}
+**Rows added later appear at the top**, because a row with no number sorts
+first. The toolbar counts them and offers **Number them**, which keeps them at
+the top with numbers of their own; then drag each where it belongs.
+:::
+
 ## An account's opportunities, including its subsidiaries'
 
 A parent company's account form, where "our opportunities" means the

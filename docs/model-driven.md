@@ -219,3 +219,53 @@ here:
 
 The `createdRecordId` output carries the new row's ID for a form script or a
 business rule to react to.
+
+## Rows in your own order
+
+From 0.9.0, **Order column** lets people put the rows in an order they choose
+— the steps of a plan, an account's priorities — and keeps it, for everyone,
+in a column on the table.
+
+1. **Add a whole-number column** to the table the subgrid shows, say
+   *Sort order* (`new_sortorder`). Nothing else about it matters; a decimal
+   or a text column is refused.
+2. **Set Order column** to its logical name.
+3. **Leave the column in the view or take it out.** In the view it is drawn
+   where you put it, which is handy while you check the numbers. Out of it,
+   the control looks the column up and fetches it without drawing it.
+
+The table then sorts by that column, smallest first, **every time it loads**,
+whatever the view sorts by. Each row gets a handle at the start of its first
+cell:
+
+- **Drag the handle** to the place you want, and let go.
+- **From the keyboard**, Tab to the handle, press **Space** to lift the row,
+  **Up** and **Down** to move it, and **Space** to put it down. **Escape**
+  puts it back. A screen reader hears each position.
+
+The new order is saved at once. The rows it passed are renumbered with the
+numbers they already had, so a list numbered 10, 20, 30 stays numbered 10, 20,
+30; only those rows are written. They go through the same save the form uses,
+so no permission is asked for at import.
+
+**Rows with no number come first.** A row added since the list was ordered has
+an empty order column, and Dataverse sorts empty first. While a page holds
+one, its handles are hidden and the toolbar says how many rows have no place
+yet, with a **Number them** button. Numbering gives them the numbers that
+come just before the first numbered row's — 8 and 9 above a 10 — in the order
+they are drawn, so they stay at the top, and you then move them where they
+belong. If there is no room above
+the first row (it is already 1), and the whole list is on the page, the list
+is renumbered 1, 2, 3; on a longer list they take 0, −1 and so on instead.
+
+**Another order hides the handles.** Sort by another column, type in the
+filter row, or group the table, and the rows are no longer in your order, so
+nothing can be moved. A **Back to your order** button puts the sort back and
+empties the filter row. Grouping is your setting, not the user's, so a grouped
+table offers no button.
+
+People need permission to change the order column on the rows they move. Where
+any row on the page refuses, the handles do not appear.
+
+See [Limitations](limitations.md#rows-in-your-own-order) for what a move cannot
+reach.

@@ -1,7 +1,7 @@
 # Data Table
 
 A sortable, filterable table over any Dataverse view, with inline editing,
-pinned columns and a New button.
+pinned columns, a New button and rows in your own order.
 
 > **Reference example · built with AI.** This control was written with AI (Claude) and tested on a live Dataverse form; its code has not been reviewed line by line. It is published as a worked example and is not maintained — read the source and [`SPEC.md`](SPEC.md) (what was measured on the form) before you use it. Fixes are not guaranteed.
 
@@ -117,13 +117,14 @@ not the SDK's. SPEC.md 0.8.0 has the eleven answers.
 | `enableMultiSort` | TwoOptions | input | `false` | Shift-click a heading to add that column to the sort order. Off by default, so a plain click behaves exactly as it did |
 | `exportScope` | Enum | input | `loaded` | Whether **Export CSV** writes the rows already loaded or reads `view` — the whole view — first, at one request per page |
 | `lockColumnWidths` | TwoOptions | input | `false` | Stop users resizing columns. Unlocked, a user drags a header's edge (or uses the arrow keys on it) and the width is remembered in their browser, per table and view |
+| `orderColumn` | SingleLine.Text | input | *(unset)* | The logical name of a whole-number column that holds the rows' order. Set, the table sorts by it on every load and each row gets a handle to drag, or to move with Space and the arrow keys; a move renumbers only the rows it passes. Unset renders exactly as 0.8.x |
 | `editedRecordId` | SingleLine.Text | output | — | The row most recently saved by an inline edit |
 | `createdRecordId` | SingleLine.Text | output | — | The row most recently created through the New button |
 | `selectedRecordIds` | Multiple | output | — | Selected row IDs, one per line |
 | `openedRecordId` | SingleLine.Text | output | — | The row most recently opened |
 
 Strings ship in five languages — English (1033), German (1031), French (1036),
-Japanese (1041) and Spanish (3082) — all carrying the same 134 keys. The four
+Japanese (1041) and Spanish (3082) — all carrying the same 155 keys. The four
 translations are machine-generated and have not been read by a native speaker;
 `npm run check` proves every key and every `{0}` placeholder is present in each,
 and proves nothing about the wording. Corrections are welcome as a patch.

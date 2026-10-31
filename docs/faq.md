@@ -141,6 +141,29 @@ own filter pane does. A record stamped 04:30 UTC on 2 March is 11:30 PM on
 Expected. `openDatasetItem()` needs a model-driven form. Wire your navigation to
 the `openedRecordId` output instead — it updates on every row click.
 
+## Can people drag rows into their own order?
+
+Yes, since 0.9.0. Add a whole-number column to the table, set **Order column**
+to its logical name, and every row gets a handle: drag it, or Tab to it and
+press Space, the arrow keys and Space. The order is saved in that column for
+everyone. [Model-driven apps](model-driven.md#rows-in-your-own-order) has the
+steps.
+
+## Why are the handles missing?
+
+Something has put the table in another order: a sort on another column, the
+filter row, or grouping. **Back to your order** brings them back. They are also
+hidden while rows on the page have no number yet — **Number them** gives them
+one — and for a user who may not change the order column.
+
+## Why did some rows get 0 or a negative number?
+
+They had no number, and the first numbered row was already 1, on a list longer
+than one page. Numbering keeps them above that row without touching rows on
+other pages, so it counts down. Show the whole list on one page and number
+them again to get 1, 2, 3 — or move them, which reuses their neighbours'
+numbers.
+
 ## How do I show the child accounts' rows in an account's subgrid too?
 
 Turn off *Show related records* on the subgrid and set **Related through** to a

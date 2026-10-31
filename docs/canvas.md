@@ -30,6 +30,12 @@ model-driven app gets are not offered:
   the method exists. Until 0.6.16 this page claimed the method was absent, and
   the button was drawn here.
 
+**Order column is untried here.** A move saves through the record's own
+`setValue` and `save`, which inline editing already uses in a canvas app, and
+sorts through `dataset.sorting` — but no row has been moved in a canvas app
+yet. The order column has to be among the fields chosen on `Items`: canvas has
+no table definitions for the control to look a missing one up in.
+
 **Leave `Page size` blank, or set a real number.** Canvas shows an unset whole
 number as `0`, and `0` means "use whatever the data source is already paging
 with" — not "one row". Any number from 1 to 250 overrides it.
