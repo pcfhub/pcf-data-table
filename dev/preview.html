@@ -161,6 +161,34 @@
         }
 
         /*
+          `?order=1` (0.9.0): rows in your own order. The fixtures carry no
+          whole-number column, so one is added — numbered ten apart and not in
+          the names' order, so a move is visible — and *Order column* names
+          it. `?order=gaps` leaves two rows without a value, which is what
+          numbering is for.
+        */
+        var orderParam = params.get('order');
+
+        if (orderParam) {
+            var spaced = [30, 10, 20, 50, 40, 70, 60, 90, 80, 110, 100, 120];
+
+            fixture = Object.assign({}, fixture, {
+                columns: (fixture.columns || []).concat([{
+                    name: 'sortorder', displayName: 'Order', dataType: 'Whole.None', alias: 'sortorder', order: 99, visualSizeFactor: 70,
+                }]),
+                records: (fixture.records || []).map(function (record, index) {
+                    var value = spaced[index % spaced.length] + 120 * Math.floor(index / spaced.length);
+
+                    if (orderParam === 'gaps' && (index === 3 || index === 6)) {
+                        value = null;
+                    }
+
+                    return Object.assign({}, record, { values: Object.assign({}, record.values, { sortorder: value }) });
+                }),
+            });
+        }
+
+        /*
           A column the fixture marks `isReadOnly` must answer `isEditable`
           false here too, or this rig is more permissive than both the hub's
           demo harness and a real form — and a screenshot taken from it would
@@ -224,6 +252,8 @@
                 exportScope: params.get('exportScope') || 'loaded',
                 // 0.7.0. Unlocked unless asked, as a fresh install is.
                 lockColumnWidths: params.get('lock') === '1',
+                // 0.9.0. Unset unless `?order=`.
+                orderColumn: orderParam ? 'sortorder' : null,
             },
             // A form subgrid's parent, so New seeds the relationship the way
             // the measured form did. The rig only logs it.
@@ -425,6 +455,34 @@
                 if (trigger) {
                     trigger.click();
                 }
+            }
+
+            /*
+              `?lift=1&down=2` (0.9.0): the second row's handle lifted from
+              the keyboard and moved two places — a move caught half-way,
+              for the picture. Delayed, because the handles appear only once
+              every row has answered `isEditable`.
+            */
+            var lift = params.get('lift');
+
+            if (lift !== null) {
+                window.setTimeout(function () {
+                    var grip = document.querySelectorAll('.DataTable-grip')[Number(lift)];
+                    var press = function (key) {
+                        document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: key, bubbles: true }));
+                    };
+
+                    if (!grip) {
+                        return;
+                    }
+
+                    grip.focus();
+                    press(' ');
+
+                    for (var step = 0; step < Number(params.get('down') || 0); step += 1) {
+                        window.setTimeout(function () { press('ArrowDown'); }, 100 * (step + 1));
+                    }
+                }, 300);
             }
 
             /*

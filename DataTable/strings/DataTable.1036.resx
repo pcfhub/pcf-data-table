@@ -490,4 +490,67 @@
   <data name="DataTable_RelatedMissingTable" xml:space="preserve">
     <value>Les lignes associées n’ont pas pu être lues : la table {0} n’existe pas.</value>
   </data>
+  <data name="OrderColumn_Name" xml:space="preserve">
+    <value>Colonne d’ordre</value>
+  </data>
+  <data name="OrderColumn_Desc" xml:space="preserve">
+    <value>Nom logique d’une colonne de nombres entiers qui contient l’ordre des lignes. Si elle est définie, le tableau est trié selon elle et chaque ligne reçoit une poignée à faire glisser, ou à déplacer avec Espace et les flèches. Laissez vide pour aucun ordre.</value>
+  </data>
+  <data name="DataTable_OrderMove" xml:space="preserve">
+    <value>Déplacer {0}</value>
+  </data>
+  <data name="DataTable_OrderHelp" xml:space="preserve">
+    <value>Pour déplacer une ligne, appuyez sur Espace sur sa poignée, utilisez les flèches haut et bas, puis appuyez de nouveau sur Espace. Échap annule.</value>
+  </data>
+  <data name="DataTable_OrderLifted" xml:space="preserve">
+    <value>Ligne {0} soulevée, position {1} sur {2}.</value>
+  </data>
+  <data name="DataTable_OrderAt" xml:space="preserve">
+    <value>{0}, position {1} sur {2}.</value>
+  </data>
+  <data name="DataTable_OrderTop" xml:space="preserve">
+    <value>Première ligne de cette page.</value>
+  </data>
+  <data name="DataTable_OrderBottom" xml:space="preserve">
+    <value>Dernière ligne de cette page.</value>
+  </data>
+  <data name="DataTable_OrderDropped" xml:space="preserve">
+    <value>Ligne {0} déplacée en position {1} sur {2}.</value>
+  </data>
+  <data name="DataTable_OrderCancelled" xml:space="preserve">
+    <value>Déplacement annulé. La ligne {0} est revenue en position {1}.</value>
+  </data>
+  <data name="DataTable_OrderSaving" xml:space="preserve">
+    <value>Enregistrement du nouvel ordre…</value>
+  </data>
+  <data name="DataTable_OrderSaved" xml:space="preserve">
+    <value>Le nouvel ordre est enregistré.</value>
+  </data>
+  <data name="DataTable_OrderOutOfOrder" xml:space="preserve">
+    <value>Les lignes ne peuvent être déplacées que dans votre ordre.</value>
+  </data>
+  <data name="DataTable_OrderBack" xml:space="preserve">
+    <value>Revenir à votre ordre</value>
+  </data>
+  <data name="DataTable_OrderUnnumberedCount" xml:space="preserve">
+    <value>Lignes sans place dans votre ordre : {0}.</value>
+  </data>
+  <data name="DataTable_OrderNumber" xml:space="preserve">
+    <value>Les numéroter</value>
+  </data>
+  <data name="DataTable_OrderNumbering" xml:space="preserve">
+    <value>Numérotation des lignes…</value>
+  </data>
+  <data name="DataTable_OrderUnnumbered" xml:space="preserve">
+    <value>Certaines lignes de cette page n’ont pas encore de place dans votre ordre. Numérotez-les d’abord.</value>
+  </data>
+  <data name="DataTable_OrderNumberMore" xml:space="preserve">
+    <value>Les lignes sans place dans votre ordre continuent au-delà de cette page. Affichez plus de lignes par page pour les numéroter toutes en une fois.</value>
+  </data>
+  <data name="DataTable_OrderNoRoom" xml:space="preserve">
+    <value>Cette ligne ne peut pas aller là sans modifier des lignes d’autres pages. Affichez plus de lignes par page et réessayez.</value>
+  </data>
+  <data name="DataTable_OrderFailed" xml:space="preserve">
+    <value>Le nouvel ordre n’a pas pu être enregistré ; les lignes sont revenues à leur place.</value>
+  </data>
 </root>

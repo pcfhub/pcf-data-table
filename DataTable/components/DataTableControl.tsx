@@ -39,9 +39,29 @@ import {
     writeOverrides,
 } from '../layout/widths';
 import { fitInside } from '../layout/fit';
+import { OrderView, useRowOrder } from './useRowOrder';
+
+export type { OrderView } from './useRowOrder';
 
 /** A pencil, on the same 20×20 grid as the chevrons. */
 const PENCIL_GLYPH = 'M4 16v-3l8-8 3 3-8 8H4zM12.5 4.5l3 3';
+
+/** Ids for each table's order instructions, which every handle points at. */
+let orderHelpIds = 0;
+
+/** Six dots, the handle a row is dragged by — on the pencil's 20×20 grid. */
+function GripGlyph(): React.ReactElement {
+    return (
+        <svg width="16" height="16" viewBox="0 0 20 20" aria-hidden="true" focusable="false">
+            {[5, 10, 15].map((y) => (
+                <React.Fragment key={y}>
+                    <circle cx="7.5" cy={y} r="1.5" fill="currentColor" />
+                    <circle cx="12.5" cy={y} r="1.5" fill="currentColor" />
+                </React.Fragment>
+            ))}
+        </svg>
+    );
+}
 
 /**
  * The edit affordance.
@@ -982,6 +1002,21 @@ export interface IProps {
      * form was dismissed; rejects when the platform refused to open it.
      */
     onCreate: () => Promise<string | null>;
+    /**
+     * Rows in your own order, since 0.9.0 — `null` when *Order column* is
+     * unset or names a column that cannot hold one, which draws 0.8.x.
+     */
+    order: OrderView | null;
+    /**
+     * Move the row drawn at `from` to `to`, on this page. Resolves once the
+     * writes are saved; the re-read follows. Rejects with the sentence to show,
+     * the rows already put back.
+     */
+    onMoveRow: (from: number, to: number) => Promise<void>;
+    /** Give the rows on this page with no order value one. Rejects with the sentence to show. */
+    onNumberRows: () => Promise<void>;
+    /** The order column's sort again, and the filter row emptied. */
+    onBackToOrder: () => void;
 }
 
 /**
@@ -1594,7 +1629,7 @@ export function DataTableControl(props: IProps): React.ReactElement | null {
      * moment one opened.
      */
     const memberRows = () => {
-                            return pageIds.map((id) => {
+                            return (grouped ? pageIds : ordering.rows).map((id) => {
                             const record = dataset.records[id];
 
                             if (!record) {
@@ -1607,7 +1642,14 @@ export function DataTableControl(props: IProps): React.ReactElement | null {
                             return (
                                 <tr
                                     key={id}
-                                    className={isSelected ? 'is-selected' : undefined}
+                                    ref={ordering.handles ? ordering.rowRef(id) : undefined}
+                                    className={[
+                                        isSelected ? 'is-selected' : '',
+                                        ordering.liftedId === id ? 'is-lifted' : '',
+                                        ordering.dropTarget?.id === id
+                                            ? (ordering.dropTarget.edge === 'above' ? 'is-dropAbove' : 'is-dropBelow')
+                                            : '',
+                                    ].filter(Boolean).join(' ') || undefined}
                                     aria-selected={selectable ? isSelected : undefined}
                                     onClick={
                                         props.openOnRowClick
@@ -1719,6 +1761,26 @@ export function DataTableControl(props: IProps): React.ReactElement | null {
                                                         .join(' ') || undefined
                                                 }
                                             >
+                                                {/*
+                                                  The handle a row moves by, since
+                                                  0.9.0: in the first cell rather
+                                                  than a column of its own, so the
+                                                  widths, the pinning and the
+                                                  minimum width are 0.8.x's to the
+                                                  pixel. A button, so a keyboard
+                                                  reaches it; Space lifts it.
+                                                */}
+                                                {index === 0 && ordering.handles && !isEditingCell && (
+                                                    <button
+                                                        type="button"
+                                                        className="DataTable-grip"
+                                                        aria-label={getString('DataTable_OrderMove').replace('{0}', rowName)}
+                                                        aria-describedby={helpId}
+                                                        {...ordering.handleProps(id)}
+                                                    >
+                                                        <GripGlyph />
+                                                    </button>
+                                                )}
                                                 {isEditingCell && kind === 'lookup' ? (
                                                     <LookupEditor
                                                         current={editorValue(
@@ -1972,6 +2034,23 @@ export function DataTableControl(props: IProps): React.ReactElement | null {
     // Before every early return: hooks cannot be conditional.
     const edit = useEditing(props);
     const choiceOptions = useChoiceOptions(props);
+    // Rows in your own order, since 0.9.0. Inert unless `order` is set.
+    const ordering = useRowOrder({
+        order: grouped ? null : props.order,
+        pageIds,
+        disabled: props.disabled,
+        canEdit: props.canEdit,
+        getString,
+        nameOf: (id: string): string => {
+            const named = primaryColumn(columns);
+            const record = dataset.records[id];
+
+            return named && record ? record.getFormattedValue(named.name) : id;
+        },
+        onMoveRow: props.onMoveRow,
+        onNumberRows: props.onNumberRows,
+    });
+    const helpId = React.useRef(`DataTable-orderHelp-${(orderHelpIds += 1)}`).current;
     // Whether the lookup dialog is up. One flag rather than one per cell:
     // the dialog is modal, so at most one cell is choosing at a time.
     const [picking, setPicking] = React.useState(false);
@@ -3019,6 +3098,68 @@ export function DataTableControl(props: IProps): React.ReactElement | null {
                   button. A single column goes back with a double-click or
                   Home on its handle.
                 */}
+                {/*
+                  Rows in your own order (0.9.0). Sorted or filtered some other
+                  way, the handles are gone and one button brings them back.
+                  Grouped, nothing is offered: grouping is the maker's, and no
+                  button here can take it away.
+                */}
+                {props.order && (props.order.outOfOrder === 'sort' || props.order.outOfOrder === 'filter') && (
+                    <span className="DataTable-orderNote">
+                        {/*
+                          Said beside the button rather than as its tooltip: a
+                          title that differs from the label became the button's
+                          accessible name in the preview's tree.
+                        */}
+                        {getString('DataTable_OrderOutOfOrder')}
+                        <button
+                            type="button"
+                            className="DataTable-backToOrder"
+                            disabled={props.disabled}
+                            onClick={(): void => {
+                                ordering.focusOnReturn();
+                                props.onBackToOrder();
+                            }}
+                        >
+                            {getString('DataTable_OrderBack')}
+                        </button>
+                    </span>
+                )}
+
+                {/*
+                  Rows with no value sort first (R1), so none can be moved
+                  past until they have one. aria-disabled while busy, not
+                  `disabled`: it is the button just pressed.
+                */}
+                {props.order
+                    && props.order.outOfOrder === null
+                    && props.order.unnumbered > 0
+                    && props.order.writable
+                    && !props.disabled && (
+                    <span className="DataTable-orderNote">
+                        {getString('DataTable_OrderUnnumberedCount').replace('{0}', String(props.order.unnumbered))}
+                        <button
+                            type="button"
+                            className="DataTable-number"
+                            aria-disabled={ordering.busy !== null || undefined}
+                            onClick={ordering.number}
+                        >
+                            {getString('DataTable_OrderNumber')}
+                        </button>
+                    </span>
+                )}
+
+                {ordering.busy !== null && (
+                    <span className="DataTable-orderStatus">
+                        {getString(ordering.busy === 'numbering' ? 'DataTable_OrderNumbering' : 'DataTable_OrderSaving')}
+                    </span>
+                )}
+
+                {/* Said through the live region below as well; no role here, or it is said twice. */}
+                {ordering.busy === null && ordering.message !== '' && (
+                    <span className="DataTable-orderError">{ordering.message}</span>
+                )}
+
                 {props.resizable && resized && (
                     <button
                         type="button"
@@ -3037,6 +3178,10 @@ export function DataTableControl(props: IProps): React.ReactElement | null {
             )}
 
             <span className="DataTable-visuallyHidden" role="status">{widthNote}</span>
+            <span className="DataTable-visuallyHidden" role="status">{ordering.announce}</span>
+            {ordering.handles && (
+                <span id={helpId} className="DataTable-visuallyHidden">{getString('DataTable_OrderHelp')}</span>
+            )}
         </>,
     );
 }

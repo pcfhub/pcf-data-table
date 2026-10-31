@@ -7,7 +7,7 @@
   -->
   <control namespace="PCFHub"
            constructor="DataTable"
-           version="0.8.3"
+           version="0.8.4"
            display-name-key="DataTable_Name"
            description-key="DataTable_Desc"
            control-type="virtual">
@@ -466,6 +466,29 @@
               usage="input"
               required="false"
               default-value="false" />
+
+    <!--
+      Since 0.9.0: rows in your own order. The logical name of a whole-number
+      column on the table; unset, the control is exactly 0.8.x.
+
+      The table sorts by it on every load (a reload forgets a sort the control
+      applied, SPEC.md 0.9.0 R1), and each row gets a handle: drag it, or focus
+      it and press Space, the arrow keys and Space. A move renumbers the rows
+      it passes, reusing their values, through record.setValue/save - no
+      feature is declared for it. Sorted by anything else, filtered or
+      grouped, the handles hide and "Back to your order" restores the sort.
+
+      Text and not a property-set role: a role is a bound column and this
+      control draws bound columns, the argument groupBy makes above. The view
+      can leave the column out - it is looked up, then added with addColumn
+      and not drawn (R2).
+    -->
+    <property name="orderColumn"
+              display-name-key="OrderColumn_Name"
+              description-key="OrderColumn_Desc"
+              of-type="SingleLine.Text"
+              usage="input"
+              required="false" />
 
     <!--
       Two outputs rather than one. "Which rows are ticked" and "which row was

@@ -60,6 +60,8 @@ const SHOTS = [
         'a phone-width subgrid: sideways scroll, wrapped pager'],
     ['screenshot-lookup.png', 1280, 'lookups=1&edit=1&open=primarycontactid',
         'the lookup editor open: name, Choose…, Clear'],
+    ['screenshot-order.png', 1100, 'fixture=demo&order=1&lift=1&down=2',
+        '0.9.0: rows in your own order — a handle on every row, one lifted from the keyboard and moved two places'],
 ];
 
 if (!CHROME) {

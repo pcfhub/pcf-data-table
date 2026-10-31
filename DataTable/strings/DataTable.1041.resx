@@ -490,4 +490,67 @@
   <data name="DataTable_RelatedMissingTable" xml:space="preserve">
     <value>関連する行を読み取れませんでした: テーブル {0} がありません。</value>
   </data>
+  <data name="OrderColumn_Name" xml:space="preserve">
+    <value>並び順の列</value>
+  </data>
+  <data name="OrderColumn_Desc" xml:space="preserve">
+    <value>行の並び順を保持する整数列の論理名。設定すると、表はその列で並べ替えられ、各行にドラッグ用のハンドルが表示されます。ハンドルにフォーカスを置き、Space キーと方向キーで移動することもできます。並び順を使わない場合は空のままにします。</value>
+  </data>
+  <data name="DataTable_OrderMove" xml:space="preserve">
+    <value>{0} を移動</value>
+  </data>
+  <data name="DataTable_OrderHelp" xml:space="preserve">
+    <value>行を移動するには、ハンドルで Space キーを押し、上下の方向キーで動かしてから、もう一度 Space キーを押します。Esc キーで取り消します。</value>
+  </data>
+  <data name="DataTable_OrderLifted" xml:space="preserve">
+    <value>{0} を持ち上げました。{2} 件中 {1} 番目。</value>
+  </data>
+  <data name="DataTable_OrderAt" xml:space="preserve">
+    <value>{0}、{2} 件中 {1} 番目。</value>
+  </data>
+  <data name="DataTable_OrderTop" xml:space="preserve">
+    <value>このページの最初の行です。</value>
+  </data>
+  <data name="DataTable_OrderBottom" xml:space="preserve">
+    <value>このページの最後の行です。</value>
+  </data>
+  <data name="DataTable_OrderDropped" xml:space="preserve">
+    <value>{0} を {2} 件中 {1} 番目に移動しました。</value>
+  </data>
+  <data name="DataTable_OrderCancelled" xml:space="preserve">
+    <value>移動を取り消しました。{0} は {1} 番目に戻りました。</value>
+  </data>
+  <data name="DataTable_OrderSaving" xml:space="preserve">
+    <value>新しい並び順を保存しています…</value>
+  </data>
+  <data name="DataTable_OrderSaved" xml:space="preserve">
+    <value>新しい並び順を保存しました。</value>
+  </data>
+  <data name="DataTable_OrderOutOfOrder" xml:space="preserve">
+    <value>行を移動できるのは、指定した並び順で表示しているときだけです。</value>
+  </data>
+  <data name="DataTable_OrderBack" xml:space="preserve">
+    <value>指定した並び順に戻す</value>
+  </data>
+  <data name="DataTable_OrderUnnumberedCount" xml:space="preserve">
+    <value>並び順がまだない行: {0}。</value>
+  </data>
+  <data name="DataTable_OrderNumber" xml:space="preserve">
+    <value>番号を付ける</value>
+  </data>
+  <data name="DataTable_OrderNumbering" xml:space="preserve">
+    <value>行に番号を付けています…</value>
+  </data>
+  <data name="DataTable_OrderUnnumbered" xml:space="preserve">
+    <value>このページには、まだ並び順のない行があります。先に番号を付けてください。</value>
+  </data>
+  <data name="DataTable_OrderNumberMore" xml:space="preserve">
+    <value>並び順のない行が次のページにも続いています。1 ページあたりの行数を増やすと、まとめて番号を付けられます。</value>
+  </data>
+  <data name="DataTable_OrderNoRoom" xml:space="preserve">
+    <value>ほかのページの行を変更せずに、この行をそこへ移動することはできません。1 ページあたりの行数を増やしてから、もう一度お試しください。</value>
+  </data>
+  <data name="DataTable_OrderFailed" xml:space="preserve">
+    <value>新しい並び順を保存できなかったため、行を元の位置に戻しました。</value>
+  </data>
 </root>

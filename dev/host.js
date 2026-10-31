@@ -196,6 +196,25 @@
         DataTable_NotANumber: "That is not a number, so nothing was saved.",
         DataTable_OfPages: "of {0}",
         DataTable_OpenRecord: "Open {0}",
+        DataTable_OrderAt: "{0}, position {1} of {2}.",
+        DataTable_OrderBack: "Back to your order",
+        DataTable_OrderBottom: "Last row on this page.",
+        DataTable_OrderCancelled: "Move cancelled. {0} is back at position {1}.",
+        DataTable_OrderDropped: "{0} moved to position {1} of {2}.",
+        DataTable_OrderFailed: "The new order couldn’t be saved, so the rows are back where they were.",
+        DataTable_OrderHelp: "To move a row, press Space on its handle, use the up and down arrow keys, then press Space again. Escape cancels.",
+        DataTable_OrderLifted: "{0} lifted, position {1} of {2}.",
+        DataTable_OrderMove: "Move {0}",
+        DataTable_OrderNoRoom: "This row can’t move there without changing rows on other pages. Show more rows per page and try again.",
+        DataTable_OrderNumber: "Number them",
+        DataTable_OrderNumberMore: "The rows with no place in your order continue past this page. Show more rows per page to number them all at once.",
+        DataTable_OrderNumbering: "Numbering rows…",
+        DataTable_OrderOutOfOrder: "Rows can be moved only in your order.",
+        DataTable_OrderSaved: "The new order is saved.",
+        DataTable_OrderSaving: "Saving the new order…",
+        DataTable_OrderTop: "First row on this page.",
+        DataTable_OrderUnnumbered: "Some rows on this page have no place in your order yet. Number them first.",
+        DataTable_OrderUnnumberedCount: "Rows with no place in your order yet: {0}.",
         DataTable_PageStatus: "Page {0}",
         DataTable_Previous: "Previous page",
         DataTable_RangeStatus: "{0}–{1} of {2}",
@@ -625,6 +644,36 @@ var DEFAULTS = {
             saveRejects: false,
 
             /**
+             * A save the server refuses by its value: `function (name, value)`
+             * answering `true` for the writes to refuse. SPEC.md 0.9.0, R5: a
+             * whole number over 2,147,483,647 was refused in 130 ms — and **the
+             * refused value stayed on the record**, through a `refresh()` too
+             * and with `isDirty()` saying `false`, until a later save of the
+             * same column went through and the page was read again.
+             * `saveRejects` refuses everything and drops what was staged, which
+             * is the generous half of this.
+             */
+            refuses: null,
+
+            /**
+             * `refresh()` from a page past the first lands on page 1 — SPEC.md
+             * 0.9.0, R6: `firstPageNumber` 2 → 1, with or without writes —
+             * while `loadExactPage` re-reads in place. On, because the
+             * platform does it; until 0.9.0 this rig kept the page, and an
+             * edit on page 2 passed here while a form showed page 1's rows.
+             */
+            refreshLandsOnPageOne: true,
+
+            /**
+             * A column outside the view reads `null` whatever the row holds
+             * (R2: 3.5 on the server, `null` in the dataset) until `addColumn`
+             * and a fetch bring it in — and then it is in `dataset.columns`
+             * with `order: -1` and `isHidden: false`, where a control drawing
+             * every column would draw it.
+             */
+            outsideViewReadsNull: true,
+
+            /**
              * Columns `isEditable` answers `false` for.
              *
              * Not hypothetical: on the measured subgrid `statuscode` came back
@@ -811,6 +860,14 @@ var DEFAULTS = {
 
         var allRecords = o.records || fixture.records;
         var columns = o.columns || fixture.columns;
+        // Asked for with `addColumn`, brought in by the next fetch (R2).
+        var adding = [];
+
+        function inView(name) {
+            return columns.some(function (column) {
+                return column.name === name;
+            });
+        }
 
         /*
          * Linking, per host, from `dev/linked.js`: model-driven only. A
@@ -897,6 +954,23 @@ var DEFAULTS = {
          * rather than once, so `relationshipsStatus` is the quirk of the host
          * under test; each wrapper answers only its own prefix.
          */
+        /** A column's `dataType` as the table definitions name its `AttributeType`. */
+        function attributeTypeOf(dataType) {
+            var kind = String(dataType || '');
+
+            if (kind.indexOf('Whole.') === 0) {
+                return 'Integer';
+            }
+            if (kind.indexOf('DateAndTime') === 0) {
+                return 'DateTime';
+            }
+            if (kind.indexOf('Lookup') === 0) {
+                return 'Lookup';
+            }
+
+            return { Decimal: 'Decimal', FP: 'Double', Currency: 'Money', OptionSet: 'Picklist', TwoOptions: 'Boolean' }[kind] || 'String';
+        }
+
         (function installFetch() {
             var scope = typeof globalThis !== 'undefined' ? globalThis : root;
             var previous = scope.fetch;
@@ -958,9 +1032,17 @@ var DEFAULTS = {
                         return answer(404, { error: { code: '0x80060888', message: "Entity With Id = LogicalName='" + table + "' does not exist." } });
                     }
 
+                    // A column the view leaves out that the table has: what
+                    // Data Table 0.9.0 looks up before `addColumn` (R2).
+                    var addable = table === fixture.targetEntityType ? (o.addable || {})[column] : undefined;
+
+                    if (addable) {
+                        return answer(200, { LogicalName: column, AttributeType: attributeTypeOf(addable) });
+                    }
+
                     return tables && !tables.knows(table, column)
                         ? answer(404, { error: { code: '0x80060888', message: "Navigation property Attributes With Id = LogicalName='" + column + "' does not exist on Metadata Entity with ID = LogicalName='" + table + "'" } })
-                        : answer(200, { LogicalName: column });
+                        : answer(200, { LogicalName: column, AttributeType: attributeTypeOf(types[column] || '') });
                 }
 
                 var status = quirks.relationshipsStatus;
@@ -1016,6 +1098,7 @@ var DEFAULTS = {
         groupSort: 'Enum',
         parentLookup: 'SingleLine.Text',
         lockColumnWidths: 'TwoOptions',
+        orderColumn: 'SingleLine.Text',
         relatedThrough: 'SingleLine.Text',
     };
 
@@ -1345,9 +1428,21 @@ var DEFAULTS = {
             return rows.sort(function (a, b) {
                 for (var i = 0; i < order.length; i += 1) {
                     var by = order[i];
-                    var left = formatted(a.values[by.name]);
-                    var right = formatted(b.values[by.name]);
-                    var compared = left.localeCompare(right);
+                    var raw = [a.values[by.name], b.values[by.name]];
+                    var left = formatted(raw[0]);
+                    var right = formatted(raw[1]);
+                    /*
+                     * **A number column sorts as numbers.** Until 0.9.0 every
+                     * column compared its text, so 10, 100, 20 was an order
+                     * here — and Data Table's order column, which is nothing
+                     * but a whole number, came back in it. A Choice stays on
+                     * its label, which is what the platform sorts it by. An
+                     * empty value is `''` and sorts first ascending, last
+                     * descending, as SPEC.md 0.9.0 R1 measured.
+                     */
+                    var numeric = /^(Whole\.|Decimal|FP|Currency)/.test(types[by.name] || '')
+                        && typeof raw[0] === 'number' && typeof raw[1] === 'number';
+                    var compared = numeric ? raw[0] - raw[1] : left.localeCompare(right);
 
                     if (compared !== 0) {
                         return by.sortDirection === DESCENDING ? -compared : compared;
@@ -1705,6 +1800,15 @@ var DEFAULTS = {
                  * would let one that does not pass.
                  */
                 getValue: function (name) {
+                    // A refused value, held until a later save and re-read (R5).
+                    if (row.stuck && Object.prototype.hasOwnProperty.call(row.stuck, name)) {
+                        return row.stuck[name];
+                    }
+
+                    if (quirks.outsideViewReadsNull && !inView(name)) {
+                        return null;
+                    }
+
                     var value = row.values[name];
 
                     if (value !== null && value !== undefined && typeof value === 'number' && (types[name] || '') === 'OptionSet') {
@@ -1714,6 +1818,14 @@ var DEFAULTS = {
                     return value;
                 },
                 getFormattedValue: function (name) {
+                    if (row.stuck && Object.prototype.hasOwnProperty.call(row.stuck, name)) {
+                        return display(row.stuck[name], name);
+                    }
+
+                    if (quirks.outsideViewReadsNull && !inView(name)) {
+                        return null;
+                    }
+
                     return display(row.values[name], name);
                 },
                 getNamedReference: function () {
@@ -1787,6 +1899,32 @@ var DEFAULTS = {
                     row.staged = {};
 
                     return Promise.reject(new Error('The platform refused this write.'));
+                }
+
+                var refused = typeof quirks.refuses === 'function'
+                    ? Object.keys(row.staged).filter(function (name) {
+                        return quirks.refuses(name, row.staged[name]);
+                    })
+                    : [];
+
+                if (refused.length > 0) {
+                    // Kept on the record, as the platform keeps it (R5).
+                    row.stuck = row.stuck || {};
+                    refused.forEach(function (name) {
+                        row.stuck[name] = row.staged[name];
+                    });
+                    row.staged = {};
+
+                    // The shape measured: a UciError whose message is an OData
+                    // stack trace, with no displayMessage to fall back on.
+                    var error = new Error("Error identified in Payload provided by the user for Entity :'' ---->  InnerException : Microsoft.OData.ODataException: Cannot convert the literal");
+
+                    error.name = 'UciError';
+                    error.errorCode = 2147781913;
+                    error.httpStatusCode = 400;
+                    error.displayMessage = null;
+
+                    return Promise.reject(error);
                 }
 
                 /*
@@ -2085,7 +2223,13 @@ var DEFAULTS = {
 
             refresh: function () {
                 log('refresh');
-                fetched();
+                fetched(function () {
+                    // From page 2 a refresh lands on page 1 (R6).
+                    if (quirks.refreshLandsOnPageOne && state.page > 1) {
+                        state.page = 1;
+                        state.exact = false;
+                    }
+                });
             },
 
             openDatasetItem: function (reference) {
@@ -2104,8 +2248,17 @@ var DEFAULTS = {
                 log('clearSelectedRecordIds');
             },
 
+            /**
+             * Brings a column the view leaves out into `dataset.columns` at
+             * the next fetch, with `order: -1` and `isHidden: false` (R2). The
+             * type is the fixture's own for that name when it has one.
+             */
             addColumn: function (name) {
                 log('addColumn', name);
+
+                if (!inView(name) && adding.indexOf(name) === -1) {
+                    adding.push(name);
+                }
             },
         };
 
@@ -2150,6 +2303,22 @@ var DEFAULTS = {
 
                     linkError = why;
                 }
+
+                adding.forEach(function (name) {
+                    var known = (o.addable || {})[name] || 'Whole.None';
+
+                    columns = columns.concat([{
+                        name: name,
+                        displayName: name,
+                        dataType: known,
+                        alias: name,
+                        order: -1,
+                        visualSizeFactor: -1,
+                        isHidden: false,
+                    }]);
+                    types[name] = known;
+                });
+                adding = [];
 
                 // The request becomes the result set here, and nowhere earlier.
                 filter = requestedFilter;
@@ -2852,6 +3021,11 @@ var DEFAULTS = {
 
                     Object.keys(row.committed).forEach(function (name) {
                         row.values[name] = row.committed[name];
+
+                        // A later save of a refused column, read again, clears it (R5).
+                        if (row.stuck) {
+                            delete row.stuck[name];
+                        }
                     });
                     row.committed = null;
                 });

@@ -490,4 +490,67 @@
   <data name="DataTable_RelatedMissingTable" xml:space="preserve">
     <value>Die verknüpften Zeilen konnten nicht gelesen werden: Es gibt keine Tabelle {0}.</value>
   </data>
+  <data name="OrderColumn_Name" xml:space="preserve">
+    <value>Reihenfolgespalte</value>
+  </data>
+  <data name="OrderColumn_Desc" xml:space="preserve">
+    <value>Logischer Name einer Ganzzahlspalte, die die Reihenfolge der Zeilen enthält. Ist sie gesetzt, sortiert die Tabelle danach, und jede Zeile erhält einen Griff zum Ziehen oder zum Verschieben mit der Leertaste und den Pfeiltasten. Leer lassen für keine Reihenfolge.</value>
+  </data>
+  <data name="DataTable_OrderMove" xml:space="preserve">
+    <value>{0} verschieben</value>
+  </data>
+  <data name="DataTable_OrderHelp" xml:space="preserve">
+    <value>Um eine Zeile zu verschieben, drücken Sie auf ihrem Griff die Leertaste, verwenden Sie die Pfeiltasten nach oben und unten und drücken Sie dann erneut die Leertaste. Escape bricht ab.</value>
+  </data>
+  <data name="DataTable_OrderLifted" xml:space="preserve">
+    <value>Zeile {0} angehoben, Position {1} von {2}.</value>
+  </data>
+  <data name="DataTable_OrderAt" xml:space="preserve">
+    <value>{0}, Position {1} von {2}.</value>
+  </data>
+  <data name="DataTable_OrderTop" xml:space="preserve">
+    <value>Erste Zeile auf dieser Seite.</value>
+  </data>
+  <data name="DataTable_OrderBottom" xml:space="preserve">
+    <value>Letzte Zeile auf dieser Seite.</value>
+  </data>
+  <data name="DataTable_OrderDropped" xml:space="preserve">
+    <value>Zeile {0} an Position {1} von {2} verschoben.</value>
+  </data>
+  <data name="DataTable_OrderCancelled" xml:space="preserve">
+    <value>Verschieben abgebrochen. Zeile {0} ist wieder an Position {1}.</value>
+  </data>
+  <data name="DataTable_OrderSaving" xml:space="preserve">
+    <value>Neue Reihenfolge wird gespeichert…</value>
+  </data>
+  <data name="DataTable_OrderSaved" xml:space="preserve">
+    <value>Die neue Reihenfolge ist gespeichert.</value>
+  </data>
+  <data name="DataTable_OrderOutOfOrder" xml:space="preserve">
+    <value>Zeilen lassen sich nur in Ihrer Reihenfolge verschieben.</value>
+  </data>
+  <data name="DataTable_OrderBack" xml:space="preserve">
+    <value>Zurück zu Ihrer Reihenfolge</value>
+  </data>
+  <data name="DataTable_OrderUnnumberedCount" xml:space="preserve">
+    <value>Zeilen ohne Platz in Ihrer Reihenfolge: {0}.</value>
+  </data>
+  <data name="DataTable_OrderNumber" xml:space="preserve">
+    <value>Nummerieren</value>
+  </data>
+  <data name="DataTable_OrderNumbering" xml:space="preserve">
+    <value>Zeilen werden nummeriert…</value>
+  </data>
+  <data name="DataTable_OrderUnnumbered" xml:space="preserve">
+    <value>Einige Zeilen auf dieser Seite haben noch keinen Platz in Ihrer Reihenfolge. Nummerieren Sie sie zuerst.</value>
+  </data>
+  <data name="DataTable_OrderNumberMore" xml:space="preserve">
+    <value>Die Zeilen ohne Platz in Ihrer Reihenfolge reichen über diese Seite hinaus. Zeigen Sie mehr Zeilen pro Seite an, um alle auf einmal zu nummerieren.</value>
+  </data>
+  <data name="DataTable_OrderNoRoom" xml:space="preserve">
+    <value>Diese Zeile kann nicht dorthin verschoben werden, ohne Zeilen auf anderen Seiten zu ändern. Zeigen Sie mehr Zeilen pro Seite an und versuchen Sie es erneut.</value>
+  </data>
+  <data name="DataTable_OrderFailed" xml:space="preserve">
+    <value>Die neue Reihenfolge konnte nicht gespeichert werden, daher stehen die Zeilen wieder an ihrem Platz.</value>
+  </data>
 </root>

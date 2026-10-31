@@ -490,4 +490,67 @@
   <data name="DataTable_RelatedMissingTable" xml:space="preserve">
     <value>No se pudieron leer las filas relacionadas: no existe la tabla {0}.</value>
   </data>
+  <data name="OrderColumn_Name" xml:space="preserve">
+    <value>Columna de orden</value>
+  </data>
+  <data name="OrderColumn_Desc" xml:space="preserve">
+    <value>Nombre lógico de una columna de número entero que guarda el orden de las filas. Si se indica, la tabla se ordena por ella y cada fila tiene un asa para arrastrarla o moverla con Espacio y las flechas. Déjelo vacío para no usar orden.</value>
+  </data>
+  <data name="DataTable_OrderMove" xml:space="preserve">
+    <value>Mover {0}</value>
+  </data>
+  <data name="DataTable_OrderHelp" xml:space="preserve">
+    <value>Para mover una fila, pulse Espacio en su asa, use las flechas arriba y abajo y vuelva a pulsar Espacio. Escape cancela.</value>
+  </data>
+  <data name="DataTable_OrderLifted" xml:space="preserve">
+    <value>Fila {0} levantada, posición {1} de {2}.</value>
+  </data>
+  <data name="DataTable_OrderAt" xml:space="preserve">
+    <value>{0}, posición {1} de {2}.</value>
+  </data>
+  <data name="DataTable_OrderTop" xml:space="preserve">
+    <value>Primera fila de esta página.</value>
+  </data>
+  <data name="DataTable_OrderBottom" xml:space="preserve">
+    <value>Última fila de esta página.</value>
+  </data>
+  <data name="DataTable_OrderDropped" xml:space="preserve">
+    <value>Fila {0} movida a la posición {1} de {2}.</value>
+  </data>
+  <data name="DataTable_OrderCancelled" xml:space="preserve">
+    <value>Movimiento cancelado. La fila {0} vuelve a la posición {1}.</value>
+  </data>
+  <data name="DataTable_OrderSaving" xml:space="preserve">
+    <value>Guardando el nuevo orden…</value>
+  </data>
+  <data name="DataTable_OrderSaved" xml:space="preserve">
+    <value>El nuevo orden está guardado.</value>
+  </data>
+  <data name="DataTable_OrderOutOfOrder" xml:space="preserve">
+    <value>Las filas solo se pueden mover en su orden.</value>
+  </data>
+  <data name="DataTable_OrderBack" xml:space="preserve">
+    <value>Volver a su orden</value>
+  </data>
+  <data name="DataTable_OrderUnnumberedCount" xml:space="preserve">
+    <value>Filas sin lugar en su orden: {0}.</value>
+  </data>
+  <data name="DataTable_OrderNumber" xml:space="preserve">
+    <value>Numerarlas</value>
+  </data>
+  <data name="DataTable_OrderNumbering" xml:space="preserve">
+    <value>Numerando filas…</value>
+  </data>
+  <data name="DataTable_OrderUnnumbered" xml:space="preserve">
+    <value>Algunas filas de esta página aún no tienen lugar en su orden. Numérelas primero.</value>
+  </data>
+  <data name="DataTable_OrderNumberMore" xml:space="preserve">
+    <value>Las filas sin lugar en su orden continúan más allá de esta página. Muestre más filas por página para numerarlas todas a la vez.</value>
+  </data>
+  <data name="DataTable_OrderNoRoom" xml:space="preserve">
+    <value>Esta fila no puede ir ahí sin cambiar filas de otras páginas. Muestre más filas por página e inténtelo de nuevo.</value>
+  </data>
+  <data name="DataTable_OrderFailed" xml:space="preserve">
+    <value>No se pudo guardar el nuevo orden, así que las filas han vuelto a su sitio.</value>
+  </data>
 </root>

@@ -1,7 +1,6 @@
 import * as React from 'react';
 import { IInputs, IOutputs } from './generated/ManifestTypes';
 import { DataTableControl, GroupAnswer, GroupRoute, IProps } from './components/DataTableControl';
-import { probe, probeInit } from './probe'; // TEMPORARY 0.8.3 — delete with probe.ts before 0.9.0
 import {
     ASCENDING,
     buildFilter,
@@ -47,6 +46,7 @@ import { loadAggregate, readViewFetchXml, Refusal, WebApiReader } from './data/G
 import { findMissingName, NamesFetch } from './data/relatedNames';
 import { classifySource, loadSource, SourceFetch } from './lib/config-source/load';
 import { isInlineFragment, parseRelated, RelatedPlan } from './lib/related-rows/fragment';
+import { orderState, OrderRow, OrderWrite, planMove, planNumbering } from './lib/rank-order/plan';
 import { storageKey } from './layout/widths';
 
 /**
@@ -414,6 +414,53 @@ type RelatedState =
     | { phase: 'blocked'; message: string }
     | { phase: 'refused'; message: string };
 
+/**
+ * Where *Order column* (0.9.0) stands. Measured first: SPEC.md 0.9.0, R1–R6.
+ *
+ *   - `checking`: the view leaves the column out. A column outside the view
+ *     reads `null` whatever it holds (R2), and `addColumn` is the way in — but
+ *     a name the table does not have is not something to hand the query
+ *     unchecked (a bad link cleared every row, 0.8.0 P11), so it is looked up
+ *     first.
+ *   - `adding`: found, and a whole number. Added and sorted by on the next
+ *     idle pass, since a refresh issued mid-fetch is dropped.
+ *   - `on`: in `dataset.columns`. `added` when the control put it there, so
+ *     it is read and never drawn.
+ *   - `off`: unset, or a column that cannot hold an order — said once in the
+ *     console, and the table is 0.8.x.
+ */
+type OrderPhase =
+    | { phase: 'off' }
+    | { phase: 'checking'; name: string }
+    | { phase: 'adding'; name: string }
+    | { phase: 'on'; name: string; added: boolean };
+
+/** How many order writes go out at once. Four in parallel took 551 ms against 1,397 one after another (R3). */
+const ORDER_WRITE_BATCH = 8;
+
+/** The order column's sort, alone and ascending — the only sort a row can be moved in. */
+function sortedBy(sorting: readonly { name: string; sortDirection: SortDirection }[] | undefined, name: string): boolean {
+    return Boolean(sorting) && sorting?.length === 1 && sorting[0].name === name && sorting[0].sortDirection === ASCENDING;
+}
+
+/** `Whole.None`, and the formats a whole number carries. An order needs integers. */
+function isWholeNumber(dataType: string): boolean {
+    return dataType.indexOf('Whole.') === 0;
+}
+
+/** Each batch in parallel, the batches one after another. The tasks settle rather than reject. */
+function inBatches(tasks: ReadonlyArray<() => Promise<void>>, size: number): Promise<void> {
+    let chain = Promise.resolve();
+
+    for (let start = 0; start < tasks.length; start += size) {
+        const batch = tasks.slice(start, start + size);
+
+        chain = chain.then(() => Promise.all(batch.map((task) => task())).then(() => undefined));
+    }
+
+    return chain;
+}
+
 /** The platform's ceiling on a page. Not in the type definitions; see SPEC.md. */
 const MAX_PAGE_SIZE = 250;
 
@@ -710,13 +757,23 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
 
     private destroyed = false;
 
+    /**
+     * Since 0.9.0, *Order column*: where it stands. `checking` is a column the
+     * view leaves out, being looked up before `addColumn` is trusted with it;
+     * `adding` is one found, waiting for an idle pass to be added and sorted
+     * by (a refresh issued mid-fetch is dropped). SPEC.md 0.9.0, R1 and R2.
+     */
+    private order: OrderPhase = { phase: 'off' };
+
+    /** What was said in the console about an order column that cannot work, so it is said once. */
+    private orderReported = '';
+
     public init(
         context: ComponentFramework.Context<IInputs>,
         notifyOutputChanged: () => void,
     ): void {
         // No container: a virtual control never receives one.
         this.notifyOutputChanged = notifyOutputChanged;
-        probeInit(context, this); // TEMPORARY 0.8.3 — delete with probe.ts before 0.9.0
 
         /*
          * **Without this call the platform does not report `allocatedWidth` at
@@ -749,14 +806,15 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
         }
 
         this.startRelated(context);
+        this.startOrder(context);
     }
 
     public updateView(context: ComponentFramework.Context<IInputs>): React.ReactElement {
-        probe(context, this); // TEMPORARY 0.8.3 — delete with probe.ts before 0.9.0
         const dataset = context.parameters.records;
 
         this.latest = context;
         this.trackRelated(context, dataset);
+        this.trackOrder(dataset);
         const mode = (context.parameters.selectionMode.raw ?? 'single') as SelectionMode;
 
         /*
@@ -776,7 +834,7 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
             this.notifyOutputChanged();
         }
 
-        const columns = visibleColumns(dataset.columns ?? []);
+        const columns = this.drawnColumns(dataset);
         const pageIds = this.pageIds(dataset);
 
         /*
@@ -1113,9 +1171,387 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
                 openForm
                     ? this.createRecord(openForm, parentReference(context), dataset)
                     : Promise.resolve(null),
+
+            /*
+             * Rows in your own order, since 0.9.0. `null` unless the maker
+             * named a whole-number column and it was found, so a table with
+             * the property unset draws exactly what 0.8.x drew.
+             */
+            order: this.orderView(context, dataset, pageIds, groupSpec.spec !== null),
+            onMoveRow: (from: number, to: number): Promise<void> => this.moveRow(context, dataset, from, to),
+            onNumberRows: (): Promise<void> => this.numberRows(context, dataset),
+            onBackToOrder: (): void => this.backToOrder(context, dataset),
         };
 
         return React.createElement(DataTableControl, props);
+    }
+
+    /* ---------------------------------------------------------------------- */
+    /* Rows in your own order (0.9.0)                                          */
+    /* ---------------------------------------------------------------------- */
+
+    /** The view's columns as drawn — less the order column, when the control added it (R2). */
+    private drawnColumns(dataset: DataSet): ReturnType<typeof visibleColumns> {
+        const columns = visibleColumns(dataset.columns ?? []);
+        const order = this.order;
+
+        return order.phase === 'on' && order.added
+            ? columns.filter((column) => column.name !== order.name)
+            : columns;
+    }
+
+    /**
+     * From `init`. The rows are already in the dataset there (0.8.0 P7), so a
+     * sort set now rides on the fetch the platform makes after `init` — or on
+     * *Related through*'s refresh, when it issued one — and the first rows
+     * drawn are in the order. Set on every load, because a reload forgets a
+     * sort the control applied (R1).
+     */
+    private startOrder(context: ComponentFramework.Context<IInputs>): void {
+        const name = (rawInput(context, 'orderColumn') ?? '').trim().toLowerCase();
+        const dataset = context.parameters.records;
+
+        if (name === '') {
+            this.order = { phase: 'off' };
+            return;
+        }
+
+        if (!/^[a-z0-9_]+$/.test(name)) {
+            this.refuseOrder(name, 'that is not a column\'s logical name');
+            return;
+        }
+
+        const column = (dataset.columns ?? []).find((each) => each.name === name);
+
+        if (!column) {
+            this.order = { phase: 'checking', name };
+            this.checkOrderColumn(context, name);
+            return;
+        }
+
+        if (!isWholeNumber(column.dataType)) {
+            this.refuseOrder(name, `it is a ${column.dataType} column, and an order needs a whole number`);
+            return;
+        }
+
+        this.order = { phase: 'on', name, added: false };
+
+        if (this.sortOrder(dataset, name) && this.related.phase !== 'fetching') {
+            dataset.paging.reset();
+            dataset.refresh();
+        }
+    }
+
+    /**
+     * A column the view leaves out, looked up before `addColumn` is trusted
+     * with it: a same-origin read of the table definitions, which no feature
+     * gates. Canvas has no organisation URL to read them from, so there the
+     * column has to be among the app's fields.
+     */
+    private checkOrderColumn(context: ComponentFramework.Context<IInputs>, name: string): void {
+        const clientUrl = clientUrlOf(context);
+        const entity = context.parameters.records.getTargetEntityType?.() ?? '';
+
+        if (!clientUrl || !/^[a-z0-9_]+$/.test(entity) || typeof fetch !== 'function') {
+            this.refuseOrder(name, 'it is not in the view, and this host cannot look it up — add it to the view');
+            return;
+        }
+
+        const url = `${clientUrl}/api/data/v9.2/EntityDefinitions(LogicalName='${entity}')`
+            + `/Attributes(LogicalName='${name}')?$select=AttributeType`;
+        const settle = (why: string | null): void => {
+            if (this.destroyed || this.order.phase !== 'checking' || this.order.name !== name) {
+                return;
+            }
+
+            if (why !== null) {
+                this.refuseOrder(name, why);
+                return;
+            }
+
+            this.order = { phase: 'adding', name };
+
+            const now = this.latest ?? context;
+
+            if (!now.parameters.records.loading) {
+                this.addOrder(now.parameters.records);
+            }
+        };
+
+        void fetch(url, { headers: { Accept: 'application/json' }, credentials: 'same-origin' })
+            .then((response) => (response.ok ? response.json() : null))
+            .then(
+                (body: { AttributeType?: string } | null) => settle(
+                    !body
+                        ? `${entity} has no column called ${name}`
+                        : body.AttributeType !== 'Integer'
+                            ? `it is a ${body.AttributeType ?? 'non-number'} column, and an order needs a whole number`
+                            : null,
+                ),
+                () => settle('the table definitions could not be read to look it up'),
+            );
+    }
+
+    /** Once per `updateView`: a looked-up column is added on the first idle pass. */
+    private trackOrder(dataset: DataSet): void {
+        if (this.order.phase === 'adding' && !dataset.loading) {
+            this.addOrder(dataset);
+        }
+    }
+
+    /**
+     * Add the column the view leaves out, sort by it, and fetch. `addColumn`
+     * puts it in `dataset.columns` with `order: -1` and `isHidden: false` (R2),
+     * so `drawnColumns` is what keeps it out of the table.
+     */
+    private addOrder(dataset: DataSet): void {
+        const order = this.order;
+
+        if (order.phase !== 'adding') {
+            return;
+        }
+
+        const add = (dataset as { addColumn?: (name: string) => void }).addColumn;
+
+        if (typeof add !== 'function') {
+            this.refuseOrder(order.name, 'this host cannot add a column the view leaves out — add it to the view');
+            return;
+        }
+
+        ask(() => add.call(dataset, order.name));
+        this.order = { phase: 'on', name: order.name, added: true };
+        this.sortOrder(dataset, order.name);
+        dataset.paging.reset();
+        dataset.refresh();
+    }
+
+    /** Off, and said once in the console: the maker can fix it, the user cannot. */
+    private refuseOrder(name: string, why: string): void {
+        this.order = { phase: 'off' };
+
+        const said = `${name}|${why}`;
+
+        if (said !== this.orderReported) {
+            this.orderReported = said;
+            // eslint-disable-next-line no-console
+            console.warn(`DataTable: Order column "${name}" cannot be used: ${why}.`);
+        }
+    }
+
+    /** Make the order column the whole sort, ascending. `true` when it was not already. */
+    private sortOrder(dataset: DataSet, name: string): boolean {
+        const sorting = dataset.sorting;
+
+        if (!sorting || sortedBy(sorting, name)) {
+            return false;
+        }
+
+        sorting.length = 0;
+        sorting.push({ name, sortDirection: ASCENDING });
+        this.page = 1;
+
+        return true;
+    }
+
+    /** The rows on show with their order values, as `lib/rank-order` reads them. */
+    private orderRows(dataset: DataSet, ids: readonly string[], name: string): OrderRow[] {
+        return ids.map((id) => {
+            const value = ask(() => dataset.records[id]?.getValue(name));
+
+            return { id, value: typeof value === 'number' && Number.isFinite(value) ? value : null };
+        });
+    }
+
+    /** What the component needs to draw the handles and the bar, or `null` for 0.8.x. */
+    private orderView(
+        context: ComponentFramework.Context<IInputs>,
+        dataset: DataSet,
+        pageIds: readonly string[],
+        grouped: boolean,
+    ): IProps['order'] {
+        const order = this.order;
+
+        if (order.phase !== 'on' || !(dataset.columns ?? []).some((each) => each.name === order.name)) {
+            return null;
+        }
+
+        const filtered = Object.keys(this.filters).some((key) => (this.filters[key] ?? '').trim() !== '');
+        const outOfOrder = grouped
+            ? 'group'
+            : !sortedBy(dataset.sorting, order.name)
+                ? 'sort'
+                : filtered
+                    ? 'filter'
+                    : null;
+
+        return {
+            column: order.name,
+            outOfOrder,
+            writable: !context.mode.isControlDisabled
+                && pageIds.some((id) => editableRecord(dataset.records[id]) !== null),
+            loading: Boolean(dataset.loading),
+            unnumbered: outOfOrder === null
+                ? orderState(this.orderRows(dataset, pageIds, order.name)).unnumbered
+                : 0,
+        };
+    }
+
+    /** The row drawn at `from` to `to`, on this page. Resolves once every write is saved; the re-read follows. */
+    private moveRow(
+        context: ComponentFramework.Context<IInputs>,
+        dataset: DataSet,
+        from: number,
+        to: number,
+    ): Promise<void> {
+        const order = this.order;
+        const fail = (id: string): Promise<void> => Promise.reject(new Error(context.resources.getString(id)));
+
+        if (order.phase !== 'on') {
+            return fail('DataTable_OrderFailed');
+        }
+
+        const result = planMove(this.orderRows(dataset, this.pageIds(dataset), order.name), from, to, {
+            first: this.page === 1,
+            last: !dataset.paging.hasNextPage,
+        });
+
+        if (!result.ok) {
+            return result.reason === 'noMove'
+                ? Promise.resolve()
+                : fail(result.reason === 'noRoom' ? 'DataTable_OrderNoRoom' : 'DataTable_OrderUnnumbered');
+        }
+
+        return this.writeOrder(context, dataset, order.name, result.writes);
+    }
+
+    /**
+     * Give the rows with no value one. They all sort above every numbered row
+     * (R1), so numbering some of them would drop those below the rest — they
+     * have to be on this page together: the first page, and either the list
+     * ends here or a numbered row does. Loading more to reach them is not an
+     * option: raising the page size mid-session broke paging on a real subgrid
+     * (SPEC.md 0.6.0), and a row on another page has no record to write.
+     */
+    private numberRows(context: ComponentFramework.Context<IInputs>, dataset: DataSet): Promise<void> {
+        const order = this.order;
+
+        if (order.phase !== 'on') {
+            return Promise.reject(new Error(context.resources.getString('DataTable_OrderFailed')));
+        }
+
+        const rows = this.orderRows(dataset, this.pageIds(dataset), order.name);
+        const last = !dataset.paging.hasNextPage;
+        const runsOn = rows.length > 0 && rows[rows.length - 1].value === null && !last;
+
+        if (this.page !== 1 || runsOn) {
+            return Promise.reject(new Error(context.resources.getString('DataTable_OrderNumberMore')));
+        }
+
+        return this.writeOrder(context, dataset, order.name, planNumbering(rows, 'unnumbered', last).writes);
+    }
+
+    /**
+     * Write each row's new value, a batch at a time, then re-read the page.
+     *
+     * **A refusal is undone by writing, not by re-reading (R5).** A refused
+     * value stays on the record through a `refresh()`, and so would the rest of
+     * a half-saved move: every row it touched is written back to what it was,
+     * then the page is re-read. The platform's message is an OData stack trace,
+     * so the user gets the control's sentence and the console the rest.
+     */
+    private writeOrder(
+        context: ComponentFramework.Context<IInputs>,
+        dataset: DataSet,
+        name: string,
+        writes: readonly OrderWrite[],
+    ): Promise<void> {
+        const failed = (): Error => new Error(context.resources.getString('DataTable_OrderFailed'));
+
+        if (writes.length === 0) {
+            return Promise.resolve();
+        }
+
+        const records = writes.map((write) => editableRecord(dataset.records[write.id]));
+
+        if (records.some((record) => record === null)) {
+            return Promise.reject(failed());
+        }
+
+        // `setValue` returns nothing and reads back the old value until the
+        // save resolves (R3), so only `save` is awaited.
+        const write = (index: number, value: number | null): Promise<void> => Promise.resolve()
+            .then(() => {
+                (records[index] as EditableRecord).setValue(name, value);
+            })
+            .then(() => (records[index] as EditableRecord).save())
+            .then(() => undefined);
+
+        let refusal: unknown = null;
+
+        return inBatches(
+            writes.map((each, index) => (): Promise<void> => write(index, each.to).catch((error: unknown) => {
+                refusal = refusal ?? error;
+            })),
+            ORDER_WRITE_BATCH,
+        ).then(() => {
+            if (refusal === null) {
+                this.reread(dataset);
+                return undefined;
+            }
+
+            // eslint-disable-next-line no-console
+            console.warn('[DataTable] the new order was refused; putting the rows back', refusal);
+
+            return inBatches(
+                writes.map((each, index) => (): Promise<void> => write(index, each.from).catch(() => undefined)),
+                ORDER_WRITE_BATCH,
+            ).then(() => {
+                this.reread(dataset);
+                throw failed();
+            });
+        });
+    }
+
+    /**
+     * Read the page again, where it is. **`refresh()` from page 2 lands on
+     * page 1 (R6)** while the pager's count stays at 2; `loadExactPage`
+     * re-reads in place, in the new order. A host without it has `refresh()`
+     * as its only re-read, and the count follows it back to page 1.
+     */
+    private reread(dataset: DataSet): void {
+        const paging = dataset.paging as { loadExactPage?: (page: number) => void };
+
+        if (this.page > 1) {
+            if (typeof paging.loadExactPage === 'function') {
+                paging.loadExactPage(this.page);
+                return;
+            }
+
+            this.page = 1;
+        }
+
+        dataset.refresh();
+    }
+
+    /** *Back to your order*: the order column's sort, and the filter row emptied. One fetch. */
+    private backToOrder(context: ComponentFramework.Context<IInputs>, dataset: DataSet): void {
+        const order = this.order;
+
+        if (order.phase !== 'on') {
+            return;
+        }
+
+        this.sortOrder(dataset, order.name);
+        this.page = 1;
+
+        if (Object.keys(this.filters).some((key) => (this.filters[key] ?? '').trim() !== '')) {
+            // `clearFilters` refreshes, and the refresh carries the new sort.
+            this.clearFilters(context);
+            return;
+        }
+
+        dataset.paging.reset();
+        dataset.refresh();
     }
 
     /* ---------------------------------------------------------------------- */
@@ -2037,7 +2473,7 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
          * for, and `finishExport` clears it. Those are the only two moments
          * that change what is outstanding.
          */
-        const columns = visibleColumns(dataset.columns ?? []);
+        const columns = this.drawnColumns(dataset);
         const arrival = harvest(
             state,
             dataset.sortedRecordIds ?? [],
@@ -2291,7 +2727,7 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
             return;
         }
 
-        const columns = visibleColumns(dataset.columns ?? []);
+        const columns = this.drawnColumns(dataset);
         const headers = columns.map((column) => column.displayName);
 
         if (rawInput(context, 'exportScope') !== 'view') {
@@ -2393,6 +2829,8 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
         // separates a refusal from a call that never came back.
         const started = Date.now();
         const since = (): string => `+${Date.now() - started}ms`;
+        // What the cell held, to write back if the save is refused (below).
+        const previous = ask(() => dataset.records[id]?.getValue(column));
 
         /*
          * **`Promise.resolve().then(...)` rather than chaining off `setValue`.**
@@ -2424,8 +2862,12 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
                  * Safe to call here: this runs from a user gesture, not from
                  * `updateView`, so the `updateView` it triggers does not
                  * re-enter anything.
+                 *
+                 * **Since 0.9.0 it re-reads in place.** `refresh()` from page
+                 * 2 lands on page 1 (SPEC.md 0.9.0, R6), which left an edit on
+                 * page 2 showing page 1's rows under a pager saying 2.
                  */
-                dataset.refresh();
+                this.reread(dataset);
 
                 this.editedRecordId = id;
                 // The one thing here that *is* an output, and the one thing
@@ -2439,7 +2881,24 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
                 // message names neither the column nor the record.
                 console.warn('[DataTable] write failed', column, since(), error);
 
-                throw error;
+                /*
+                 * **Write back what was there (since 0.9.0).** A refused value
+                 * stays on the record — through a `refresh()` too, with
+                 * `isDirty()` saying `false` (SPEC.md 0.9.0, R5) — so the next
+                 * pass would draw the value the server refused. Writing the old
+                 * one clears it; if that fails as well there is nothing more
+                 * useful to say than the first refusal.
+                 */
+                return Promise.resolve()
+                    .then(() => {
+                        record.setValue(column, previous ?? null);
+                    })
+                    .then(() => record.save())
+                    .catch(() => undefined)
+                    .then(() => {
+                        this.reread(dataset);
+                        throw error;
+                    });
             });
     }
     public destroy(): void {
@@ -2574,7 +3033,7 @@ export class DataTable implements ComponentFramework.ReactControl<IInputs, IOutp
      * values underneath it.
      */
     private exportCsv(context: ComponentFramework.Context<IInputs>, dataset: DataSet): void {
-        const columns = visibleColumns(dataset.columns ?? []);
+        const columns = this.drawnColumns(dataset);
         const ids = dataset.sortedRecordIds ?? [];
 
         const rows = ids

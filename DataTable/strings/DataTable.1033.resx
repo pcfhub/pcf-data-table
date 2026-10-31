@@ -489,4 +489,67 @@
   <data name="DataTable_RelatedMissingTable" xml:space="preserve">
     <value>The related rows could not be read: there is no table {0}.</value>
   </data>
+  <data name="OrderColumn_Name" xml:space="preserve">
+    <value>Order column</value>
+  </data>
+  <data name="OrderColumn_Desc" xml:space="preserve">
+    <value>Logical name of a whole-number column that holds the rows’ order. When set, the table sorts by it and each row gets a handle to drag, or to move with Space and the arrow keys. Leave empty for no order.</value>
+  </data>
+  <data name="DataTable_OrderMove" xml:space="preserve">
+    <value>Move {0}</value>
+  </data>
+  <data name="DataTable_OrderHelp" xml:space="preserve">
+    <value>To move a row, press Space on its handle, use the up and down arrow keys, then press Space again. Escape cancels.</value>
+  </data>
+  <data name="DataTable_OrderLifted" xml:space="preserve">
+    <value>{0} lifted, position {1} of {2}.</value>
+  </data>
+  <data name="DataTable_OrderAt" xml:space="preserve">
+    <value>{0}, position {1} of {2}.</value>
+  </data>
+  <data name="DataTable_OrderTop" xml:space="preserve">
+    <value>First row on this page.</value>
+  </data>
+  <data name="DataTable_OrderBottom" xml:space="preserve">
+    <value>Last row on this page.</value>
+  </data>
+  <data name="DataTable_OrderDropped" xml:space="preserve">
+    <value>{0} moved to position {1} of {2}.</value>
+  </data>
+  <data name="DataTable_OrderCancelled" xml:space="preserve">
+    <value>Move cancelled. {0} is back at position {1}.</value>
+  </data>
+  <data name="DataTable_OrderSaving" xml:space="preserve">
+    <value>Saving the new order…</value>
+  </data>
+  <data name="DataTable_OrderSaved" xml:space="preserve">
+    <value>The new order is saved.</value>
+  </data>
+  <data name="DataTable_OrderOutOfOrder" xml:space="preserve">
+    <value>Rows can be moved only in your order.</value>
+  </data>
+  <data name="DataTable_OrderBack" xml:space="preserve">
+    <value>Back to your order</value>
+  </data>
+  <data name="DataTable_OrderUnnumberedCount" xml:space="preserve">
+    <value>Rows with no place in your order yet: {0}.</value>
+  </data>
+  <data name="DataTable_OrderNumber" xml:space="preserve">
+    <value>Number them</value>
+  </data>
+  <data name="DataTable_OrderNumbering" xml:space="preserve">
+    <value>Numbering rows…</value>
+  </data>
+  <data name="DataTable_OrderUnnumbered" xml:space="preserve">
+    <value>Some rows on this page have no place in your order yet. Number them first.</value>
+  </data>
+  <data name="DataTable_OrderNumberMore" xml:space="preserve">
+    <value>The rows with no place in your order continue past this page. Show more rows per page to number them all at once.</value>
+  </data>
+  <data name="DataTable_OrderNoRoom" xml:space="preserve">
+    <value>This row can’t move there without changing rows on other pages. Show more rows per page and try again.</value>
+  </data>
+  <data name="DataTable_OrderFailed" xml:space="preserve">
+    <value>The new order couldn’t be saved, so the rows are back where they were.</value>
+  </data>
 </root>

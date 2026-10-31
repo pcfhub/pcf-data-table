@@ -178,6 +178,11 @@ const INPUTS = {
      * nothing until somebody uses it.
      */
     lockColumnWidths: false,
+    /*
+     * Unset, the manifest's shape: no order, and every assertion written
+     * before 0.9.0 runs against a table that sorts as the view says.
+     */
+    orderColumn: null,
 };
 
 /**
@@ -2721,6 +2726,18 @@ function sortChecks() {
     console.log('');
     console.log('  --- multi-column sort');
 
+    /*
+     * `(label, actual, expected)`. `check` is `(label, ok, detail)`, and seven
+     * assertions below were written to the other signature — each passed on a
+     * truthy array or string whatever the sort was, the mistake the export
+     * section's note records. Found 2026-10-30 while adding the order checks.
+     */
+    const same = (label, actual, expected) => check(
+        label,
+        JSON.stringify(actual) === JSON.stringify(expected),
+        `${JSON.stringify(actual)} — expected ${JSON.stringify(expected)}`,
+    );
+
     const order = (view) => (view.handle.dataset.sorting || [])
         .map((status) => status.name + ':' + status.sortDirection);
     const names = (view) => (view.handle.dataset.sortedRecordIds || [])
@@ -2732,22 +2749,22 @@ function sortChecks() {
     single.props().onSort('name', true);
     single.settle();
 
-    check('shift-click does nothing while the maker has not allowed it',
+    same('shift-click does nothing while the maker has not allowed it',
         order(single), ['name:0']);
 
     const multi = bind({ inputs: { enableMultiSort: true } });
 
     multi.props().onSort('name', false);
     multi.settle();
-    check('a plain click still replaces the order', order(multi), ['name:0']);
+    same('a plain click still replaces the order', order(multi), ['name:0']);
 
     multi.props().onSort('industrycode', true);
     multi.settle();
-    check('shift-click appends rather than replacing', order(multi), ['name:0', 'industrycode:0']);
+    same('shift-click appends rather than replacing', order(multi), ['name:0', 'industrycode:0']);
 
     multi.props().onSort('industrycode', true);
     multi.settle();
-    check('the second activation flips only that column', order(multi), ['name:0', 'industrycode:1']);
+    same('the second activation flips only that column', order(multi), ['name:0', 'industrycode:1']);
 
     /*
      * The third removes it. With a rank on screen there is a meaningful "not
@@ -2757,7 +2774,7 @@ function sortChecks() {
      */
     multi.props().onSort('industrycode', true);
     multi.settle();
-    check('the third removes it rather than cycling back', order(multi), ['name:0']);
+    same('the third removes it rather than cycling back', order(multi), ['name:0']);
 
     /*
      * **The tie case, and it is what the first measurement got wrong.**
@@ -2784,7 +2801,7 @@ function sortChecks() {
         JSON.stringify(ascending) !== JSON.stringify(descending),
         ascending.slice(0, 3).join(' | ') + '   vs   ' + descending.slice(0, 3).join(' | '));
 
-    check('and the first column still leads', order(tied), ['industrycode:0', 'name:1']);
+    same('and the first column still leads', order(tied), ['industrycode:0', 'name:1']);
 
     /*
      * The host that collapses the array to its first entry — what the
@@ -2808,8 +2825,8 @@ function sortChecks() {
     collapsed.props().onSort('name', true);
     collapsed.settle();
 
-    check('on a host that collapses the array the rows do not move',
-        JSON.stringify(names(collapsed)), JSON.stringify(before));
+    same('on a host that collapses the array the rows do not move',
+        names(collapsed), before);
 
     check('a single sort shows no rank at all, exactly as 0.5.0 did',
         renderDeep(bind({ inputs: { enableMultiSort: true } }).driven.element)
@@ -3498,6 +3515,258 @@ async function relatedChecks() {
     check('no whole-view route until the related rows are in', loading.props().groupRoute === null);
 }
 
+/* -------------------------------------------------------- your own order */
+
+/*
+ * Rows in your own order (0.9.0): what the control asks the platform for.
+ *
+ * The component's half — the handles, the keyboard, the drag, the order held
+ * until the re-read — runs in effects and pointer events this server render
+ * never fires, so it is the preview's and the form's to show (SPEC.md 0.9.0).
+ * What is asserted here is what `index.ts` owns: the sort on load, the writes a
+ * move makes, the re-read that keeps the page, the rollback a refusal needs,
+ * numbering, and *Back to your order*. The rig was taught R2, R5 and R6 for it.
+ */
+async function orderChecks() {
+    console.log('');
+    console.log('  --- your own order');
+
+    const ORDER = { name: 'sortorder', displayName: 'Order', dataType: 'Whole.None', alias: 'sortorder', order: 9, visualSizeFactor: 80 };
+    const withOrder = (values) => fixture.records.map((record, index) => ({
+        id: record.id,
+        values: { ...record.values, sortorder: values[index] },
+    }));
+    // Ten apart, and not the names' order: a02 a03 a01 a05 a04 | a07 a06 a09 a08 a11 | a10 a12.
+    const SPACED = [30, 10, 20, 50, 40, 70, 60, 90, 80, 110, 100, 120];
+    const ordered = (options) => bind({
+        columns: fixture.columns.concat([ORDER]),
+        records: withOrder(SPACED),
+        sorting: [{ name: 'name', sortDirection: host.ASCENDING }],
+        ...options,
+        inputs: { orderColumn: 'sortorder', ...(options && options.inputs) },
+    });
+    const ids = (on) => on.props().pageIds.join(' ');
+    const sortOf = (on) => (on.handle.dataset.sorting || []).map((each) => `${each.name}:${each.sortDirection}`).join(' ');
+    const writes = (on, since) => on.calls().slice(since).filter((call) => call.startsWith('record.'));
+    const failure = async (promise) => {
+        try {
+            await promise;
+            return null;
+        } catch (error) {
+            return (error && error.message) || String(error);
+        }
+    };
+
+    /* ---- off */
+
+    check('unset, the table is 0.8.x: no order, no addColumn, the view\'s sort', view.props().order === null
+        && !view.calls().some((call) => call.startsWith('addColumn')), view.calls().slice(0, 4).join(' '));
+
+    /* ---- on load */
+
+    const on = ordered();
+
+    check('set, the order column becomes the whole sort on load — a reload forgets one the control applied (R1)',
+        sortOf(on) === 'sortorder:0', sortOf(on));
+    check('… and the first rows drawn are in it', ids(on) === 'a02 a03 a01 a05 a04', ids(on));
+    check('… in one fetch', on.calls().filter((call) => call === 'refresh').length === 1, on.calls().join(' '));
+    check('the table is in the order, nothing unnumbered, writable',
+        on.props().order && on.props().order.outOfOrder === null && on.props().order.unnumbered === 0 && on.props().order.writable === true,
+        JSON.stringify(on.props().order));
+
+    /* ---- a move */
+
+    const before = on.calls().length;
+    const moved = await failure(on.props().onMoveRow(4, 0));
+    await flush();
+    const wrote = writes(on, before);
+
+    check('a move resolves', moved === null, moved);
+    check('five rows are written — the moved one and the four it passed — and nothing more',
+        wrote.filter((call) => call.startsWith('record.save')).length === 5,
+        wrote.join(' '));
+    check('page 1 is re-read with refresh()', on.calls().slice(before).includes('refresh'), on.calls().slice(before).join(' '));
+
+    on.handle.reread();
+    on.settle();
+    check('… and once the host re-reads, the rows are in the new order', ids(on) === 'a04 a02 a03 a01 a05', ids(on));
+    check('… with the values a re-read would sort that way', ['a04', 'a02', 'a03', 'a01', 'a05']
+        .map((id) => on.handle.stored(id, 'sortorder')).join(',') === '10,20,30,40,50',
+        ['a04', 'a02', 'a03', 'a01', 'a05'].map((id) => on.handle.stored(id, 'sortorder')).join(','));
+
+    /* ---- page 2 stays page 2 (R6) */
+
+    const paged = ordered();
+
+    paged.props().onGoToPage(2);
+    paged.settle();
+
+    const turned = paged.calls().length;
+
+    await paged.props().onMoveRow(0, 4);
+    await flush();
+
+    check('on page 2 a move re-reads with loadExactPage(2), not refresh() — which lands on page 1 (R6)',
+        paged.calls().slice(turned).includes('loadExactPage(2)') && !paged.calls().slice(turned).includes('refresh'),
+        paged.calls().slice(turned).filter((call) => !call.startsWith('record.')).join(' '));
+
+    paged.handle.reread();
+    paged.settle();
+    check('… so the rows of page 2 come back, in the new order', paged.props().page === 2 && ids(paged) === 'a06 a09 a08 a11 a07',
+        `page ${paged.props().page}: ${ids(paged)}`);
+
+    /* ---- a refusal is undone by writing (R5) */
+
+    const refusing = ordered({ quirks: { refuses: (name, value) => name === 'sortorder' && value === 30 } });
+    const refusedAt = refusing.calls().length;
+    const refusal = await failure(refusing.props().onMoveRow(4, 0));
+    await flush();
+
+    check('a refused write rejects with the control\'s sentence, not the platform\'s stack trace',
+        refusal === 'resx:DataTable_OrderFailed', refusal);
+    check('every row it touched is written back — the refused one too, which the record still holds (R5)',
+        writes(refusing, refusedAt).filter((call) => call.startsWith('record.save')).length === 10,
+        writes(refusing, refusedAt).join(' '));
+
+    refusing.handle.reread();
+    refusing.settle();
+    check('… so after the re-read no row reads the value the server refused, and the order is the old one',
+        ids(refusing) === 'a02 a03 a01 a05 a04'
+            && refusing.props().dataset.records.a03.getValue('sortorder') === 20,
+        `${ids(refusing)}; a03 reads ${refusing.props().dataset.records.a03.getValue('sortorder')}`);
+
+    /* ---- moves that cannot happen */
+
+    check('a move to where the row already is writes nothing', await failure(on.props().onMoveRow(2, 2)) === null);
+
+    /* ---- numbering */
+
+    const gaps = ordered({ records: withOrder([5, 6, 7, null, 8, 9, null, 10, 11, 12, 13, 14]) });
+
+    check('rows with no value come first, and are counted', ids(gaps).startsWith('a04 a07') && gaps.props().order.unnumbered === 2,
+        `${ids(gaps)}; unnumbered ${gaps.props().order && gaps.props().order.unnumbered}`);
+    check('a page holding them refuses a move, and says to number them',
+        await failure(gaps.props().onMoveRow(4, 2)) === 'resx:DataTable_OrderUnnumbered');
+
+    const numberedAt = gaps.calls().length;
+
+    await gaps.props().onNumberRows();
+    await flush();
+    gaps.handle.reread();
+    gaps.settle();
+    check('numbering gives them the values just below the first numbered row — 3 and 4 — and writes nothing else',
+        writes(gaps, numberedAt).filter((call) => call.startsWith('record.save')).length === 2
+            && gaps.handle.stored('a04', 'sortorder') === 3 && gaps.handle.stored('a07', 'sortorder') === 4,
+        `${writes(gaps, numberedAt).join(' ')}; a04=${gaps.handle.stored('a04', 'sortorder')} a07=${gaps.handle.stored('a07', 'sortorder')}`);
+
+    const blank = new Array(12).fill(null);
+    const fresh = ordered({ records: withOrder(blank) });
+
+    check('a brand-new column on a list longer than the page: numbering says to show more rows, and writes nothing',
+        await failure(fresh.props().onNumberRows()) === 'resx:DataTable_OrderNumberMore'
+            && !fresh.calls().some((call) => call.startsWith('record.save')));
+
+    const roomy = ordered({ records: withOrder(blank), inputs: { pageSize: 50 } });
+
+    await roomy.props().onNumberRows();
+    await flush();
+    roomy.handle.reread();
+    roomy.settle();
+    check('… with every row on the page, it numbers them 1 … 12 in the order drawn',
+        roomy.props().pageIds.map((id) => roomy.handle.stored(id, 'sortorder')).join(',') === '1,2,3,4,5,6,7,8,9,10,11,12',
+        roomy.props().pageIds.map((id) => roomy.handle.stored(id, 'sortorder')).join(','));
+
+    /* ---- out of order, and back */
+
+    const resorted = ordered();
+
+    resorted.props().onSort('name', false);
+    resorted.settle();
+    check('sorted by another column, the table says it is out of order', resorted.props().order.outOfOrder === 'sort');
+
+    resorted.props().onBackToOrder();
+    resorted.settle();
+    check('Back to your order puts the order column back as the whole sort, on page 1',
+        sortOf(resorted) === 'sortorder:0' && resorted.props().page === 1 && resorted.props().order.outOfOrder === null,
+        `${sortOf(resorted)}, page ${resorted.props().page}`);
+
+    const filtered = ordered();
+
+    filtered.props().onFilter('name', 'Con');
+    time.advance(500);
+    filtered.settle();
+    check('filtered, it is out of order too', filtered.props().order.outOfOrder === 'filter');
+
+    filtered.props().onBackToOrder();
+    filtered.settle();
+    check('… and Back to your order empties the filter row', filtered.props().order.outOfOrder === null
+        && Object.values(filtered.props().filters).every((value) => (value || '') === ''), JSON.stringify(filtered.props().filters));
+
+    const grouped = ordered({ inputs: { groupBy: 'industrycode' } });
+
+    check('grouped, there is no order to move in', grouped.props().order && grouped.props().order.outOfOrder === 'group');
+
+    /* ---- a column the view leaves out (R2) */
+
+    const outside = bind({
+        records: withOrder(SPACED),
+        addable: { sortorder: 'Whole.None' },
+        sorting: [{ name: 'name', sortDirection: host.ASCENDING }],
+        inputs: { orderColumn: 'sortorder' },
+    });
+
+    await flush();
+    outside.settle();
+    check('left out of the view, it is looked up, added, and sorted by',
+        outside.calls().some((call) => call.startsWith('fetch') && call.includes("Attributes(LogicalName='sortorder')"))
+            && outside.calls().includes('addColumn("sortorder")') && sortOf(outside) === 'sortorder:0',
+        outside.calls().filter((call) => /fetch|addColumn|refresh/.test(call)).join(' '));
+    check('… and not drawn: addColumn puts it in dataset.columns with order -1, where the table would draw it',
+        !outside.props().columns.some((column) => column.name === 'sortorder')
+            && outside.handle.dataset.columns.some((column) => column.name === 'sortorder'),
+        outside.props().columns.map((column) => column.name).join(' '));
+    check('… and the rows are in its order', ids(outside) === 'a02 a03 a01 a05 a04', ids(outside));
+
+    const missing = bind({ inputs: { orderColumn: 'nosuchcolumn' } });
+
+    await flush();
+    missing.settle();
+    check('a name the table does not have is never handed to addColumn', !missing.calls().some((call) => call.startsWith('addColumn'))
+        && missing.props().order === null, missing.calls().filter((call) => /fetch|addColumn/.test(call)).join(' '));
+
+    check('a text column is refused as an order', bind({ inputs: { orderColumn: 'name' } }).props().order === null);
+
+    /* ---- inline editing, two answers the probe gave (R5, R6) */
+
+    const editing = bind({ inputs: { enableEditing: true } });
+
+    editing.props().onGoToPage(2);
+    editing.settle();
+
+    const editedAt = editing.calls().length;
+    const row = editing.props().pageIds[0];
+
+    await editing.props().onCommitEdit(row, 'name', 'Renamed');
+    await flush();
+    check('an edit on page 2 re-reads page 2, not page 1 (R6)',
+        editing.calls().slice(editedAt).includes('loadExactPage(2)') && !editing.calls().slice(editedAt).includes('refresh'),
+        editing.calls().slice(editedAt).filter((call) => !call.startsWith('record.')).join(' '));
+
+    const refusingEdit = bind({ inputs: { enableEditing: true }, quirks: { refuses: (name, value) => name === 'name' && value === 'Refused' } });
+    const target = refusingEdit.props().pageIds[0];
+    const was = refusingEdit.props().dataset.records[target].getValue('name');
+    const refusedEditAt = refusingEdit.calls().length;
+
+    await failure(refusingEdit.props().onCommitEdit(target, 'name', 'Refused'));
+    await flush();
+    refusingEdit.handle.reread();
+    refusingEdit.settle();
+    check('a refused cell edit writes the old value back, so the record stops showing the refused one (R5)',
+        writes(refusingEdit, refusedEditAt).filter((call) => call.startsWith('record.save')).length === 2
+            && refusingEdit.props().dataset.records[target].getValue('name') === was,
+        `${writes(refusingEdit, refusedEditAt).join(' ')}; reads ${JSON.stringify(refusingEdit.props().dataset.records[target].getValue('name'))}`);
+}
+
 sortChecks();
 exportChecks();
 
@@ -3508,6 +3777,7 @@ editingChecks()
     .then(lookupChecks)
     .then(createChecks)
     .then(relatedChecks)
+    .then(orderChecks)
     .then(report, (error) => {
         check('the asynchronous assertions ran at all', false, String((error && error.stack) || error));
         report();
