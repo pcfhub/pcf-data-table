@@ -7,6 +7,9 @@
  * Written 2026-10-30 for pcf-data-table 0.9.0, whose SPEC.md carries the
  * probe it rests on (R1–R6): a whole-number column sorted ascending puts rows
  * with no value first, and the platform re-sorts nothing until a re-read.
+ * `planInsert` and the wider `PageEdges` were added 2026-11-12 for
+ * pcf-kanban-board 0.6.0 (its SPEC.md, Q1–Q9): a board's lane is a slice of
+ * the loaded list, and a drop moves a block of cards in from anywhere.
  */
 
 /**
@@ -50,10 +53,23 @@ export interface OrderWrite {
 
 /** Where the rows on show sit in the whole list. */
 export interface PageEdges {
-    /** Nothing comes before them: values may go down to `FLOOR`. */
+    /** Nothing comes before them: values may go down to `floor`. */
     first: boolean;
-    /** Nothing comes after them: values may go up to `CEILING`. */
+    /** Nothing comes after them: values may go up to `ceiling`. */
     last: boolean;
+    /**
+     * The lowest and highest values among **every** row loaded, when the rows
+     * handed over are only part of them — one lane of a board, whose cards
+     * are a slice of the list loaded so far. A value outside that span could
+     * land among rows that are not loaded. Absent, the rows' own span.
+     * Added 2026-11-12 for pcf-kanban-board 0.6.0.
+     */
+    min?: number;
+    max?: number;
+    /** The lowest value an open start may take. Absent, `FLOOR`; a column's own minimum, for a control that may go below 1. */
+    floor?: number;
+    /** The highest value an open end may take. Absent, `CEILING`; a column's own maximum. */
+    ceiling?: number;
 }
 
 /** The lowest value a move or a numbering writes unless the rows already go lower. */
@@ -137,10 +153,7 @@ export function planMove(rows: readonly OrderRow[], from: number, to: number, ed
      * starts as the moved span and grows toward whichever side leaves more
      * room, so the fewest rows are written.
      */
-    const pageMin = Math.min(...values);
-    const pageMax = Math.max(...values);
-    const lowest = edges.first ? Math.min(FLOOR, pageMin) : pageMin;
-    const highest = edges.last ? CEILING : pageMax;
+    const { lowest, highest } = limits(values, edges);
     const above = (a: number): number => (a > 0 ? (order[a - 1].value as number) : lowest - 1);
     const below = (b: number): number => (b < n - 1 ? (order[b + 1].value as number) : highest + 1);
     const room = (a: number, b: number): number => below(b) - above(a) - 1 - (b - a + 1);
@@ -162,6 +175,117 @@ export function planMove(rows: readonly OrderRow[], from: number, to: number, ed
 
     const start = above(a) + 1;
     const fresh = order.slice(a, b + 1).map((_, i) => start + i);
+    return { ok: true, order: order.map((row) => row.id), writes: writesFor(order, a, fresh) };
+}
+
+/**
+ * The lowest and highest values a write may use: the span of the rows
+ * loaded, opened out to `floor` at an open start and to `ceiling` at an open
+ * end — and the whole of `floor` … `ceiling` when no row has a value yet.
+ */
+function limits(values: readonly number[], edges: PageEdges): { lowest: number; highest: number } {
+    const spanMin = Math.min(edges.min ?? Infinity, ...values);
+    const spanMax = Math.max(edges.max ?? -Infinity, ...values);
+    const floor = edges.floor ?? FLOOR;
+    const ceiling = edges.ceiling ?? CEILING;
+
+    if (!Number.isFinite(spanMin) || !Number.isFinite(spanMax)) {
+        // Nothing has a value: the whole range is open on both sides.
+        return { lowest: floor, highest: ceiling };
+    }
+
+    return {
+        lowest: edges.first ? Math.min(floor, spanMin) : spanMin,
+        highest: edges.last ? Math.max(ceiling, spanMax) : spanMax,
+    };
+}
+
+/**
+ * What to write so that `block` sits at `at` among `rows` once the list is
+ * re-read in the order column's order: rows a drag or a Move took out of
+ * wherever they were — this list or another — put back here, in the order
+ * given. `rows` is the list as drawn **without** them; `at` runs from 0 (the
+ * top) to `rows.length` (the end).
+ *
+ * Written for a board (pcf-kanban-board 0.6.0, 2026-11-12), and it differs
+ * from `planMove` on purpose: **the fewest writes, not the most readable
+ * values.** A table shows its numbers and a board does not, and `planMove`'s
+ * rotation would write every card a drag passes — thirty, for one card taken
+ * from the bottom of a thirty-card lane to the top.
+ *
+ * - Where the block's own values already fit between its new neighbours,
+ *   nothing is written.
+ * - Otherwise a window — the block, then grown a row at a time toward the
+ *   side with more room — is numbered with consecutive whole numbers: packed
+ *   **up** against the row above it, or, with no row above (the top of the
+ *   list), packed **down** against the row below — 9 under a 10, not the
+ *   floor. A list with no other rows numbers from `FLOOR` where the limits
+ *   allow it.
+ * - Rows in `block` may have no value: they are being given one. A row in
+ *   `rows` with none refuses the move (`unnumbered`), as in `planMove`,
+ *   because it sorts above every numbered row wherever it is drawn.
+ */
+export function planInsert(
+    rows: readonly OrderRow[],
+    block: readonly OrderRow[],
+    at: number,
+    edges: PageEdges,
+): MovePlan {
+    const k = block.length;
+
+    if (k === 0 || at < 0 || at > rows.length) {
+        return { ok: false, reason: 'noMove' };
+    }
+    if (rows.some((row) => row.value === null)) {
+        return { ok: false, reason: 'unnumbered' };
+    }
+
+    const order = [...rows.slice(0, at), ...block, ...rows.slice(at)];
+    const n = order.length;
+    // The span comes from the list and the edges, never from the block: its
+    // values are where it came from, which may be beyond what is loaded here.
+    const { lowest, highest } = limits(rows.map((row) => row.value as number), edges);
+    const lo = at;
+    const hi = at + k - 1;
+    // Outside the window every row is one of `rows`, so it has a value.
+    const above = (a: number): number => (a > 0 ? (order[a - 1].value as number) : lowest - 1);
+    const below = (b: number): number => (b < n - 1 ? (order[b + 1].value as number) : highest + 1);
+
+    const own = block.map((row) => row.value);
+    const fits = own.every((value) => value !== null)
+        && increasing(own as number[])
+        && above(lo) < (own[0] as number)
+        && (own[k - 1] as number) < below(hi);
+
+    if (fits) {
+        return { ok: true, order: order.map((row) => row.id), writes: [] };
+    }
+
+    const room = (a: number, b: number): number => below(b) - above(a) - 1 - (b - a + 1);
+
+    let a = lo;
+    let b = hi;
+    while (room(a, b) < 0) {
+        const up = a > 0 ? room(a - 1, b) : -Infinity;
+        const down = b < n - 1 ? room(a, b + 1) : -Infinity;
+        if (up === -Infinity && down === -Infinity) {
+            return { ok: false, reason: 'noRoom' };
+        }
+        if (down >= up) {
+            b += 1;
+        } else {
+            a -= 1;
+        }
+    }
+
+    const count = b - a + 1;
+    const start = a > 0
+        ? above(a) + 1
+        : b < n - 1
+            ? below(b) - count
+            : Math.max(above(a) + 1, Math.min(FLOOR, below(b) - count));
+    const fresh = order.slice(a, b + 1).map((_, i) => start + i);
+
     return { ok: true, order: order.map((row) => row.id), writes: writesFor(order, a, fresh) };
 }
 
